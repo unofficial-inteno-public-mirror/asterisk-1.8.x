@@ -25,9 +25,6 @@
  * \ingroup channel_drivers
  */
 
-/*** MODULEINFO
-	<depend>ixjuser</depend>
- ***/
 
 #include "asterisk.h"
 
@@ -60,6 +57,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/musiconhold.h"
 
 #include "chan_brcm.h"
+
 
 #ifdef QTI_PHONEJACK_TJ_PCI	/* check for the newer quicknet driver v.3.1.0 which has this symbol */
 #define QNDRV_VER 310
@@ -164,7 +162,7 @@ static int phone_fixup(struct ast_channel *old, struct ast_channel *new);
 static int phone_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
 
 static const struct ast_channel_tech phone_tech = {
-	.type = "Brcm",
+	.type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_G729A,
 	.requester = phone_request,
@@ -181,7 +179,7 @@ static const struct ast_channel_tech phone_tech = {
 };
 
 static struct ast_channel_tech phone_tech_fxs = {
-	.type = "Brcm",
+	.type = "BRCM",
 	.description = tdesc,
 	.requester = phone_request,
 	.send_digit_begin = phone_digit_begin,
@@ -293,6 +291,7 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	struct ast_tm tm;
 	int start;
 
+	ast_log(LOG_ERROR, "BRCM phone_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
 	memset(&cid, 0, sizeof(PHONE_CID));
@@ -345,6 +344,8 @@ static int phone_hangup(struct ast_channel *ast)
 {
 	struct phone_pvt *p;
 	p = ast->tech_pvt;
+
+	ast_log(LOG_ERROR, "BRCM phone_hangup\n");
 	ast_debug(1, "phone_hangup(%s)\n", ast->name);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
@@ -458,6 +459,8 @@ static int phone_setup(struct ast_channel *ast)
 static int phone_answer(struct ast_channel *ast)
 {
 	struct phone_pvt *p;
+
+	ast_log(LOG_ERROR, "BRCM phone_answer\n");
 	p = ast->tech_pvt;
 	/* In case it's a LineJack, take it off hook */
 	if (p->mode == MODE_FXO) {
@@ -850,6 +853,9 @@ static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx,
 {
 	struct ast_channel *tmp;
 	struct phone_codec_data queried_codec;
+
+	ast_log(LOG_ERROR, "BRCM phone_new\n");
+
 	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Phone/%s", i->dev + 5);
 	if (tmp) {
 		tmp->tech = cur_tech;
@@ -1242,11 +1248,16 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	struct ast_channel *tmp = NULL;
 	char *name = data;
 
+
+	ast_log(LOG_ERROR, "BRCM phone_request 1\n");
+	signal_ringing();	
+
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return NULL;
 	}
+	ast_log(LOG_ERROR, "BRCM phone_request 2\n");
 	p = iflist;
 	while(p) {
 		if (p->mode == MODE_FXS ||
@@ -1270,10 +1281,11 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 		format &= (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW);
 		if (!format) {
 			char buf[256];
-			ast_log(LOG_NOTICE, "Asked to get a channel of unsupported format '%s'\n", ast_getformatname_multiple(buf, sizeof(buf), oldformat));
+			ast_log(LOG_ERROR, "Asked to get a channel of unsupported format '%s'\n", ast_getformatname_multiple(buf, sizeof(buf), oldformat));
 			return NULL;
 		}
 	}
+	ast_log(LOG_ERROR, "BRCM phone_request 3\n");
 	return tmp;
 }
 
@@ -1474,7 +1486,452 @@ static int load_module(void)
 	ast_config_destroy(cfg);
 	/* And start the monitor for the first time */
 	restart_monitor();
+	
+	endpt_init();
+
 	return AST_MODULE_LOAD_SUCCESS;
 }
+
+
+
+
+
+
+#define NOT_INITIALIZED -1
+#define EPSTATUS_DRIVER_ERROR -1
+#define MAX_NUM_LINEID 2
+
+typedef void (*rtpDropPacketResetCallback)(void);
+
+
+typedef struct
+{
+   endptEventCallback         pEventCallBack;
+   endptPacketCallback        pPacketCallBack;
+   rtpDropPacketResetCallback pRtpDropPacketResetCallBack;
+   int                        fileHandle;
+   int                        logFileHandle;
+
+} ENDPTUSER_CTRLBLOCK;
+
+
+
+EPSTATUS vrgEndptSignal
+(
+   ENDPT_STATE   *endptState,
+   int            cnxId,
+   EPSIG          signal,
+   unsigned int   value,
+   int            duration,
+   int            period,
+   int            repetition
+ );
+
+
+ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
+VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
+int fd;
+
+
+EPSTATUS vrgEndptDriverOpen(void);
+int endpt_init(void);
+
+
+
+
+
+
+void endptEventCb()
+{
+  printf("Received callback event.\n");
+}
+
+
+void ingressPktRecvCb( ENDPT_STATE *endptState, int cnxId, EPPACKET *epPacketp, int length )
+{
+
+}
+
+
+
+int endpt_init(void)
+{
+  int num_endpts;
+  VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
+  int rc, i;
+  
+  printf("Initializing endpoint interface\n");
+
+  vrgEndptDriverOpen();
+
+  vrgEndptInitCfg.country = VRG_COUNTRY_NORTH_AMERICA;
+  vrgEndptInitCfg.currentPowerSource = 0;
+
+  /* Intialize endpoint */
+  rc = vrgEndptInit( &vrgEndptInitCfg,
+		     endptEventCb,
+		     ingressPktRecvCb,
+		     NULL,
+		     NULL,
+		     NULL,
+		     NULL );
+
+  num_endpts = vrgEndptGetNumEndpoints();
+  
+  printf("Num endpoints: %d\n", num_endpts);
+
+
+  /* Creating Endpt */
+  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+    {
+      rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
+    }
+
+  return 0;
+}
+
+
+
+int signal_ringing(void)
+{
+  int i;
+
+
+   /* Check whether value is on or off */
+  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, -1, -1, -1 , -1);
+
+  return 0;
+}
+
+
+
+
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptDriverOpen
+**
+** PURPOSE:    Opens the Linux kernel endpoint driver.
+**             This function should be the very first call used by the
+**             application before isssuing any other endpoint APIs because
+**             the ioctls for the endpoint APIs won't reach the kernel
+**             if the driver is not successfully opened.
+**
+** PARAMETERS:
+**
+** RETURNS:    EPSTATUS
+**
+*****************************************************************************
+*/
+EPSTATUS vrgEndptDriverOpen(void)
+{
+   /* Open and initialize Endpoint driver */
+   if( ( fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
+   {
+      printf( "%s: open error %d\n", __FUNCTION__, errno );
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
+   else
+   {
+      printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
+   }
+
+   return ( EPSTATUS_SUCCESS );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptDriverClose
+**
+** PURPOSE:    Close endpoint driver
+**
+** PARAMETERS: None
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:
+*****************************************************************************
+*/
+EPSTATUS vrgEndptDriverClose()
+{
+   if ( close( fd ) == -1 )
+   {
+      printf("%s: close error %d", __FUNCTION__, errno);
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
+
+   fd = NOT_INITIALIZED;
+
+   return( EPSTATUS_SUCCESS );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptInit
+**
+** PURPOSE:    Module initialization for the VRG endpoint. The endpoint
+**             module is responsible for controlling a set of endpoints.
+**             Individual endpoints are initialized using the vrgEndptInit() API.
+**
+** PARAMETERS: country           - Country type
+**             notifyCallback    - Callback to use for event notification
+**             packetCallback           - Callback to use for endpt packets
+**             getProvisionCallback     - Callback to get provisioned values.
+**                                        May be set to NULL.
+**             setProvisionCallback     - Callback to get provisioned values.
+**                                        May be set to NULL.
+**             packetReleaseCallback    - Callback to release ownership of
+**                                        endpt packet back to caller
+**             taskShutdownCallback     - Callback invoked to indicate endpt
+**                                        task shutdown
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:       getProvisionCallback, setProvisionCallback,
+**             packetReleaseCallback, and taskShutdownCallback are currently not used within
+**             the DSL framework and should be set to NULL when
+**             invoking this function.
+**
+*****************************************************************************
+*/
+EPSTATUS vrgEndptInit
+(
+   VRG_ENDPT_INIT_CFG        *endptInitCfg,
+   endptEventCallback         notifyCallback,
+   endptPacketCallback        packetCallback,
+   endptGetProvCallback       getProvisionCallback,
+   endptSetProvCallback       setProvisionCallback,
+   endptPacketReleaseCallback packetReleaseCallback,
+   endptTaskShutdownCallback  taskShutdownCallback
+)
+{
+   ENDPOINTDRV_INIT_PARAM tStartupParam;
+
+   tStartupParam.endptInitCfg = endptInitCfg;
+   tStartupParam.epStatus     = EPSTATUS_DRIVER_ERROR;
+   tStartupParam.size         = sizeof(ENDPOINTDRV_INIT_PARAM);
+
+
+   /* Check if kernel driver is opened */
+   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
+     return ( tStartupParam.epStatus );
+
+   return ( tStartupParam.epStatus );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptDeinit
+**
+** PURPOSE:    VRG endpoint module shutdown - call once during system shutdown.
+**             This will shutdown all endpoints and free all resources used by
+**             the VRG endpt manager. (i.e. this function should free all resources
+**             allocated in vrgEndptInit() and vrgEndptCreate()).
+**
+** PARAMETERS: none
+**
+** RETURNS:    EPSTATUS
+**             This function should only return an error under catastrophic
+**             circumstances. i.e. Something that cannot be fixed by re-invoking
+**             the module initialization function.
+**
+** NOTE:       It is assumed that this function is only called after all endpoint
+**             tasks have been notified of a pending application reset, and each
+**             one has acknowledged the notification. This implies that each endpoint
+**             task is currently blocked, waiting to be resumed so that they may
+**             complete the shutdown procedure.
+**
+**             It is also assumed that no task is currently blocked on any OS
+**             resource that was created in the module initialization functions.
+**
+*****************************************************************************
+*/
+EPSTATUS vrgEndptDeinit( void )
+{
+   int filehandle = open("/dev/bcmendpoint0", O_RDWR);
+   if ( filehandle == -1 )
+   {
+      return( EPSTATUS_DRIVER_ERROR );
+   }
+
+   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
+   {
+   }
+
+   /* bGlobalTaskExit = TRUE; */
+
+   close( filehandle );
+
+   /* endptDeinitialized = 1; */
+
+   return( EPSTATUS_SUCCESS );
+}
+
+
+
+
+
+/*****************************************************************************
+*  FUNCTION:   vrgEndptSignal
+*
+*  PURPOSE:    Generate a signal on the endpoint (or connection)
+*
+*  PARAMETERS: endptState  - state of the endpt object
+*              cnxId       - connection identifier (-1 if not applicable)
+*              signal      - signal type code (see EPSIG)
+*              value       - signal value
+*                          BR signal types - 1
+*                          OO signal types - 0 == off, 1 == on
+*                          TO signal types - 0 = stop/off, 1= start/on
+*                          String types - (char *) cast to NULL-term string value
+*
+*  RETURNS:    EPSTATUS
+*
+*****************************************************************************/
+EPSTATUS vrgEndptSignal
+(
+   ENDPT_STATE   *endptState,
+   int            cnxId,
+   EPSIG          signal,
+   unsigned int   value,
+   int            duration,
+   int            period,
+   int            repetition
+)
+{
+   ENDPOINTDRV_SIGNAL_PARM tSignalParm;
+
+   tSignalParm.cnxId    = cnxId;
+   tSignalParm.state    = endptState;
+   tSignalParm.signal   = signal;
+   tSignalParm.value    = value;
+   tSignalParm.epStatus = EPSTATUS_DRIVER_ERROR;
+   tSignalParm.duration = duration;
+   tSignalParm.period   = period;
+   tSignalParm.repetition = repetition;
+   tSignalParm.size     = sizeof(ENDPOINTDRV_SIGNAL_PARM);
+
+   /* Check if kernel driver is opened */
+
+   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_SIGNAL, &tSignalParm ) != IOCTL_STATUS_SUCCESS )
+   {
+   }
+
+   return( tSignalParm.epStatus );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptGetNumEndpoints
+**
+** PURPOSE:    Retrieve the number of endpoints
+**
+** PARAMETERS: None
+**
+** RETURNS:    Number of endpoints
+**
+*****************************************************************************
+*/
+int vrgEndptGetNumEndpoints( void )
+{
+   ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
+   int retVal = 0;
+   int filehandle = open("/dev/bcmendpoint0", O_RDWR);
+
+   endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
+
+   if ( ioctl( filehandle, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+   {
+   }
+   else
+   {
+      retVal = endpointCount.endpointNum;
+   }
+
+   close(filehandle);
+
+   return( retVal );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptCreate
+**
+** PURPOSE:    This function is used to create an VRG endpoint object.
+**
+** PARAMETERS: physId      (in)  Physical interface.
+**             lineId      (in)  Endpoint line identifier.
+**             endptState  (out) Created endpt object.
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:
+*****************************************************************************
+*/
+EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
+{
+   ENDPOINTDRV_CREATE_PARM tInitParm;
+
+   tInitParm.physId     = physId;
+   tInitParm.lineId     = lineId;
+   tInitParm.endptState = endptState;
+   tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+   tInitParm.size       = sizeof(ENDPOINTDRV_CREATE_PARM);
+
+   /* Check if kernel driver is opened */
+
+   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
+   {
+   }
+
+   return( tInitParm.epStatus );
+}
+
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptDestroy
+**
+** PURPOSE:    This function is used to destroy VRG endpoint object
+**             (previously created with vrgEndptCreate)
+**
+** PARAMETERS: endptState (in) Endpt object to be destroyed.
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:
+*****************************************************************************
+*/
+EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
+{
+   ENDPOINTDRV_DESTROY_PARM tInitParm;
+
+   tInitParm.endptState = endptState;
+   tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+   tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
+
+   /* Check if kernel driver is opened */
+
+   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS )
+   {
+   }
+
+   return( tInitParm.epStatus );
+}
+
+
+
+
+
+
+
+
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
