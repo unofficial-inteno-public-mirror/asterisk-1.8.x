@@ -1152,6 +1152,7 @@ static void *do_monitor(void *data)
 
 static int restart_monitor()
 {
+  ast_log(LOG_ERROR, "BRCM: restart_monitor\n");
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
 		return 0;
@@ -1256,7 +1257,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	char *name = data;
 
 
-	ast_log(LOG_ERROR, "BRCM phone_request 1\n");
+
 
 
 	/* Search for an unowned channel */
@@ -1264,7 +1265,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return NULL;
 	}
-	ast_log(LOG_ERROR, "BRCM phone_request 2\n");
+
 	p = iflist;
 	/* while(p) { */
 	/* 	if (p->mode == MODE_FXS || */
@@ -1284,7 +1285,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	/* 	p = p->next; */
 	/* } */
 	ast_mutex_unlock(&iflock);
-	restart_monitor();
+	/* restart_monitor(); */
 	if (tmp == NULL) {
 		oldformat = format;
 		format &= (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW);
@@ -1294,7 +1295,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 			return NULL;
 		}
 	}
-	ast_log(LOG_ERROR, "BRCM phone_request 3\n");
+
 	return tmp;
 }
 
