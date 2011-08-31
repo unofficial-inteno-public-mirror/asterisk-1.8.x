@@ -294,6 +294,8 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	ast_log(LOG_ERROR, "BRCM phone_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
+	signal_ringing();
+
 	memset(&cid, 0, sizeof(PHONE_CID));
 	if(&tm != NULL) {
 		snprintf(cid.month, sizeof(cid.month), "%02d",(tm.tm_mon + 1));
@@ -854,32 +856,37 @@ static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx,
 	struct ast_channel *tmp;
 	struct phone_codec_data queried_codec;
 
-	ast_log(LOG_ERROR, "BRCM phone_new\n");
+	ast_log(LOG_ERROR, "BRCM phone_new 1\n");
 
-	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Phone/%s", i->dev + 5);
+
+
+	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", i->dev + 5);
+	ast_log(LOG_ERROR, "BRCM phone_new 2\n");
+	return 0;
+
 	if (tmp) {
 		tmp->tech = cur_tech;
-		ast_channel_set_fd(tmp, 0, i->fd);
-		/* XXX Switching formats silently causes kernel panics XXX */
-		if (i->mode == MODE_FXS &&
-		    ioctl(i->fd, PHONE_QUERY_CODEC, &queried_codec) == 0) {
-			if (queried_codec.type == LINEAR16)
-				tmp->nativeformats =
-				tmp->rawreadformat =
-				tmp->rawwriteformat =
-				AST_FORMAT_SLINEAR;
-			else {
-				tmp->nativeformats =
-				tmp->rawreadformat =
-				tmp->rawwriteformat =
-				prefformat & ~AST_FORMAT_SLINEAR;
-			}
-		}
-		else {
-			tmp->nativeformats = prefformat;
-			tmp->rawreadformat = prefformat;
-			tmp->rawwriteformat = prefformat;
-		}
+		/* ast_channel_set_fd(tmp, 0, i->fd); */
+		/* /\* XXX Switching formats silently causes kernel panics XXX *\/ */
+		/* if (i->mode == MODE_FXS && */
+		/*     ioctl(i->fd, PHONE_QUERY_CODEC, &queried_codec) == 0) { */
+		/* 	if (queried_codec.type == LINEAR16) */
+		/* 		tmp->nativeformats = */
+		/* 		tmp->rawreadformat = */
+		/* 		tmp->rawwriteformat = */
+		/* 		AST_FORMAT_SLINEAR; */
+		/* 	else { */
+		/* 		tmp->nativeformats = */
+		/* 		tmp->rawreadformat = */
+		/* 		tmp->rawwriteformat = */
+		/* 		prefformat & ~AST_FORMAT_SLINEAR; */
+		/* 	} */
+		/* } */
+		/* else { */
+		tmp->nativeformats = prefformat;
+		tmp->rawreadformat = prefformat;
+		tmp->rawwriteformat = prefformat;
+		/* } */
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
 			tmp->rings = 1;
@@ -913,6 +920,7 @@ static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx,
 		}
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
+	ast_log(LOG_ERROR, "BRCM phone_new 3\n");
 	return tmp;
 }
 
@@ -1250,7 +1258,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 
 
 	ast_log(LOG_ERROR, "BRCM phone_request 1\n");
-	signal_ringing();	
+
 
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
@@ -1259,21 +1267,23 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	}
 	ast_log(LOG_ERROR, "BRCM phone_request 2\n");
 	p = iflist;
-	while(p) {
-		if (p->mode == MODE_FXS ||
-		    format & (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW)) {
-		    size_t length = strlen(p->dev + 5);
-    		if (strncmp(name, p->dev + 5, length) == 0 &&
-    		    !isalnum(name[length])) {
-    		    if (!p->owner) {
-                     tmp = phone_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
-                     break;
-                } else
-                     *cause = AST_CAUSE_BUSY;
-            }
-		}
-		p = p->next;
-	}
+	/* while(p) { */
+	/* 	if (p->mode == MODE_FXS || */
+	/* 	    format & (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW)) { */
+	/* 	    size_t length = strlen(p->dev + 5); */
+    	/* 	if (strncmp(name, p->dev + 5, length) == 0 && */
+    	/* 	    !isalnum(name[length])) { */
+    	/* 	    if (!p->owner) { */
+	
+	tmp = phone_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+        
+	/*              break; */
+        /*         } else */
+        /*              *cause = AST_CAUSE_BUSY; */
+        /*     } */
+	/* 	} */
+	/* 	p = p->next; */
+	/* } */
 	ast_mutex_unlock(&iflock);
 	restart_monitor();
 	if (tmp == NULL) {
@@ -1364,6 +1374,8 @@ static int __unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
+
+	/* endpt_deinit(); */
 		
 	return 0;
 }
@@ -1487,7 +1499,7 @@ static int load_module(void)
 	/* And start the monitor for the first time */
 	restart_monitor();
 	
-	endpt_init();
+	/* endpt_init(); */
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -1535,7 +1547,7 @@ int fd;
 
 EPSTATUS vrgEndptDriverOpen(void);
 int endpt_init(void);
-
+int endpt_deinit(void);
 
 
 
@@ -1552,6 +1564,13 @@ void ingressPktRecvCb( ENDPT_STATE *endptState, int cnxId, EPPACKET *epPacketp, 
 
 }
 
+
+int endpt_deinit(void)
+{
+  vrgEndptDeinit();
+
+  return 0;
+}
 
 
 int endpt_init(void)
