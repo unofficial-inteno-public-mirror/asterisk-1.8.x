@@ -294,7 +294,7 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	ast_log(LOG_ERROR, "BRCM phone_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
-	signal_ringing();
+
 
 	memset(&cid, 0, sizeof(PHONE_CID));
 	if(&tm != NULL) {
@@ -323,9 +323,11 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
 
-	start = IXJ_PHONE_RING_START(cid);
-	if (start == -1)
-		return -1;
+	/* signal_ringing(); */
+
+	/* start = IXJ_PHONE_RING_START(cid); */
+	/* if (start == -1) */
+	/* 	return -1; */
 	
 	if (p->mode == MODE_FXS) {
 		char *digit = strchr(dest, '/');
@@ -355,27 +357,28 @@ static int phone_hangup(struct ast_channel *ast)
 	}
 	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
-	if (ioctl(p->fd, PHONE_REC_STOP))
-		ast_log(LOG_WARNING, "Failed to stop recording\n");
-	if (ioctl(p->fd, PHONE_PLAY_STOP))
-		ast_log(LOG_WARNING, "Failed to stop playing\n");
-	if (ioctl(p->fd, PHONE_RING_STOP))
-		ast_log(LOG_WARNING, "Failed to stop ringing\n");
-	if (ioctl(p->fd, PHONE_CPT_STOP))
-		ast_log(LOG_WARNING, "Failed to stop sounds\n");
+	/* if (ioctl(p->fd, PHONE_REC_STOP)) */
+	/* 	ast_log(LOG_WARNING, "Failed to stop recording\n"); */
+	/* if (ioctl(p->fd, PHONE_PLAY_STOP)) */
+	/* 	ast_log(LOG_WARNING, "Failed to stop playing\n"); */
+	/* if (ioctl(p->fd, PHONE_RING_STOP)) */
+	/* 	ast_log(LOG_WARNING, "Failed to stop ringing\n"); */
+	/* if (ioctl(p->fd, PHONE_CPT_STOP)) */
+	/* 	ast_log(LOG_WARNING, "Failed to stop sounds\n"); */
 
 	/* If it's an FXO, hang them up */
-	if (p->mode == MODE_FXO) {
-		if (ioctl(p->fd, PHONE_PSTN_SET_STATE, PSTN_ON_HOOK))
-			ast_debug(1, "ioctl(PHONE_PSTN_SET_STATE) failed on %s (%s)\n",ast->name, strerror(errno));
-	}
+	/* if (p->mode == MODE_FXO) { */
+	/* 	if (ioctl(p->fd, PHONE_PSTN_SET_STATE, PSTN_ON_HOOK)) */
+	/* 		ast_debug(1, "ioctl(PHONE_PSTN_SET_STATE) failed on %s (%s)\n",ast->name, strerror(errno)); */
+	/* } */
 
 	/* If they're off hook, give a busy signal */
-	if (ioctl(p->fd, PHONE_HOOKSTATE)) {
-		ast_debug(1, "Got hunghup, giving busy signal\n");
-		ioctl(p->fd, PHONE_BUSY);
-		p->cpt = 1;
-	}
+	/* if (ioctl(p->fd, PHONE_HOOKSTATE)) { */
+	/* 	ast_debug(1, "Got hunghup, giving busy signal\n"); */
+	/* 	ioctl(p->fd, PHONE_BUSY); */
+	/* 	p->cpt = 1; */
+	/* } */
+
 	p->lastformat = -1;
 	p->lastinput = -1;
 	p->ministate = 0;
@@ -387,7 +390,7 @@ static int phone_hangup(struct ast_channel *ast)
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
 	ast_setstate(ast, AST_STATE_DOWN);
-	restart_monitor();
+	/* restart_monitor(); */
 	return 0;
 }
 
