@@ -164,7 +164,7 @@ static int phone_indicate(struct ast_channel *chan, int condition, const void *d
 static const struct ast_channel_tech phone_tech = {
 	.type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_G729A,
+	.capabilities = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW,
 	.requester = phone_request,
 	.send_digit_begin = phone_digit_begin,
 	.send_digit_end = phone_digit_end,
@@ -885,9 +885,9 @@ static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx,
 		/* 	} */
 		/* } */
 		/* else { */
-		tmp->nativeformats = prefformat;
-		tmp->rawreadformat = prefformat;
-		tmp->rawwriteformat = prefformat;
+		tmp->nativeformats = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->rawreadformat = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->rawwriteformat = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
 		/* } */
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -1260,8 +1260,8 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	char *name = data;
 
 
-
-
+	format_t src, dst;
+	
 
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
@@ -1280,6 +1280,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 	
 	tmp = phone_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
         
+
 	/*              break; */
         /*         } else */
         /*              *cause = AST_CAUSE_BUSY; */
