@@ -323,7 +323,7 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
 
-	/* signal_ringing(); */
+	signal_ringing();
 
 	/* start = IXJ_PHONE_RING_START(cid); */
 	/* if (start == -1) */
@@ -355,6 +355,9 @@ static int phone_hangup(struct ast_channel *ast)
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
 	}
+	
+	stop_ringing();
+
 	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
 	/* if (ioctl(p->fd, PHONE_REC_STOP)) */
@@ -1379,7 +1382,7 @@ static int __unload_module(void)
 		return -1;
 	}
 
-	/* endpt_deinit(); */
+	endpt_deinit();
 		
 	return 0;
 }
@@ -1503,7 +1506,7 @@ static int load_module(void)
 	/* And start the monitor for the first time */
 	restart_monitor();
 	
-	/* endpt_init(); */
+	endpt_init();
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -1622,7 +1625,20 @@ int signal_ringing(void)
 
    /* Check whether value is on or off */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
-     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, -1, -1, -1 , -1);
+     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+
+  return 0;
+}
+
+
+int stop_ringing(void)
+{
+  int i;
+
+
+   /* Check whether value is on or off */
+  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 
   return 0;
 }
