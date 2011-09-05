@@ -393,7 +393,7 @@ static int phone_hangup(struct ast_channel *ast)
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
 	ast_setstate(ast, AST_STATE_DOWN);
-	/* restart_monitor(); */
+
 	return 0;
 }
 
@@ -1045,6 +1045,9 @@ static void *do_monitor(void *data)
 	int dotone;
 	/* This thread monitors all the frame relay interfaces which are not yet in use
 	   (and thus do not have a separate thread) indefinitely */
+
+
+
 	while (monitor) {
 		/* Don't let anybody kill us right away.  Nobody should lock the interface list
 		   and wait for the monitor list, but the other way around is okay. */
@@ -1152,37 +1155,49 @@ static void *do_monitor(void *data)
 		/* 	} */
 		/* } */
 		/* ast_mutex_unlock(&iflock); */
+
+	  event_loop();
+
+
+
+
 	}
+
 	return NULL;
 }
 
 static int restart_monitor()
 {
-  ast_log(LOG_ERROR, "BRCM: restart_monitor\n");
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 1\n");
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
 		return 0;
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 2\n");
 	if (ast_mutex_lock(&monlock)) {
 		ast_log(LOG_WARNING, "Unable to lock monitor\n");
 		return -1;
 	}
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 3\n");
 	if (monitor_thread == pthread_self()) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_WARNING, "Cannot kill myself\n");
 		return -1;
 	}
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 4\n");
 	if (monitor_thread != AST_PTHREADT_NULL) {
 		if (ast_mutex_lock(&iflock)) {
 			ast_mutex_unlock(&monlock);
 			ast_log(LOG_WARNING, "Unable to lock the interface list\n");
 			return -1;
 		}
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 5\n");
 		monitor = 0;
 		while (pthread_kill(monitor_thread, SIGURG) == 0)
 			sched_yield();
 		pthread_join(monitor_thread, NULL);
 		ast_mutex_unlock(&iflock);
 	}
+	ast_log(LOG_ERROR, "BRCM: restart_monitor 6\n");
 	monitor = 1;
 	/* Start a new monitor */
 	if (ast_pthread_create_background(&monitor_thread, NULL, do_monitor, NULL) < 0) {
@@ -1190,6 +1205,7 @@ static int restart_monitor()
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
 		return -1;
 	}
+  ast_log(LOG_ERROR, "BRCM: restart_monitor 7\n");
 	ast_mutex_unlock(&monlock);
 	return 0;
 }
@@ -1504,9 +1520,11 @@ static int load_module(void)
 	}
 	ast_config_destroy(cfg);
 	/* And start the monitor for the first time */
+
+	endpt_init();
 	restart_monitor();
 	
-	endpt_init();
+
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -1555,7 +1573,7 @@ int fd;
 EPSTATUS vrgEndptDriverOpen(void);
 int endpt_init(void);
 int endpt_deinit(void);
-
+void event_loop(void);
 
 
 
@@ -1586,7 +1604,12 @@ int endpt_init(void)
   VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
   int rc, i;
   
-  printf("Initializing endpoint interface\n");
+
+  ast_verbose("Initializing endpoint interface\n");
+
+
+
+  ast_verbose("Initializing endpoint interface\n");
 
   vrgEndptDriverOpen();
 
@@ -1622,11 +1645,11 @@ int signal_ringing(void)
 {
   int i;
 
-
+#ifdef LOUD
    /* Check whether value is on or off */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 1, -1, -1 , -1);
-
+#endif
   return 0;
 }
 
@@ -1635,10 +1658,11 @@ int stop_ringing(void)
 {
   int i;
 
-
+#ifdef LOUD
    /* Check whether value is on or off */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+#endif
 
   return 0;
 }
@@ -1970,6 +1994,59 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 
 
 
+void event_loop(void)
+{
+
+   	ENDPOINTDRV_EVENT_PARM tEventParm;
+   	ENDPT_STATE endptState;
+   	int rc = IOCTL_STATUS_FAILURE;
+	int event_cnt = 20;
+
+   	tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
+
+	/* while (event_cnt>0) { */
+      	tEventParm.length = 0;
+
+	/* 	/\* printf("Getting event, %d left before exit\n", event_cnt); *\/ */
+	/* 	event_cnt--; */
+
+      	/* Get the event from the endpoint driver. */
+      	rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
+      	if( rc == IOCTL_STATUS_SUCCESS )
+      	{
+        	endptState.lineId = tEventParm.lineId;
+			switch (tEventParm.event) {
+				case EPEVT_OFFHOOK:
+					ast_verbose("EPEVT_OFFHOOK detected\n");
+					break;
+				case EPEVT_ONHOOK:
+					ast_verbose("EPEVT_ONHOOK detected\n");
+					break;
+
+				case EPEVT_DTMF0: ast_verbose("EPEVT_DTMF0 detected\n"); break;
+				case EPEVT_DTMF1: ast_verbose("EPEVT_DTMF1 detected\n"); break;
+				case EPEVT_DTMF2: ast_verbose("EPEVT_DTMF2 detected\n"); break;
+				case EPEVT_DTMF3: ast_verbose("EPEVT_DTMF3 detected\n"); break;
+				case EPEVT_DTMF4: ast_verbose("EPEVT_DTMF4 detected\n"); break;
+				case EPEVT_DTMF5: ast_verbose("EPEVT_DTMF5 detected\n"); break;
+				case EPEVT_DTMF6: ast_verbose("EPEVT_DTMF6 detected\n"); break;
+				case EPEVT_DTMF7: ast_verbose("EPEVT_DTMF7 detected\n"); break;
+				case EPEVT_DTMF8: ast_verbose("EPEVT_DTMF8 detected\n"); break;
+				case EPEVT_DTMF9: ast_verbose("EPEVT_DTMF9 detected\n"); break;
+				case EPEVT_DTMFS: ast_verbose("EPEVT_DTMFS detected\n"); break;
+				case EPEVT_DTMFH: ast_verbose("EPEVT_DTMFH detected\n"); break;
+				default:
+					break;
+			}
+	}
+
+	/* ast_verbose("event loop\n"); */
+
+
+	
+	
+	
+}
 
 
 
