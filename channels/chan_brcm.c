@@ -1319,6 +1319,8 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
 		}
 	}
 
+	tmp->fds[0] = p->fd;
+
 	return tmp;
 }
 
