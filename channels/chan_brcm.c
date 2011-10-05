@@ -574,45 +574,40 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	p->fr.delivery = ast_tv(0,0);
 
 	/* Try to read some data... */
-	CHECK_BLOCKING(ast);
-	res = read(p->fd, p->buf, PHONE_MAX_BUF);
-	ast_clear_flag(ast, AST_FLAG_BLOCKING);
-	if (res < 0) {
-#if 0
-		if (errno == EAGAIN) {
-			ast_log(LOG_WARNING, "Null frame received\n");
-			p->fr.frametype = AST_FRAME_NULL;
-			p->fr.subclass = 0;
-			return &p->fr;
-		}
-#endif
-		ast_log(LOG_WARNING, "Error reading: %s\n", strerror(errno));
-		return NULL;
-	}
-	p->fr.data.ptr = p->buf;
-	if (p->mode != MODE_FXS)
-	switch(p->buf[0] & 0x3) {
-	case '0':
-	case '1':
-		/* Normal */
-		break;
-	case '2':
-	case '3':
-		/* VAD/CNG, only send two words */
-		res = 4;
-		break;
-	}
+/* 	CHECK_BLOCKING(ast); */
+/* 	res = read(p->fd, p->buf, PHONE_MAX_BUF); */
+/* 	ast_clear_flag(ast, AST_FLAG_BLOCKING); */
+/* 	if (res < 0) { */
+/* #if 0 */
+/* 		if (errno == EAGAIN) { */
+/* 			ast_log(LOG_WARNING, "Null frame received\n"); */
+/* 			p->fr.frametype = AST_FRAME_NULL; */
+/* 			p->fr.subclass = 0; */
+/* 			return &p->fr; */
+/* 		} */
+/* #endif */
+/* 		ast_log(LOG_WARNING, "Error reading: %s\n", strerror(errno)); */
+/* 		return NULL; */
+/* 	} */
+/* 	p->fr.data.ptr = p->buf; */
+/* 	if (p->mode != MODE_FXS) */
+/* 	switch(p->buf[0] & 0x3) { */
+/* 	case '0': */
+/* 	case '1': */
+/* 		/\* Normal *\/ */
+/* 		break; */
+/* 	case '2': */
+/* 	case '3': */
+/* 		/\* VAD/CNG, only send two words *\/ */
+/* 		res = 4; */
+/* 		break; */
+/* 	} */
 	p->fr.samples = 240;
-	p->fr.datalen = res;
-	p->fr.frametype = p->lastinput <= AST_FORMAT_AUDIO_MASK ?
-                          AST_FRAME_VOICE : 
-			  p->lastinput <= AST_FORMAT_PNG ? AST_FRAME_IMAGE 
-			  : AST_FRAME_VIDEO;
-	p->fr.subclass.codec = p->lastinput;
+	p->fr.datalen = 100;
+	p->fr.frametype = AST_FRAME_VOICE;
+	p->fr.subclass.codec = AST_FORMAT_ULAW;
 	p->fr.offset = AST_FRIENDLY_OFFSET;
-	/* Byteswap from little-endian to native-endian */
-	if (p->fr.subclass.codec == AST_FORMAT_SLINEAR)
-		ast_frame_byteswap_le(&p->fr);
+
 	return &p->fr;
 }
 
@@ -667,6 +662,10 @@ static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
 	int expected;
 	int codecset = 0;
 	char tmpbuf[4];
+
+
+	return 0;
+
 	/* Write a frame of (presumably voice) data */
 	if (frame->frametype != AST_FRAME_VOICE && p->mode != MODE_FXS) {
 		if (frame->frametype != AST_FRAME_IMAGE)
@@ -2003,6 +2002,7 @@ void event_loop(void)
    	ENDPT_STATE endptState;
    	int rc = IOCTL_STATUS_FAILURE;
 	int event_cnt = 20;
+	struct phone_pvt *p;
 
    	tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
 
@@ -2012,14 +2012,19 @@ void event_loop(void)
 	/* 	/\* printf("Getting event, %d left before exit\n", event_cnt); *\/ */
 	/* 	event_cnt--; */
 
-      	/* Get the event from the endpoint driver. */
+	p = iflist;
+      	/* Get the xevent from the endpoint driver. */
       	rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
       	if( rc == IOCTL_STATUS_SUCCESS )
       	{
         	endptState.lineId = tEventParm.lineId;
 			switch (tEventParm.event) {
 				case EPEVT_OFFHOOK:
-					ast_verbose("EPEVT_OFFHOOK detected\n");
+				  ast_verbose("EPEVT_OFFHOOK detected\n");
+				  if(p->owner) {
+				     ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+				     ast_setstate(p->owner, AST_STATE_UP);
+				  }
 					break;
 				case EPEVT_ONHOOK:
 					ast_verbose("EPEVT_ONHOOK detected\n");
