@@ -84,6 +84,7 @@ static const char config[] = "brcm.conf";
 
 static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
 uint32_t bogus_data[100];
+int fd;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -561,11 +562,19 @@ static struct ast_frame  *phone_exception(struct ast_channel *ast)
 	return &p->fr;
 }
 
+
+#define PACKET_BUFFER_SIZE 172*50
+
 static struct ast_frame  *phone_read(struct ast_channel *ast)
 {
 	int res;
 	struct phone_pvt *p = ast->tech_pvt;
-	
+	UINT8 data[1024] = {0};	
+	EPPACKET epPacket;
+	ENDPOINTDRV_PACKET_PARM tPacketParm;
+	int rc2 = IOCTL_STATUS_SUCCESS;
+   	int buf_pos_idx = 0;
+   	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
 	/* Some nice norms */
 	p->fr.datalen = 0;
@@ -576,7 +585,55 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 
-	/* Try to read some data... */
+	
+	if (ast->_state = AST_STATE_UP) {
+
+	  /* Connection is established; try to read some data... */
+
+	  /* get rtp packets from endpoint */
+	  epPacket.mediaType   = 0;
+	  epPacket.packetp     = &data[0];
+	  tPacketParm.epPacket = &epPacket;
+	  tPacketParm.cnxId    = 0;
+	  tPacketParm.length   = 0;
+	
+
+	  rc2 = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm);
+	  if( rc2 == IOCTL_STATUS_SUCCESS )
+	    {
+	      ast_verbose("got data from endpt\n");
+
+	      unsigned short sn = (unsigned short)(data[3] | data[2] <<8);
+	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
+
+
+		memcpy(&packet_buffer[buf_pos_idx], &data[0], tPacketParm.length);
+		buf_pos_idx += tPacketParm.length;
+		if (buf_pos_idx >= PACKET_BUFFER_SIZE)
+		  buf_pos_idx = 0;
+		ast_verbose("RTP: %x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x\n\n",data[0],data[1],data[2],data[3],
+			    data[4],data[5],data[6],data[7],data[8],data[9],data[10],data[11]);
+
+		ast_verbose("tPacketParm.length: %d\n\n", tPacketParm.length);
+		p->fr.data.ptr =  (data + 11);
+		p->fr.samples = 160;
+		p->fr.datalen = tPacketParm.length;
+		p->fr.frametype = AST_FRAME_VOICE;
+		p->fr.subclass.codec = AST_FORMAT_ULAW;
+		p->fr.offset = AST_FRIENDLY_OFFSET;
+
+		return &p->fr;
+
+	      }
+
+	    }
+	}
+
+
+
+
+
+
 /* 	CHECK_BLOCKING(ast); */
 /* 	res = read(p->fd, p->buf, PHONE_MAX_BUF); */
 /* 	ast_clear_flag(ast, AST_FLAG_BLOCKING); */
@@ -1571,7 +1628,7 @@ EPSTATUS vrgEndptSignal
 
 ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
-int fd;
+
 
 
 EPSTATUS vrgEndptDriverOpen(void);
