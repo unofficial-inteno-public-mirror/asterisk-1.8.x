@@ -2025,8 +2025,10 @@ void event_loop(void)
 				case EPEVT_OFFHOOK:
 				  ast_verbose("EPEVT_OFFHOOK detected\n");
 				  if(p->owner) {
-				     ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-				     ast_setstate(p->owner, AST_STATE_UP);
+				    create_connection();
+				    ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+				    ast_setstate(p->owner, AST_STATE_UP);
+				     
 				  }
 					break;
 				case EPEVT_ONHOOK:
@@ -2034,6 +2036,7 @@ void event_loop(void)
 					if(p->owner) {
 					  ast_queue_control(p->owner, AST_CONTROL_HANGUP);
 					  ast_setstate(p->owner, AST_STATE_DOWN);
+					  close_connection();
 					}
 					break;
 
@@ -2062,6 +2065,95 @@ void event_loop(void)
 	
 }
 
+
+
+int create_connection() {
+
+  int i;
+  int buf_pos_idx = 0;
+#define PACKET_BUFFER_SIZE 172*50
+  UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+  int tcounter = 0;
+  UINT8 data[1024] = {0};
+  unsigned int *data32;
+
+  for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
+    ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
+    EPZCNXPARAM epCnxParms = {0};
+    //		CODECLIST  codecListLocal = {0};
+    //		CODECLIST  codecListRemote = {0};
+
+    /* Enable sending a receving G711 */
+    epCnxParms.cnxParmList.recv.numCodecs = 3;
+    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMU;
+    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
+    epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+
+    epCnxParms.cnxParmList.send.numCodecs = 3;
+    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMU;
+    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
+    epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+
+    // Set 20ms packetization period
+    epCnxParms.cnxParmList.send.period[0] = 20;
+    epCnxParms.mode  =   EPCNXMODE_SNDRX;
+    //         epCnxParms.cnxParmList.recv = codecListLocal;
+    //         epCnxParms.cnxParmList.send = codecListRemote;
+    //         epCnxParms.period = 20;
+    epCnxParms.echocancel = 1;
+    epCnxParms.silence = 0;
+    //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
+
+
+    tConnectionParm.cnxId      = i;
+    tConnectionParm.cnxParam   = &epCnxParms;
+    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[i];
+    tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+    tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+
+    if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
+      printf("%s: error during ioctl", __FUNCTION__);
+    } else {
+      printf("\n\nConnection %d created\n\n",i);
+    }
+  }
+
+  return 0;
+}
+
+  
+  
+
+
+
+int close_connection(void) {
+  int i;
+
+  /* Close connection */
+  for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
+    ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
+
+    tDelConnectionParm.cnxId      = i;
+    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[i];
+    tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+    tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
+
+    if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
+      {
+	printf("%s: error during ioctl", __FUNCTION__);
+      } else {
+      printf("\n\nConnection %d closed\n\n",i);
+    }
+  }
+
+  return 0;
+}
 
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
