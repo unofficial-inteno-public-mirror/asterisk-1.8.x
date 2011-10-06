@@ -18,9 +18,10 @@
 
 /*! \file
  *
- * \brief Generic Linux Telephony Interface driver
+ * \brief Broadcom Slic endpoint driver
  *
- * \author Mark Spencer <markster@digium.com>
+ * \author Benjamin Larsson <benjamin@southpole.se>
+ * \author Jonas Höglund <jonash@southpole.se>
  * 
  * \ingroup channel_drivers
  */
