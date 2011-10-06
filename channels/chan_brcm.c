@@ -82,6 +82,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
+static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
 uint32_t bogus_data[100];
 
 /* Default context for dialtone mode */
@@ -569,7 +570,7 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	/* Some nice norms */
 	p->fr.datalen = 0;
 	p->fr.samples = 0;
-	p->fr.data.ptr =  bogus_data;
+	p->fr.data.ptr =  digital_milliwatt;
 	p->fr.src = "Phone";
 	p->fr.offset = 0;
 	p->fr.mallocd=0;
@@ -604,8 +605,8 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 /* 		res = 4; */
 /* 		break; */
 /* 	} */
-	p->fr.samples = 240;
-	p->fr.datalen = 100;
+	p->fr.samples = 8;
+	p->fr.datalen = 8;
 	p->fr.frametype = AST_FRAME_VOICE;
 	p->fr.subclass.codec = AST_FORMAT_ULAW;
 	p->fr.offset = AST_FRIENDLY_OFFSET;
@@ -2030,6 +2031,10 @@ void event_loop(void)
 					break;
 				case EPEVT_ONHOOK:
 					ast_verbose("EPEVT_ONHOOK detected\n");
+					if(p->owner) {
+					  ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+					  ast_setstate(p->owner, AST_STATE_DOWN);
+					}
 					break;
 
 				case EPEVT_DTMF0: ast_verbose("EPEVT_DTMF0 detected\n"); break;
