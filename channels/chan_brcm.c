@@ -82,6 +82,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
+uint32_t bogus_data[100];
+
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
 
@@ -508,7 +510,7 @@ static struct ast_frame  *phone_exception(struct ast_channel *ast)
 	/* Some nice norms */
 	p->fr.datalen = 0;
 	p->fr.samples = 0;
-	p->fr.data.ptr =  NULL;
+	p->fr.data.ptr =  bogus_data;
 	p->fr.src = "Phone";
 	p->fr.offset = 0;
 	p->fr.mallocd=0;
@@ -567,7 +569,7 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	/* Some nice norms */
 	p->fr.datalen = 0;
 	p->fr.samples = 0;
-	p->fr.data.ptr =  NULL;
+	p->fr.data.ptr =  bogus_data;
 	p->fr.src = "Phone";
 	p->fr.offset = 0;
 	p->fr.mallocd=0;
