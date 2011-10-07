@@ -59,23 +59,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
-
-#ifdef QTI_PHONEJACK_TJ_PCI	/* check for the newer quicknet driver v.3.1.0 which has this symbol */
-#define QNDRV_VER 310
-#else
-#define QNDRV_VER 100
-#endif
-
-#if QNDRV_VER > 100
-#ifdef __linux__
-#define IXJ_PHONE_RING_START(x)	ioctl(p->fd, PHONE_RING_START, &x);
-#else /* FreeBSD and others */
-#define IXJ_PHONE_RING_START(x)	ioctl(p->fd, PHONE_RING_START, x);
-#endif /* __linux__ */
-#else	/* older driver */
-#define IXJ_PHONE_RING_START(x)	ioctl(p->fd, PHONE_RING_START, &x);
-#endif
-
 #define DEFAULT_CALLER_ID "Unknown"
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
