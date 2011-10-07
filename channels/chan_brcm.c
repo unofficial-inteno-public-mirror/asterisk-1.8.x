@@ -1252,24 +1252,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	}
 
 	p = iflist;
-	/* while(p) { */
-	/* 	if (p->mode == MODE_FXS || */
-	/* 	    format & (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW)) { */
-	/* 	    size_t length = strlen(p->dev + 5); */
-    	/* 	if (strncmp(name, p->dev + 5, length) == 0 && */
-    	/* 	    !isalnum(name[length])) { */
-    	/* 	    if (!p->owner) { */
-	
 	tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
-        
-
-	/*              break; */
-        /*         } else */
-        /*              *cause = AST_CAUSE_BUSY; */
-        /*     } */
-	/* 	} */
-	/* 	p = p->next; */
-	/* } */
 	ast_mutex_unlock(&iflock);
 	/* restart_monitor(); */
 	if (tmp == NULL) {
