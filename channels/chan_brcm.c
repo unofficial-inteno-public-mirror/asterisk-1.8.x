@@ -1083,29 +1083,76 @@ enum channel_state {
 
 static void *do_monitor(void *data)
 {
-	struct pollfd *fds = NULL;
-	int nfds = 0, inuse_fds = 0, res;
-	struct phone_pvt *i;
-	int tonepos = 0;
-	/* The tone we're playing this round */
-	struct timeval tv = { 0, 0 };
-	int dotone;
-	/* This thread monitors all the frame relay interfaces which are not yet in use
-	   (and thus do not have a separate thread) indefinitely */
+    struct pollfd *fds = NULL;
+    int nfds = 0, inuse_fds = 0, res;
+    struct phone_pvt *i;
+    int tonepos = 0;
+    /* The tone we're playing this round */
+    struct timeval tv = { 0, 0 };
+    int dotone;
+    /* This thread monitors all the frame relay interfaces which are not yet in use
+       (and thus do not have a separate thread) indefinitely */
+    ENDPOINTDRV_EVENT_PARM tEventParm;
+    ENDPT_STATE endptState;
+    int rc = IOCTL_STATUS_FAILURE;
+    int event_cnt = 20;
+    struct phone_pvt *p;
 
+    while (monitor) {
 
+        tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
+        /* while (event_cnt>0) { */
+        tEventParm.length = 0;
 
-	while (monitor) {
+        /*  /\* printf("Getting event, %d left before exit\n", event_cnt); *\/ */
+        /*  event_cnt--; */
 
-	  event_loop();
+        p = iflist;
+        /* Get the xevent from the endpoint driver. */
+        rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
+        if( rc == IOCTL_STATUS_SUCCESS )
+        {
+            endptState.lineId = tEventParm.lineId;
+            switch (tEventParm.event) {
+                case EPEVT_OFFHOOK:
+                  ast_verbose("EPEVT_OFFHOOK detected\n");
+                  if(p->owner) {
+                    create_connection();
+                    ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+                    ast_setstate(p->owner, AST_STATE_UP);
 
+                }
+                    break;
+                case EPEVT_ONHOOK:
+                    ast_verbose("EPEVT_ONHOOK detected\n");
+                    if(p->owner) {
+                      ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+                      ast_setstate(p->owner, AST_STATE_DOWN);
+                      close_connection();
+                    }
+                    break;
 
+                case EPEVT_DTMF0: ast_verbose("EPEVT_DTMF0 detected\n"); break;
+                case EPEVT_DTMF1: ast_verbose("EPEVT_DTMF1 detected\n"); break;
+                case EPEVT_DTMF2: ast_verbose("EPEVT_DTMF2 detected\n"); break;
+                case EPEVT_DTMF3: ast_verbose("EPEVT_DTMF3 detected\n"); break;
+                case EPEVT_DTMF4: ast_verbose("EPEVT_DTMF4 detected\n"); break;
+                case EPEVT_DTMF5: ast_verbose("EPEVT_DTMF5 detected\n"); break;
+                case EPEVT_DTMF6: ast_verbose("EPEVT_DTMF6 detected\n"); break;
+                case EPEVT_DTMF7: ast_verbose("EPEVT_DTMF7 detected\n"); break;
+                case EPEVT_DTMF8: ast_verbose("EPEVT_DTMF8 detected\n"); break;
+                case EPEVT_DTMF9: ast_verbose("EPEVT_DTMF9 detected\n"); break;
+                case EPEVT_DTMFS: ast_verbose("EPEVT_DTMFS detected\n"); break;
+                case EPEVT_DTMFH: ast_verbose("EPEVT_DTMFH detected\n"); break;
+                default:
+                    break;
+            }
+        }
+    }
 
-
-	}
-
-	return NULL;
+    return NULL;
 }
+
 
 static int restart_monitor()
 {
@@ -1931,80 +1978,6 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 
    return( tInitParm.epStatus );
 }
-
-
-
-
-
-
-void event_loop(void)
-{
-
-   	ENDPOINTDRV_EVENT_PARM tEventParm;
-   	ENDPT_STATE endptState;
-   	int rc = IOCTL_STATUS_FAILURE;
-	int event_cnt = 20;
-	struct phone_pvt *p;
-
-   	tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
-
-	/* while (event_cnt>0) { */
-      	tEventParm.length = 0;
-
-	/* 	/\* printf("Getting event, %d left before exit\n", event_cnt); *\/ */
-	/* 	event_cnt--; */
-
-	p = iflist;
-      	/* Get the xevent from the endpoint driver. */
-      	rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
-      	if( rc == IOCTL_STATUS_SUCCESS )
-      	{
-        	endptState.lineId = tEventParm.lineId;
-			switch (tEventParm.event) {
-				case EPEVT_OFFHOOK:
-				  ast_verbose("EPEVT_OFFHOOK detected\n");
-				  if(p->owner) {
-				    create_connection();
-				    ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-				    ast_setstate(p->owner, AST_STATE_UP);
-				     
-				  }
-					break;
-				case EPEVT_ONHOOK:
-					ast_verbose("EPEVT_ONHOOK detected\n");
-					if(p->owner) {
-					  ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-					  ast_setstate(p->owner, AST_STATE_DOWN);
-					  close_connection();
-					}
-					break;
-
-				case EPEVT_DTMF0: ast_verbose("EPEVT_DTMF0 detected\n"); break;
-				case EPEVT_DTMF1: ast_verbose("EPEVT_DTMF1 detected\n"); break;
-				case EPEVT_DTMF2: ast_verbose("EPEVT_DTMF2 detected\n"); break;
-				case EPEVT_DTMF3: ast_verbose("EPEVT_DTMF3 detected\n"); break;
-				case EPEVT_DTMF4: ast_verbose("EPEVT_DTMF4 detected\n"); break;
-				case EPEVT_DTMF5: ast_verbose("EPEVT_DTMF5 detected\n"); break;
-				case EPEVT_DTMF6: ast_verbose("EPEVT_DTMF6 detected\n"); break;
-				case EPEVT_DTMF7: ast_verbose("EPEVT_DTMF7 detected\n"); break;
-				case EPEVT_DTMF8: ast_verbose("EPEVT_DTMF8 detected\n"); break;
-				case EPEVT_DTMF9: ast_verbose("EPEVT_DTMF9 detected\n"); break;
-				case EPEVT_DTMFS: ast_verbose("EPEVT_DTMFS detected\n"); break;
-				case EPEVT_DTMFH: ast_verbose("EPEVT_DTMFH detected\n"); break;
-				default:
-					break;
-			}
-	}
-
-	/* ast_verbose("event loop\n"); */
-
-
-	
-	
-	
-}
-
-
 
 int create_connection() {
 
