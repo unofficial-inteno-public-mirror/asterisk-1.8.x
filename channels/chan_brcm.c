@@ -70,6 +70,63 @@ static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e
 uint32_t bogus_data[100];
 int fd;
 
+
+/* rtp stuff */
+int sequence_number = 0;
+int time_stamp = 3200;
+int bflag = 0;
+int ssrc = 0;
+#define NOT_INITIALIZED -1
+#define EPSTATUS_DRIVER_ERROR -1
+#define MAX_NUM_LINEID 2
+void generate_rtp_packet(UINT8 *packet_buf);
+
+
+#define NOT_INITIALIZED -1
+#define EPSTATUS_DRIVER_ERROR -1
+#define MAX_NUM_LINEID 2
+
+typedef void (*rtpDropPacketResetCallback)(void);
+
+
+typedef struct
+{
+   endptEventCallback         pEventCallBack;
+   endptPacketCallback        pPacketCallBack;
+   rtpDropPacketResetCallback pRtpDropPacketResetCallBack;
+   int                        fileHandle;
+   int                        logFileHandle;
+
+} ENDPTUSER_CTRLBLOCK;
+
+
+
+EPSTATUS vrgEndptSignal
+(
+   ENDPT_STATE   *endptState,
+   int            cnxId,
+   EPSIG          signal,
+   unsigned int   value,
+   int            duration,
+   int            period,
+   int            repetition
+ );
+
+
+
+
+
+EPSTATUS vrgEndptDriverOpen(void);
+int endpt_init(void);
+int endpt_deinit(void);
+void event_loop(void);
+
+
+ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
+VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
+
+
+
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
 
@@ -636,6 +693,49 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	int expected;
 	int codecset = 0;
 	char tmpbuf[4];
+	EPPACKET epPacket_send;
+	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
+   	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+   	int buf_pos_idx = 0;
+	int tcounter = 0;
+
+
+
+	if (ast->_state = AST_STATE_UP) {
+
+
+	  /* ast_verbose("ast_frame\n"); */
+	  /* ast_verbose("datalen: %d\n", frame->datalen); */
+	  /* ast_verbose("samples: %d\n", frame->samples); */
+	  /* ast_verbose("mallocd: %d\n", frame->mallocd); */
+	  /* ast_verbose("data: %p\n", frame->data.ptr); */
+
+	  /* send rtp packet to the endpoint */
+	  epPacket_send.mediaType   = 0;
+	  /* epPacket_send.packetp     = frame->data.ptr; */
+	  epPacket_send.packetp     = packet_buffer;
+
+	  generate_rtp_packet(epPacket_send.packetp);
+	  /* ast_verbose("generated rtp_packet\n"); */
+
+	  tPacketParm_send.cnxId       = 0;
+	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
+	  tPacketParm_send.length      = 172;
+	  tPacketParm_send.bufDesc     = (int)&epPacket_send;
+	  tPacketParm_send.epPacket    = &epPacket_send;
+	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
+	  tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+
+
+	  if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS ) {
+	    ast_verbose("%s: error during ioctl", __FUNCTION__);
+	  } else {
+	    /* ast_verbose("Sent packet\n"); */
+	  }
+
+
+
+	}
 
 
 	return 0;
@@ -1482,46 +1582,6 @@ static int load_module(void)
 
 
 
-#define NOT_INITIALIZED -1
-#define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 2
-
-typedef void (*rtpDropPacketResetCallback)(void);
-
-
-typedef struct
-{
-   endptEventCallback         pEventCallBack;
-   endptPacketCallback        pPacketCallBack;
-   rtpDropPacketResetCallback pRtpDropPacketResetCallBack;
-   int                        fileHandle;
-   int                        logFileHandle;
-
-} ENDPTUSER_CTRLBLOCK;
-
-
-
-EPSTATUS vrgEndptSignal
-(
-   ENDPT_STATE   *endptState,
-   int            cnxId,
-   EPSIG          signal,
-   unsigned int   value,
-   int            duration,
-   int            period,
-   int            repetition
- );
-
-
-ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
-VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
-
-
-
-EPSTATUS vrgEndptDriverOpen(void);
-int endpt_init(void);
-int endpt_deinit(void);
-void event_loop(void);
 
 
 
@@ -1941,11 +2001,14 @@ int create_connection() {
 
   int i;
   int buf_pos_idx = 0;
-#define PACKET_BUFFER_SIZE 172*50
+#define PACKET_BUFFER_SIZE 172
   UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
   int tcounter = 0;
   UINT8 data[1024] = {0};
   unsigned int *data32;
+
+  /* generate random nr for rtp header */
+  ssrc = rand();
 
   for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
     ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
@@ -2024,6 +2087,41 @@ int close_connection(void) {
 
   return 0;
 }
+
+
+
+
+
+/* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
+void generate_rtp_packet(UINT8 *packet_buf) {
+	int i,j;
+	int bidx = 0;
+	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
+	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
+
+	//Generate the rtp header, packet is zero from the start, that fact is used
+	packet_buf[0] |= 0x80; //Set version 2 of header
+	//Padding 0
+	//Extension 0
+	//CSRC count 0
+	//Marker 0
+	packet_buf[1] = 0; //Payload type PCMU = 0, FIXME use table to lookup value
+	packet_buf16[1] = sequence_number++; //Add sequence number
+	if (sequence_number > 0xFFFF) sequence_number=0;
+	packet_buf32[1] = time_stamp;	//Add timestamp
+	time_stamp += 160;
+	packet_buf32[2] = ssrc;	//Random SSRC
+
+	//Add the payload
+	bidx = 12;
+	for(i=0 ; i<20 ; i++) {
+		for(j=0 ; j<8 ; j++) {
+			packet_buf[12 + i*8+ j] = digital_milliwatt[j];
+		}
+	}
+
+}
+
 
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
