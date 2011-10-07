@@ -657,8 +657,7 @@ static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frle
 static int brcm_send_text(struct ast_channel *ast, const char *text)
 {
     int length = strlen(text);
-    return brcm_write_buf(ast->tech_pvt, text, length, length, 0) == 
-           length ? 0 : -1;
+    return brcm_write_buf(ast->tech_pvt, text, length, length, 0) == length ? 0 : -1;
 }
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
