@@ -82,7 +82,7 @@ static int silencesupression = 0;
 
 static format_t prefformat = AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW;
 
-/* Protect the interface list (of phone_pvt's) */
+/* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
 
 /* Protect the monitoring thread, so only one process can kill or start it, and not
@@ -107,7 +107,7 @@ static int restart_monitor(void);
 #define MODE_FXS        4
 #define MODE_SIGMA      5
 
-static struct phone_pvt {
+static struct brcm_pvt {
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int mode;						/* Is this in the  */
@@ -115,7 +115,7 @@ static struct phone_pvt {
 	format_t lastinput;             /* Last input format */
 	int ministate;					/* Miniature state, for dialtone mode */
 	char dev[256];					/* Device name */
-	struct phone_pvt *next;			/* Next channel in list */
+	struct brcm_pvt *next;			/* Next channel in list */
 	struct ast_frame fr;			/* Frame */
 	char offset[AST_FRIENDLY_OFFSET];
 	char buf[PHONE_MAX_BUF];					/* Static buffer for reading frames */
@@ -136,59 +136,59 @@ static struct phone_pvt {
 static char cid_num[AST_MAX_EXTENSION];
 static char cid_name[AST_MAX_EXTENSION];
 
-static struct ast_channel *phone_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
-static int phone_digit_begin(struct ast_channel *ast, char digit);
-static int phone_digit_end(struct ast_channel *ast, char digit, unsigned int duration);
-static int phone_call(struct ast_channel *ast, char *dest, int timeout);
-static int phone_hangup(struct ast_channel *ast);
-static int phone_answer(struct ast_channel *ast);
-static struct ast_frame *phone_read(struct ast_channel *ast);
-static int phone_write(struct ast_channel *ast, struct ast_frame *frame);
-static struct ast_frame *phone_exception(struct ast_channel *ast);
-static int phone_send_text(struct ast_channel *ast, const char *text);
-static int phone_fixup(struct ast_channel *old, struct ast_channel *new);
-static int phone_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
+static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
+static int brcm_digit_begin(struct ast_channel *ast, char digit);
+static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int duration);
+static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
+static int brcm_hangup(struct ast_channel *ast);
+static int brcm_answer(struct ast_channel *ast);
+static struct ast_frame *brcm_read(struct ast_channel *ast);
+static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
+static struct ast_frame *brcm_exception(struct ast_channel *ast);
+static int brcm_send_text(struct ast_channel *ast, const char *text);
+static int brcm_fixup(struct ast_channel *old, struct ast_channel *new);
+static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
 
-static const struct ast_channel_tech phone_tech = {
+static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW,
-	.requester = phone_request,
-	.send_digit_begin = phone_digit_begin,
-	.send_digit_end = phone_digit_end,
-	.call = phone_call,
-	.hangup = phone_hangup,
-	.answer = phone_answer,
-	.read = phone_read,
-	.write = phone_write,
-	.exception = phone_exception,
-	.indicate = phone_indicate,
-	.fixup = phone_fixup
+	.requester = brcm_request,
+	.send_digit_begin = brcm_digit_begin,
+	.send_digit_end = brcm_digit_end,
+	.call = brcm_call,
+	.hangup = brcm_hangup,
+	.answer = brcm_answer,
+	.read = brcm_read,
+	.write = brcm_write,
+	.exception = brcm_exception,
+	.indicate = brcm_indicate,
+	.fixup = brcm_fixup
 };
 
-static struct ast_channel_tech phone_tech_fxs = {
+static struct ast_channel_tech brcm_tech_fxs = {
 	.type = "BRCM",
 	.description = tdesc,
-	.requester = phone_request,
-	.send_digit_begin = phone_digit_begin,
-	.send_digit_end = phone_digit_end,
-	.call = phone_call,
-	.hangup = phone_hangup,
-	.answer = phone_answer,
-	.read = phone_read,
-	.write = phone_write,
-	.exception = phone_exception,
-	.write_video = phone_write,
-	.send_text = phone_send_text,
-	.indicate = phone_indicate,
-	.fixup = phone_fixup
+	.requester = brcm_request,
+	.send_digit_begin = brcm_digit_begin,
+	.send_digit_end = brcm_digit_end,
+	.call = brcm_call,
+	.hangup = brcm_hangup,
+	.answer = brcm_answer,
+	.read = brcm_read,
+	.write = brcm_write,
+	.exception = brcm_exception,
+	.write_video = brcm_write,
+	.send_text = brcm_send_text,
+	.indicate = brcm_indicate,
+	.fixup = brcm_fixup
 };
 
 static struct ast_channel_tech *cur_tech;
 
-static int phone_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen)
+static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen)
 {
-	struct phone_pvt *p = chan->tech_pvt;
+	struct brcm_pvt *p = chan->tech_pvt;
 	int res=-1;
 	ast_debug(1, "Requested indication %d on channel %s\n", condition, chan->name);
 	switch(condition) {
@@ -214,23 +214,23 @@ static int phone_indicate(struct ast_channel *chan, int condition, const void *d
 	return res;
 }
 
-static int phone_fixup(struct ast_channel *old, struct ast_channel *new)
+static int brcm_fixup(struct ast_channel *old, struct ast_channel *new)
 {
-	struct phone_pvt *pvt = old->tech_pvt;
+	struct brcm_pvt *pvt = old->tech_pvt;
 	if (pvt && pvt->owner == old)
 		pvt->owner = new;
 	return 0;
 }
 
-static int phone_digit_begin(struct ast_channel *chan, char digit)
+static int brcm_digit_begin(struct ast_channel *chan, char digit)
 {
 	/* XXX Modify this callback to let Asterisk support controlling the length of DTMF */
 	return 0;
 }
 
-static int phone_digit_end(struct ast_channel *ast, char digit, unsigned int duration)
+static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 	int outdigit;
 	p = ast->tech_pvt;
 	ast_debug(1, "Dialed %c\n", digit);
@@ -270,16 +270,16 @@ static int phone_digit_end(struct ast_channel *ast, char digit, unsigned int dur
 	return 0;
 }
 
-static int phone_call(struct ast_channel *ast, char *dest, int timeout)
+static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 
 	PHONE_CID cid;
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
 	int start;
 
-	ast_log(LOG_ERROR, "BRCM phone_call\n");
+	ast_log(LOG_ERROR, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
 
@@ -306,7 +306,7 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	p = ast->tech_pvt;
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
-		ast_log(LOG_WARNING, "phone_call called on %s, neither down nor reserved\n", ast->name);
+		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
 		return -1;
 	}
 	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
@@ -323,7 +323,7 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 		{
 		  digit++;
 		  while (*digit)
-		    phone_digit_end(ast, *digit++, 0);
+		    brcm_digit_end(ast, *digit++, 0);
 		}
 	}
  
@@ -332,13 +332,13 @@ static int phone_call(struct ast_channel *ast, char *dest, int timeout)
 	return 0;
 }
 
-static int phone_hangup(struct ast_channel *ast)
+static int brcm_hangup(struct ast_channel *ast)
 {
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 	p = ast->tech_pvt;
 
-	ast_log(LOG_ERROR, "BRCM phone_hangup\n");
-	ast_debug(1, "phone_hangup(%s)\n", ast->name);
+	ast_log(LOG_ERROR, "BRCM brcm_hangup\n");
+	ast_debug(1, "brcm_hangup(%s)\n", ast->name);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
@@ -376,7 +376,7 @@ static int phone_hangup(struct ast_channel *ast)
 	p->obuflen = 0;
 	p->dialtone = 0;
 	memset(p->ext, 0, sizeof(p->ext));
-	((struct phone_pvt *)(ast->tech_pvt))->owner = NULL;
+	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
@@ -385,9 +385,9 @@ static int phone_hangup(struct ast_channel *ast)
 	return 0;
 }
 
-static int phone_setup(struct ast_channel *ast)
+static int brcm_setup(struct ast_channel *ast)
 {
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 	p = ast->tech_pvt;
 	ioctl(p->fd, PHONE_CPT_STOP);
 	/* Nothing to answering really, just start recording */
@@ -452,11 +452,11 @@ static int phone_setup(struct ast_channel *ast)
 	return 0;
 }
 
-static int phone_answer(struct ast_channel *ast)
+static int brcm_answer(struct ast_channel *ast)
 {
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 
-	ast_log(LOG_ERROR, "BRCM phone_answer\n");
+	ast_log(LOG_ERROR, "BRCM brcm_answer\n");
 	p = ast->tech_pvt;
 	/* In case it's a LineJack, take it off hook */
 	if (p->mode == MODE_FXO) {
@@ -465,8 +465,8 @@ static int phone_answer(struct ast_channel *ast)
 		else
 			ast_debug(1, "Took linejack off hook\n");
 	}
-	phone_setup(ast);
-	ast_debug(1, "phone_answer(%s)\n", ast->name);
+	brcm_setup(ast);
+	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
 	ast_setstate(ast, AST_STATE_UP);
 	return 0;
@@ -486,11 +486,11 @@ static char phone_2digit(char c)
 }
 #endif
 
-static struct ast_frame  *phone_exception(struct ast_channel *ast)
+static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 {
 	int res;
 	union telephony_exception phonee;
-	struct phone_pvt *p = ast->tech_pvt;
+	struct brcm_pvt *p = ast->tech_pvt;
 	char digit;
 
 	/* Some nice norms */
@@ -504,7 +504,7 @@ static struct ast_frame  *phone_exception(struct ast_channel *ast)
 	
 	phonee.bytes = ioctl(p->fd, PHONE_EXCEPTION);
 	if (phonee.bits.dtmf_ready)  {
-		ast_debug(1, "phone_exception(): DTMF\n");
+		ast_debug(1, "brcm_exception(): DTMF\n");
 	
 		/* We've got a digit -- Just handle this nicely and easily */
 		digit =  ioctl(p->fd, PHONE_GET_DTMF_ASCII);
@@ -524,7 +524,7 @@ static struct ast_frame  *phone_exception(struct ast_channel *ast)
 				/* They've picked up the phone */
 				p->fr.frametype = AST_FRAME_CONTROL;
 				p->fr.subclass.integer = AST_CONTROL_ANSWER;
-				phone_setup(ast);
+				brcm_setup(ast);
 				ast_setstate(ast, AST_STATE_UP);
 				return &p->fr;
 			}  else 
@@ -549,10 +549,10 @@ static struct ast_frame  *phone_exception(struct ast_channel *ast)
 
 #define PACKET_BUFFER_SIZE 172*50
 
-static struct ast_frame  *phone_read(struct ast_channel *ast)
+static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
 	int res;
-	struct phone_pvt *p = ast->tech_pvt;
+	struct brcm_pvt *p = ast->tech_pvt;
 	UINT8 data[1024] = {0};	
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
@@ -620,7 +620,7 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	return &p->fr;
 }
 
-static int phone_write_buf(struct phone_pvt *p, const char *buf, int len, int frlen, int swap)
+static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
 {
 	int res;
 	/* Store as much of the buffer as we can, then write fixed frames */
@@ -654,16 +654,16 @@ static int phone_write_buf(struct phone_pvt *p, const char *buf, int len, int fr
 	return len;
 }
 
-static int phone_send_text(struct ast_channel *ast, const char *text)
+static int brcm_send_text(struct ast_channel *ast, const char *text)
 {
     int length = strlen(text);
-    return phone_write_buf(ast->tech_pvt, text, length, length, 0) == 
+    return brcm_write_buf(ast->tech_pvt, text, length, length, 0) == 
            length ? 0 : -1;
 }
 
-static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
+static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
-	struct phone_pvt *p = ast->tech_pvt;
+	struct brcm_pvt *p = ast->tech_pvt;
 	int res;
 	int maxfr=0;
 	char *pos;
@@ -691,7 +691,7 @@ static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
 	/* If we're not in up mode, go into up mode now */
 	if (ast->_state != AST_STATE_UP) {
 		ast_setstate(ast, AST_STATE_UP);
-		phone_setup(ast);
+		brcm_setup(ast);
 	}
 #else
 	if (ast->_state != AST_STATE_UP) {
@@ -831,7 +831,7 @@ static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
 			if (p->silencesupression) {
 				memcpy(tmpbuf, frame->data.ptr, 4);
 				expected = 24;
-				res = phone_write_buf(p, tmpbuf, expected, maxfr, 0);
+				res = brcm_write_buf(p, tmpbuf, expected, maxfr, 0);
 			}
 			res = 4;
 			expected=4;
@@ -841,7 +841,7 @@ static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
 			if (frame->subclass.codec == AST_FORMAT_SLINEAR)
 				swap = 1; /* Swap big-endian samples to little-endian as we copy */
 #endif
-			res = phone_write_buf(p, pos, expected, maxfr, swap);
+			res = brcm_write_buf(p, pos, expected, maxfr, swap);
 		}
 		if (res != expected) {
 			if ((errno != EAGAIN) && (errno != EINTR)) {
@@ -865,17 +865,17 @@ static int phone_write(struct ast_channel *ast, struct ast_frame *frame)
 	return 0;
 }
 
-static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx, const char *linkedid)
+static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
 {
 	struct ast_channel *tmp;
 	struct phone_codec_data queried_codec;
 
-	ast_log(LOG_ERROR, "BRCM phone_new 1\n");
+	ast_log(LOG_ERROR, "BRCM brcm_new 1\n");
 
 
 
 	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", i->dev + 5);
-	ast_log(LOG_ERROR, "BRCM phone_new 2\n");
+	ast_log(LOG_ERROR, "BRCM brcm_new 2\n");
 
 	if (tmp) {
 		tmp->tech = cur_tech;
@@ -933,11 +933,11 @@ static struct ast_channel *phone_new(struct phone_pvt *i, int state, char *cntx,
 		}
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
-	ast_log(LOG_ERROR, "BRCM phone_new 3\n");
+	ast_log(LOG_ERROR, "BRCM brcm_new 3\n");
 	return tmp;
 }
 
-static void phone_mini_packet(struct phone_pvt *i)
+static void brcm_mini_packet(struct brcm_pvt *i)
 {
 	int res;
 	char buf[1024];
@@ -949,7 +949,7 @@ static void phone_mini_packet(struct phone_pvt *i)
 	}
 }
 
-static void phone_check_exception(struct phone_pvt *i)
+static void brcm_check_exception(struct brcm_pvt *i)
 {
 	int offhook=0;
 	char digit[2] = {0 , 0};
@@ -973,14 +973,14 @@ static void phone_check_exception(struct phone_pvt *i)
 			     !phonee.bits.dtmf_ready) &&
 			    ast_exists_extension(NULL, i->context, i->ext, 1, i->cid_num)) {
 				/* It's a valid extension in its context, get moving! */
-				phone_new(i, AST_STATE_RING, i->context, NULL);
+				brcm_new(i, AST_STATE_RING, i->context, NULL);
 				/* No need to restart monitor, we are the monitor */
 			} else if (!ast_canmatch_extension(NULL, i->context, i->ext, 1, i->cid_num)) {
 				/* There is nothing in the specified extension that can match anymore.
 				   Try the default */
 				if (ast_exists_extension(NULL, "default", i->ext, 1, i->cid_num)) {
 					/* Check the default, too... */
-					phone_new(i, AST_STATE_RING, "default", NULL);
+					brcm_new(i, AST_STATE_RING, "default", NULL);
 					/* XXX This should probably be justified better XXX */
 				}  else if (!ast_canmatch_extension(NULL, "default", i->ext, 1, i->cid_num)) {
 					/* It's not a valid extension, give a busy signal */
@@ -998,7 +998,7 @@ static void phone_check_exception(struct phone_pvt *i)
 		offhook = ioctl(i->fd, PHONE_HOOKSTATE);
 		if (offhook) {
 			if (i->mode == MODE_IMMEDIATE) {
-				phone_new(i, AST_STATE_RING, i->context, NULL);
+				brcm_new(i, AST_STATE_RING, i->context, NULL);
 			} else if (i->mode == MODE_DIALTONE) {
 				ast_module_ref(ast_module_info->self);
 				/* Reset the extension */
@@ -1034,7 +1034,7 @@ static void phone_check_exception(struct phone_pvt *i)
 	}
 	if (phonee.bits.pstn_ring) {
 		ast_verbose("Unit is ringing\n");
-		phone_new(i, AST_STATE_RING, i->context, NULL);
+		brcm_new(i, AST_STATE_RING, i->context, NULL);
 	}
 	if (phonee.bits.caller_id)
 		ast_verbose("We have caller ID\n");
@@ -1078,8 +1078,8 @@ static void *do_monitor(void *data)
     ENDPT_STATE endptState;
     int rc = IOCTL_STATUS_FAILURE;
     int event_cnt = 20;
-    struct phone_pvt *p;
-    struct phone_pvt *i = iflist;
+    struct brcm_pvt *p;
+    struct brcm_pvt *i = iflist;
     int channel_state = ONHOOK;
     char dtmfbuf[300];
     int dtmf_len = 0;
@@ -1155,7 +1155,7 @@ static void *do_monitor(void *data)
                 dtmfbuf[dtmf_len] = '\0';
 
                 /* Start the pbx */
-                phone_new(i, AST_STATE_RING, i->context, NULL);
+                brcm_new(i, AST_STATE_RING, i->context, NULL);
             }
         }
     }
@@ -1208,10 +1208,10 @@ static int restart_monitor()
 	return 0;
 }
 
-static struct phone_pvt *mkif(const char *iface, int mode, int txgain, int rxgain)
+static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain)
 {
-	/* Make a phone_pvt structure for this interface */
-	struct phone_pvt *tmp;
+	/* Make a brcm_pvt structure for this interface */
+	struct brcm_pvt *tmp;
 	int flags;	
 	
 	tmp = ast_calloc(1, sizeof(*tmp));
@@ -1269,10 +1269,10 @@ static struct phone_pvt *mkif(const char *iface, int mode, int txgain, int rxgai
 	return tmp;
 }
 
-static struct ast_channel *phone_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
+static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
 	format_t oldformat;
-	struct phone_pvt *p;
+	struct brcm_pvt *p;
 	struct ast_channel *tmp = NULL;
 	char *name = data;
 
@@ -1295,7 +1295,7 @@ static struct ast_channel *phone_request(const char *type, format_t format, cons
     	/* 	    !isalnum(name[length])) { */
     	/* 	    if (!p->owner) { */
 	
-	tmp = phone_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+	tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
         
 
 	/*              break; */
@@ -1347,7 +1347,7 @@ static int parse_gain_value(const char *gain_type, const char *value)
 
 static int __unload_module(void)
 {
-	struct phone_pvt *p, *pl;
+	struct brcm_pvt *p, *pl;
 	/* First, take us out of the channel loop */
 	if (cur_tech)
 		ast_channel_unregister(cur_tech);
@@ -1412,7 +1412,7 @@ static int load_module(void)
 {
 	struct ast_config *cfg;
 	struct ast_variable *v;
-	struct phone_pvt *tmp;
+	struct brcm_pvt *tmp;
 	int mode = MODE_IMMEDIATE;
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
@@ -1505,10 +1505,10 @@ static int load_module(void)
 	ast_mutex_unlock(&iflock);
 
 	if (mode == MODE_FXS) {
-		phone_tech_fxs.capabilities = prefformat;
-		cur_tech = &phone_tech_fxs;
+		brcm_tech_fxs.capabilities = prefformat;
+		cur_tech = &brcm_tech_fxs;
 	} else
-		cur_tech = (struct ast_channel_tech *) &phone_tech;
+		cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
 	/* Make sure we can register our Adtranphone channel type */
 
