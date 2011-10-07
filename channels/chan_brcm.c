@@ -593,7 +593,7 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 
 	  /* get rtp packets from endpoint */
 	  epPacket.mediaType   = 0;
-	  epPacket.packetp     = &data[0];
+	  epPacket.packetp     = data;
 	  tPacketParm.epPacket = &epPacket;
 	  tPacketParm.cnxId    = 0;
 	  tPacketParm.length   = 0;
@@ -602,7 +602,6 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 	  rc2 = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm);
 	  if( rc2 == IOCTL_STATUS_SUCCESS )
 	    {
-	      ast_verbose("got data from endpt\n");
 
 	      unsigned short sn = (unsigned short)(data[3] | data[2] <<8);
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
@@ -612,11 +611,8 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 		buf_pos_idx += tPacketParm.length;
 		if (buf_pos_idx >= PACKET_BUFFER_SIZE)
 		  buf_pos_idx = 0;
-		ast_verbose("RTP: %x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x\n\n",data[0],data[1],data[2],data[3],
-			    data[4],data[5],data[6],data[7],data[8],data[9],data[10],data[11]);
 
-		ast_verbose("tPacketParm.length: %d\n\n", tPacketParm.length);
-		p->fr.data.ptr =  (data + 11);
+		p->fr.data.ptr =  (data + 12);
 		p->fr.samples = 160;
 		p->fr.datalen = tPacketParm.length;
 		p->fr.frametype = AST_FRAME_VOICE;
@@ -632,37 +628,6 @@ static struct ast_frame  *phone_read(struct ast_channel *ast)
 
 
 
-
-
-
-/* 	CHECK_BLOCKING(ast); */
-/* 	res = read(p->fd, p->buf, PHONE_MAX_BUF); */
-/* 	ast_clear_flag(ast, AST_FLAG_BLOCKING); */
-/* 	if (res < 0) { */
-/* #if 0 */
-/* 		if (errno == EAGAIN) { */
-/* 			ast_log(LOG_WARNING, "Null frame received\n"); */
-/* 			p->fr.frametype = AST_FRAME_NULL; */
-/* 			p->fr.subclass = 0; */
-/* 			return &p->fr; */
-/* 		} */
-/* #endif */
-/* 		ast_log(LOG_WARNING, "Error reading: %s\n", strerror(errno)); */
-/* 		return NULL; */
-/* 	} */
-/* 	p->fr.data.ptr = p->buf; */
-/* 	if (p->mode != MODE_FXS) */
-/* 	switch(p->buf[0] & 0x3) { */
-/* 	case '0': */
-/* 	case '1': */
-/* 		/\* Normal *\/ */
-/* 		break; */
-/* 	case '2': */
-/* 	case '3': */
-/* 		/\* VAD/CNG, only send two words *\/ */
-/* 		res = 4; */
-/* 		break; */
-/* 	} */
 	p->fr.samples = 8;
 	p->fr.datalen = 8;
 	p->fr.frametype = AST_FRAME_VOICE;
