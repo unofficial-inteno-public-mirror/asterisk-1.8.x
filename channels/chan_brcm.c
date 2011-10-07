@@ -1059,6 +1059,28 @@ static void phone_check_exception(struct phone_pvt *i)
 	
 }
 
+enum channel_state {
+    ONHOOK,
+    OFFHOOK,
+    DIALING,
+    INCALL,
+    ANSWER,
+};
+
+#define DTMF_CHECK(dtmf_button, event_string) \
+{\
+    if (dtmf_first < 0) {\
+        dtmf_first = dtmf_button;\
+    } else if (dtmf_first == dtmf_button) {\
+        dtmfbuf[dtmf_len] = dtmf_button;\
+        dtmf_len++;\
+        dtmfbuf[dtmf_len] = '\0';\
+        dtmf_first = -1;\
+    } else {\
+        dtmf_first = -1;\
+    }\
+}
+
 static void *do_monitor(void *data)
 {
 	struct pollfd *fds = NULL;
