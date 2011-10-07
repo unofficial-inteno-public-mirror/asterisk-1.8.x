@@ -348,27 +348,6 @@ static int brcm_hangup(struct ast_channel *ast)
 
 	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
-	/* if (ioctl(p->fd, PHONE_REC_STOP)) */
-	/* 	ast_log(LOG_WARNING, "Failed to stop recording\n"); */
-	/* if (ioctl(p->fd, PHONE_PLAY_STOP)) */
-	/* 	ast_log(LOG_WARNING, "Failed to stop playing\n"); */
-	/* if (ioctl(p->fd, PHONE_RING_STOP)) */
-	/* 	ast_log(LOG_WARNING, "Failed to stop ringing\n"); */
-	/* if (ioctl(p->fd, PHONE_CPT_STOP)) */
-	/* 	ast_log(LOG_WARNING, "Failed to stop sounds\n"); */
-
-	/* If it's an FXO, hang them up */
-	/* if (p->mode == MODE_FXO) { */
-	/* 	if (ioctl(p->fd, PHONE_PSTN_SET_STATE, PSTN_ON_HOOK)) */
-	/* 		ast_debug(1, "ioctl(PHONE_PSTN_SET_STATE) failed on %s (%s)\n",ast->name, strerror(errno)); */
-	/* } */
-
-	/* If they're off hook, give a busy signal */
-	/* if (ioctl(p->fd, PHONE_HOOKSTATE)) { */
-	/* 	ast_debug(1, "Got hunghup, giving busy signal\n"); */
-	/* 	ioctl(p->fd, PHONE_BUSY); */
-	/* 	p->cpt = 1; */
-	/* } */
 
 	p->lastformat = -1;
 	p->lastinput = -1;
