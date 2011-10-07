@@ -451,19 +451,6 @@ static int brcm_answer(struct ast_channel *ast)
 	return 0;
 }
 
-#if 0
-static char phone_2digit(char c)
-{
-	if (c == 12)
-		return '#';
-	else if (c == 11)
-		return '*';
-	else if ((c < 10) && (c >= 0))
-		return '0' + c - 1;
-	else
-		return '?';
-}
-#endif
 
 static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 {
