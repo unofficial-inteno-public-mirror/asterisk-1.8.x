@@ -38,12 +38,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <signal.h>
-#ifdef HAVE_LINUX_COMPILER_H
-#include <linux/compiler.h>
-#endif
+
 #include <linux/telephony.h>
 /* Still use some IXJ specific stuff */
-#include <linux/version.h>
 #include <linux/ixjuser.h>
 
 #include "asterisk/lock.h"
