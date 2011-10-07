@@ -1103,35 +1103,29 @@ static void *do_monitor(void *data)
     int dtmf_first = -1;
 
     while (monitor) {
-
         tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
-        /* while (event_cnt>0) { */
         tEventParm.length = 0;
-
-        /*  /\* printf("Getting event, %d left before exit\n", event_cnt); *\/ */
-        /*  event_cnt--; */
-
         p = iflist;
-        /* Get the xevent from the endpoint driver. */
+
+        /* Get the event from the endpoint driver. */
         rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
         if( rc == IOCTL_STATUS_SUCCESS )
         {
             endptState.lineId = tEventParm.lineId;
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
-                  ast_verbose("EPEVT_OFFHOOK detected\n");
+                    ast_verbose("EPEVT_OFFHOOK detected\n");
                     channel_state = OFFHOOK;
                     /* Reset the dtmf buffer */
                     memset(dtmfbuf, 0, sizeof(dtmfbuf));
                     dtmf_len          = 0;
                     dtmf_first        = -1;
                     dtmfbuf[dtmf_len] = '\0';
-                  if(p->owner) {
-                    create_connection();
-                    ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-                    ast_setstate(p->owner, AST_STATE_UP);
-
-                }
+                    if(p->owner) {
+                        create_connection();
+                        ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+                        ast_setstate(p->owner, AST_STATE_UP);
+                    }
                     break;
                 case EPEVT_ONHOOK:
                     ast_verbose("EPEVT_ONHOOK detected\n");
@@ -1142,9 +1136,9 @@ static void *do_monitor(void *data)
                     dtmf_first        = -1;
                     dtmfbuf[dtmf_len] = '\0';
                     if(p->owner) {
-                      ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-                      ast_setstate(p->owner, AST_STATE_DOWN);
-                      close_connection();
+                        ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+                        ast_setstate(p->owner, AST_STATE_DOWN);
+                        close_connection();
                     }
                     break;
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
