@@ -1097,6 +1097,10 @@ static void *do_monitor(void *data)
     int rc = IOCTL_STATUS_FAILURE;
     int event_cnt = 20;
     struct phone_pvt *p;
+    int channel_state = ONHOOK;
+    char dtmfbuf[300];
+    int dtmf_len = 0;
+    int dtmf_first = -1;
 
     while (monitor) {
 
@@ -1116,6 +1120,12 @@ static void *do_monitor(void *data)
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
                   ast_verbose("EPEVT_OFFHOOK detected\n");
+                    channel_state = OFFHOOK;
+                    /* Reset the dtmf buffer */
+                    memset(dtmfbuf, 0, sizeof(dtmfbuf));
+                    dtmf_len          = 0;
+                    dtmf_first        = -1;
+                    dtmfbuf[dtmf_len] = '\0';
                   if(p->owner) {
                     create_connection();
                     ast_queue_control(p->owner, AST_CONTROL_ANSWER);
@@ -1125,28 +1135,34 @@ static void *do_monitor(void *data)
                     break;
                 case EPEVT_ONHOOK:
                     ast_verbose("EPEVT_ONHOOK detected\n");
+                    channel_state = ONHOOK;
+                    /* Reset the dtmf buffer */
+                    memset(dtmfbuf, 0, sizeof(dtmfbuf));
+                    dtmf_len          = 0;
+                    dtmf_first        = -1;
+                    dtmfbuf[dtmf_len] = '\0';
                     if(p->owner) {
                       ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                       ast_setstate(p->owner, AST_STATE_DOWN);
                       close_connection();
                     }
                     break;
-
-                case EPEVT_DTMF0: ast_verbose("EPEVT_DTMF0 detected\n"); break;
-                case EPEVT_DTMF1: ast_verbose("EPEVT_DTMF1 detected\n"); break;
-                case EPEVT_DTMF2: ast_verbose("EPEVT_DTMF2 detected\n"); break;
-                case EPEVT_DTMF3: ast_verbose("EPEVT_DTMF3 detected\n"); break;
-                case EPEVT_DTMF4: ast_verbose("EPEVT_DTMF4 detected\n"); break;
-                case EPEVT_DTMF5: ast_verbose("EPEVT_DTMF5 detected\n"); break;
-                case EPEVT_DTMF6: ast_verbose("EPEVT_DTMF6 detected\n"); break;
-                case EPEVT_DTMF7: ast_verbose("EPEVT_DTMF7 detected\n"); break;
-                case EPEVT_DTMF8: ast_verbose("EPEVT_DTMF8 detected\n"); break;
-                case EPEVT_DTMF9: ast_verbose("EPEVT_DTMF9 detected\n"); break;
-                case EPEVT_DTMFS: ast_verbose("EPEVT_DTMFS detected\n"); break;
-                case EPEVT_DTMFH: ast_verbose("EPEVT_DTMFH detected\n"); break;
+                case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
+                case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
+                case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
+                case EPEVT_DTMF3: DTMF_CHECK('3', "EPEVT_DTMF3"); break;
+                case EPEVT_DTMF4: DTMF_CHECK('4', "EPEVT_DTMF4"); break;
+                case EPEVT_DTMF5: DTMF_CHECK('5', "EPEVT_DTMF5"); break;
+                case EPEVT_DTMF6: DTMF_CHECK('6', "EPEVT_DTMF6"); break;
+                case EPEVT_DTMF7: DTMF_CHECK('7', "EPEVT_DTMF7"); break;
+                case EPEVT_DTMF8: DTMF_CHECK('8', "EPEVT_DTMF8"); break;
+                case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
+                case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
+                case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
                 default:
                     break;
             }
+            ast_verbose("DTMF string: %s\n", dtmfbuf);
         }
     }
 
