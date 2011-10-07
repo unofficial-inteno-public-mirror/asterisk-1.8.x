@@ -1085,18 +1085,18 @@ static void *do_monitor(void *data)
 {
     struct pollfd *fds = NULL;
     int nfds = 0, inuse_fds = 0, res;
-    struct phone_pvt *i;
     int tonepos = 0;
     /* The tone we're playing this round */
     struct timeval tv = { 0, 0 };
     int dotone;
     /* This thread monitors all the frame relay interfaces which are not yet in use
        (and thus do not have a separate thread) indefinitely */
-    ENDPOINTDRV_EVENT_PARM tEventParm;
+    ENDPOINTDRV_EVENT_PARM tEventParm = {0};
     ENDPT_STATE endptState;
     int rc = IOCTL_STATUS_FAILURE;
     int event_cnt = 20;
     struct phone_pvt *p;
+    struct phone_pvt *i = iflist;
     int channel_state = ONHOOK;
     char dtmfbuf[300];
     int dtmf_len = 0;
@@ -1163,6 +1163,23 @@ static void *do_monitor(void *data)
                     break;
             }
             ast_verbose("DTMF string: %s\n", dtmfbuf);
+
+            /* Check if the dtmf string matches anything in the dialplan */
+            if (ast_exists_extension(NULL, i->context, dtmfbuf, 1, i->cid_num)) {
+                channel_state = INCALL;
+                ast_verbose("Extension matching: %s found\n", dtmfbuf);
+                ast_copy_string(i->ext, dtmfbuf, sizeof(dtmfbuf));
+                ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", i->context, i->cid_num, i->ext);
+
+                /* Reset the dtmf buffer */
+                memset(dtmfbuf, 0, sizeof(dtmfbuf));
+                dtmf_len          = 0;
+                dtmf_first        = -1;
+                dtmfbuf[dtmf_len] = '\0';
+
+                /* Start the pbx */
+                phone_new(i, AST_STATE_RING, i->context, NULL);
+            }
         }
     }
 
