@@ -315,7 +315,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	struct ast_tm tm;
 	int start;
 
-	ast_log(LOG_ERROR, "BRCM brcm_call\n");
+	ast_log(LOG_WARNING, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
 	memset(&cid, 0, sizeof(PHONE_CID));
@@ -402,9 +402,12 @@ static int brcm_setup(struct ast_channel *ast)
 {
 	struct brcm_pvt *p;
 	p = ast->tech_pvt;
+
+	/* Default to g711 */
+	p->lastinput = AST_FORMAT_ULAW;
+	ast_log(LOG_WARNING, "AST_FORMAT_ULAW set\n");
 	/* Nothing to answering really, just start recording */
-	if (ast->rawreadformat == AST_FORMAT_G729A) {
-		/* Prefer g729 */
+/*	if (ast->rawreadformat == AST_FORMAT_G729A) {
 		if (p->lastinput != AST_FORMAT_G729A) {
 			p->lastinput = AST_FORMAT_G729A;
 		}
@@ -428,7 +431,7 @@ static int brcm_setup(struct ast_channel *ast)
 		ast_log(LOG_WARNING, "Can't do format %s\n", ast_getformatname(ast->rawreadformat));
 		return -1;
 	}
-
+*/
 	return 0;
 }
 
@@ -442,6 +445,8 @@ static int brcm_answer(struct ast_channel *ast)
 	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
+	create_connection();
+	ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 	ast_setstate(ast, AST_STATE_UP);
 	return 0;
 }
@@ -626,7 +631,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
    	int buf_pos_idx = 0;
 	int tcounter = 0;
-
 
 	if (ast->_state != AST_STATE_UP) {
 	  ast_verbose("error: channel not up\n");
@@ -818,9 +822,9 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		/* 	} */
 		/* } */
 		/* else { */
-		tmp->nativeformats = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
-		tmp->rawreadformat = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
-		tmp->rawwriteformat = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->nativeformats  = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->rawreadformat  = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->rawwriteformat = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
 		/* } */
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
