@@ -39,7 +39,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <sys/ioctl.h>
 #include <signal.h>
 
-#include <linux/telephony.h>
 /* Still use some IXJ specific stuff */
 #include <linux/ixjuser.h>
 
@@ -247,9 +246,7 @@ static int brcm_indicate(struct ast_channel *chan, int condition, const void *da
 	ast_debug(1, "Requested indication %d on channel %s\n", condition, chan->name);
 	switch(condition) {
 	case AST_CONTROL_FLASH:
-		ioctl(p->fd, IXJCTL_PSTN_SET_STATE, PSTN_ON_HOOK);
 		usleep(320000);
-		ioctl(p->fd, IXJCTL_PSTN_SET_STATE, PSTN_OFF_HOOK);
 			p->lastformat = -1;
 			res = 0;
 			break;
@@ -309,9 +306,7 @@ static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int dura
 		break;
 	case 'f':	/*flash*/
 	case 'F':
-		ioctl(p->fd, IXJCTL_PSTN_SET_STATE, PSTN_ON_HOOK);
 		usleep(320000);
-		ioctl(p->fd, IXJCTL_PSTN_SET_STATE, PSTN_OFF_HOOK);
 		p->lastformat = -1;
 		return 0;
 	default:
@@ -319,7 +314,6 @@ static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int dura
 		return -1;
 	}
 	ast_debug(1, "Dialed %d\n", outdigit);
-	ioctl(p->fd, PHONE_PLAY_TONE, outdigit);
 	p->lastformat = -1;
 	return 0;
 }
@@ -422,66 +416,33 @@ static int brcm_setup(struct ast_channel *ast)
 {
 	struct brcm_pvt *p;
 	p = ast->tech_pvt;
-	ioctl(p->fd, PHONE_CPT_STOP);
 	/* Nothing to answering really, just start recording */
 	if (ast->rawreadformat == AST_FORMAT_G729A) {
 		/* Prefer g729 */
-		ioctl(p->fd, PHONE_REC_STOP);
 		if (p->lastinput != AST_FORMAT_G729A) {
 			p->lastinput = AST_FORMAT_G729A;
-			if (ioctl(p->fd, PHONE_REC_CODEC, G729)) {
-				ast_log(LOG_WARNING, "Failed to set codec to g729\n");
-				return -1;
-			}
 		}
         } else if (ast->rawreadformat == AST_FORMAT_G723_1) {
-		ioctl(p->fd, PHONE_REC_STOP);
 		if (p->lastinput != AST_FORMAT_G723_1) {
 			p->lastinput = AST_FORMAT_G723_1;
-			if (ioctl(p->fd, PHONE_REC_CODEC, G723_63)) {
-				ast_log(LOG_WARNING, "Failed to set codec to g723.1\n");
-				return -1;
-			}
 		}
 	} else if (ast->rawreadformat == AST_FORMAT_SLINEAR) {
-		ioctl(p->fd, PHONE_REC_STOP);
 		if (p->lastinput != AST_FORMAT_SLINEAR) {
 			p->lastinput = AST_FORMAT_SLINEAR;
-			if (ioctl(p->fd, PHONE_REC_CODEC, LINEAR16)) {
-				ast_log(LOG_WARNING, "Failed to set codec to signed linear 16\n");
-				return -1;
-			}
 		}
 	} else if (ast->rawreadformat == AST_FORMAT_ULAW) {
-		ioctl(p->fd, PHONE_REC_STOP);
 		if (p->lastinput != AST_FORMAT_ULAW) {
 			p->lastinput = AST_FORMAT_ULAW;
-			if (ioctl(p->fd, PHONE_REC_CODEC, ULAW)) {
-				ast_log(LOG_WARNING, "Failed to set codec to uLaw\n");
-				return -1;
-			}
 		}
 	} else if (p->mode == MODE_FXS) {
-		ioctl(p->fd, PHONE_REC_STOP);
 		if (p->lastinput != ast->rawreadformat) {
 			p->lastinput = ast->rawreadformat;
-			if (ioctl(p->fd, PHONE_REC_CODEC, ast->rawreadformat)) {
-				ast_log(LOG_WARNING, "Failed to set codec to %s\n", 
-					ast_getformatname(ast->rawreadformat));
-				return -1;
-			}
 		}
 	} else {
 		ast_log(LOG_WARNING, "Can't do format %s\n", ast_getformatname(ast->rawreadformat));
 		return -1;
 	}
-	if (ioctl(p->fd, PHONE_REC_START)) {
-		ast_log(LOG_WARNING, "Failed to start recording\n");
-		return -1;
-	}
-	/* set the DTMF times (the default is too short) */
-	ioctl(p->fd, PHONE_SET_TONE_ON_TIME, 300);
-	ioctl(p->fd, PHONE_SET_TONE_OFF_TIME, 200);
+
 	return 0;
 }
 
@@ -491,13 +452,7 @@ static int brcm_answer(struct ast_channel *ast)
 
 	ast_log(LOG_ERROR, "BRCM brcm_answer\n");
 	p = ast->tech_pvt;
-	/* In case it's a LineJack, take it off hook */
-	if (p->mode == MODE_FXO) {
-		if (ioctl(p->fd, PHONE_PSTN_SET_STATE, PSTN_OFF_HOOK))
-			ast_debug(1, "ioctl(PHONE_PSTN_SET_STATE) failed on %s (%s)\n", ast->name, strerror(errno));
-		else
-			ast_debug(1, "Took linejack off hook\n");
-	}
+
 	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
@@ -522,19 +477,16 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 	
-	phonee.bytes = ioctl(p->fd, PHONE_EXCEPTION);
 	if (phonee.bits.dtmf_ready)  {
 		ast_debug(1, "brcm_exception(): DTMF\n");
 	
 		/* We've got a digit -- Just handle this nicely and easily */
-		digit =  ioctl(p->fd, PHONE_GET_DTMF_ASCII);
 		p->fr.subclass.integer = digit;
 		p->fr.frametype = AST_FRAME_DTMF;
 		return &p->fr;
 	}
 	if (phonee.bits.hookstate) {
 		ast_debug(1, "Hookstate changed\n");
-		res = ioctl(p->fd, PHONE_HOOKSTATE);
 		/* See if we've gone on hook, if so, notify by returning NULL */
 		ast_debug(1, "New hookstate: %d\n", res);
 		if (!res && (p->mode != MODE_FXO))
@@ -763,16 +715,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 #endif	
 	if (frame->subclass.codec == AST_FORMAT_G729A) {
 		if (p->lastformat != AST_FORMAT_G729A) {
-			ioctl(p->fd, PHONE_PLAY_STOP);
-			ioctl(p->fd, PHONE_REC_STOP);
-			if (ioctl(p->fd, PHONE_PLAY_CODEC, G729)) {
-				ast_log(LOG_WARNING, "Unable to set G729 mode\n");
-				return -1;
-			}
-			if (ioctl(p->fd, PHONE_REC_CODEC, G729)) {
-				ast_log(LOG_WARNING, "Unable to set G729 mode\n");
-				return -1;
-			}
 			p->lastformat = AST_FORMAT_G729A;
 			p->lastinput = AST_FORMAT_G729A;
 			/* Reset output buffer */
@@ -786,16 +728,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		maxfr = 80;
         } else if (frame->subclass.codec == AST_FORMAT_G723_1) {
 		if (p->lastformat != AST_FORMAT_G723_1) {
-			ioctl(p->fd, PHONE_PLAY_STOP);
-			ioctl(p->fd, PHONE_REC_STOP);
-			if (ioctl(p->fd, PHONE_PLAY_CODEC, G723_63)) {
-				ast_log(LOG_WARNING, "Unable to set G723.1 mode\n");
-				return -1;
-			}
-			if (ioctl(p->fd, PHONE_REC_CODEC, G723_63)) {
-				ast_log(LOG_WARNING, "Unable to set G723.1 mode\n");
-				return -1;
-			}
 			p->lastformat = AST_FORMAT_G723_1;
 			p->lastinput = AST_FORMAT_G723_1;
 			/* Reset output buffer */
@@ -809,16 +741,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		maxfr = 24;
 	} else if (frame->subclass.codec == AST_FORMAT_SLINEAR) {
 		if (p->lastformat != AST_FORMAT_SLINEAR) {
-			ioctl(p->fd, PHONE_PLAY_STOP);
-			ioctl(p->fd, PHONE_REC_STOP);
-			if (ioctl(p->fd, PHONE_PLAY_CODEC, LINEAR16)) {
-				ast_log(LOG_WARNING, "Unable to set 16-bit linear mode\n");
-				return -1;
-			}
-			if (ioctl(p->fd, PHONE_REC_CODEC, LINEAR16)) {
-				ast_log(LOG_WARNING, "Unable to set 16-bit linear mode\n");
-				return -1;
-			}
 			p->lastformat = AST_FORMAT_SLINEAR;
 			p->lastinput = AST_FORMAT_SLINEAR;
 			codecset = 1;
@@ -828,16 +750,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		maxfr = 480;
 	} else if (frame->subclass.codec == AST_FORMAT_ULAW) {
 		if (p->lastformat != AST_FORMAT_ULAW) {
-			ioctl(p->fd, PHONE_PLAY_STOP);
-			ioctl(p->fd, PHONE_REC_STOP);
-			if (ioctl(p->fd, PHONE_PLAY_CODEC, ULAW)) {
-				ast_log(LOG_WARNING, "Unable to set uLaw mode\n");
-				return -1;
-			}
-			if (ioctl(p->fd, PHONE_REC_CODEC, ULAW)) {
-				ast_log(LOG_WARNING, "Unable to set uLaw mode\n");
-				return -1;
-			}
 			p->lastformat = AST_FORMAT_ULAW;
 			p->lastinput = AST_FORMAT_ULAW;
 			codecset = 1;
@@ -847,18 +759,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		maxfr = 240;
 	} else {
 		if (p->lastformat != frame->subclass.codec) {
-			ioctl(p->fd, PHONE_PLAY_STOP);
-			ioctl(p->fd, PHONE_REC_STOP);
-			if (ioctl(p->fd, PHONE_PLAY_CODEC, (int) frame->subclass.codec)) {
-				ast_log(LOG_WARNING, "Unable to set %s mode\n",
-					ast_getformatname(frame->subclass.codec));
-				return -1;
-			}
-			if (ioctl(p->fd, PHONE_REC_CODEC, (int) frame->subclass.codec)) {
-				ast_log(LOG_WARNING, "Unable to set %s mode\n",
-					ast_getformatname(frame->subclass.codec));
-				return -1;
-			}
 			p->lastformat = frame->subclass.codec;
 			p->lastinput = frame->subclass.codec;
 			codecset = 1;
@@ -868,16 +768,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		maxfr = 480;
 	}
  	if (codecset) {
-		ioctl(p->fd, PHONE_REC_DEPTH, 3);
-		ioctl(p->fd, PHONE_PLAY_DEPTH, 3);
-		if (ioctl(p->fd, PHONE_PLAY_START)) {
-			ast_log(LOG_WARNING, "Failed to start playback\n");
-			return -1;
-		}
-		if (ioctl(p->fd, PHONE_REC_START)) {
-			ast_log(LOG_WARNING, "Failed to start recording\n");
-			return -1;
-		}
 	}
 	/* If we get here, we have a frame of Appropriate data */
 	sofar = 0;
@@ -985,7 +875,6 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		ast_module_ref(ast_module_info->self);
 		if (state != AST_STATE_DOWN) {
 			if (state == AST_STATE_RING) {
-				ioctl(tmp->fds[0], PHONE_RINGBACK);
 				i->cpt = 1;
 			}
 			if (ast_pbx_start(tmp)) {
@@ -1179,28 +1068,10 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 			ast_free(tmp);
 			return NULL;
 		}
-		if (mode == MODE_FXO) {
-			if (ioctl(tmp->fd, IXJCTL_PORT, PORT_PSTN)) {
-				ast_debug(1, "Unable to set port to PSTN\n");
-			}
-		} else {
-			if (ioctl(tmp->fd, IXJCTL_PORT, PORT_POTS)) 
-				 if (mode != MODE_FXS)
-				      ast_debug(1, "Unable to set port to POTS\n");
-		}
-		ioctl(tmp->fd, PHONE_PLAY_STOP);
-		ioctl(tmp->fd, PHONE_REC_STOP);
-		ioctl(tmp->fd, PHONE_RING_STOP);
-		ioctl(tmp->fd, PHONE_CPT_STOP);
-		if (ioctl(tmp->fd, PHONE_PSTN_SET_STATE, PSTN_ON_HOOK))
-			ast_debug(1, "ioctl(PHONE_PSTN_SET_STATE) failed on %s (%s)\n",iface, strerror(errno));
 		if (echocancel != AEC_OFF)
 			ioctl(tmp->fd, IXJCTL_AEC_START, echocancel);
 		if (silencesupression) 
 			tmp->silencesupression = 1;
-#ifdef PHONE_VAD
-		ioctl(tmp->fd, PHONE_VAD, tmp->silencesupression);
-#endif
 		tmp->mode = mode;
 		flags = fcntl(tmp->fd, F_GETFL);
 		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
@@ -1219,9 +1090,7 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		ast_copy_string(tmp->cid_num, cid_num, sizeof(tmp->cid_num));
 		ast_copy_string(tmp->cid_name, cid_name, sizeof(tmp->cid_name));
 		tmp->txgain = txgain;
-		ioctl(tmp->fd, PHONE_PLAY_VOLUME, tmp->txgain);
 		tmp->rxgain = rxgain;
-		ioctl(tmp->fd, PHONE_REC_VOLUME, tmp->rxgain);
 	}
 	return tmp;
 }
