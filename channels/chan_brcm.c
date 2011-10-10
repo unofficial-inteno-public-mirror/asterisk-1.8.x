@@ -26,7 +26,6 @@
  * \ingroup channel_drivers
  */
 
-
 #include "asterisk.h"
 
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
@@ -66,7 +65,6 @@ static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e
 uint32_t bogus_data[100];
 int fd;
 
-
 /* rtp stuff */
 int sequence_number = 0;
 int time_stamp = 3200;
@@ -84,7 +82,6 @@ void generate_rtp_packet(UINT8 *packet_buf);
 
 typedef void (*rtpDropPacketResetCallback)(void);
 
-
 typedef struct
 {
    endptEventCallback         pEventCallBack;
@@ -94,8 +91,6 @@ typedef struct
    int                        logFileHandle;
 
 } ENDPTUSER_CTRLBLOCK;
-
-
 
 EPSTATUS vrgEndptSignal
 (
@@ -108,20 +103,13 @@ EPSTATUS vrgEndptSignal
    int            repetition
  );
 
-
-
-
-
 EPSTATUS vrgEndptDriverOpen(void);
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
 
-
 ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
-
-
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -329,8 +317,6 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	ast_log(LOG_ERROR, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
-
-
 
 	memset(&cid, 0, sizeof(PHONE_CID));
 	if(&tm != NULL) {
@@ -541,7 +527,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 
-	
 	if (ast->_state = AST_STATE_UP) {
 
 	  /* Connection is established; try to read some data... */
@@ -552,7 +537,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	  tPacketParm.epPacket = &epPacket;
 	  tPacketParm.cnxId    = 0;
 	  tPacketParm.length   = 0;
-	
 
 	  rc2 = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm);
 	  if( rc2 == IOCTL_STATUS_SUCCESS )
@@ -560,7 +544,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 
 	      unsigned short sn = (unsigned short)(data[3] | data[2] <<8);
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
-
 
 		memcpy(&packet_buffer[buf_pos_idx], &data[0], tPacketParm.length);
 		buf_pos_idx += tPacketParm.length;
@@ -577,12 +560,8 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 		return &p->fr;
 
 	      }
-
 	    }
 	}
-
-
-
 	p->fr.samples = 8;
 	p->fr.datalen = 8;
 	p->fr.frametype = AST_FRAME_VOICE;
@@ -649,9 +628,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	int tcounter = 0;
 
 
-
 	if (ast->_state = AST_STATE_UP) {
-
 
 	  /* ast_verbose("ast_frame\n"); */
 	  /* ast_verbose("datalen: %d\n", frame->datalen); */
@@ -681,11 +658,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  } else {
 	    /* ast_verbose("Sent packet\n"); */
 	  }
-
-
-
 	}
-
 
 	return 0;
 
@@ -823,8 +796,6 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 	struct phone_codec_data queried_codec;
 
 	ast_log(LOG_ERROR, "BRCM brcm_new 1\n");
-
-
 
 	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", i->dev + 5);
 	ast_log(LOG_ERROR, "BRCM brcm_new 2\n");
@@ -1332,18 +1303,9 @@ static int load_module(void)
 
 	endpt_init();
 	restart_monitor();
-	
-
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
-
-
-
-
-
-
-
 
 
 
@@ -1372,11 +1334,6 @@ int endpt_init(void)
   int num_endpts;
   VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
   int rc, i;
-  
-
-  ast_verbose("Initializing endpoint interface\n");
-
-
 
   ast_verbose("Initializing endpoint interface\n");
 
@@ -1398,7 +1355,6 @@ int endpt_init(void)
   
   printf("Num endpoints: %d\n", num_endpts);
 
-
   /* Creating Endpt */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
     {
@@ -1407,7 +1363,6 @@ int endpt_init(void)
 
   return 0;
 }
-
 
 
 int signal_ringing(void)
@@ -1435,10 +1390,6 @@ int stop_ringing(void)
 
   return 0;
 }
-
-
-
-
 
 
 /*
@@ -1605,9 +1556,6 @@ EPSTATUS vrgEndptDeinit( void )
 }
 
 
-
-
-
 /*****************************************************************************
 *  FUNCTION:   vrgEndptSignal
 *
@@ -1758,6 +1706,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
    return( tInitParm.epStatus );
 }
 
+
 int create_connection() {
 
   int i;
@@ -1821,10 +1770,6 @@ int create_connection() {
   return 0;
 }
 
-  
-  
-
-
 
 int close_connection(void) {
   int i;
@@ -1848,9 +1793,6 @@ int close_connection(void) {
 
   return 0;
 }
-
-
-
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
@@ -1880,9 +1822,6 @@ void generate_rtp_packet(UINT8 *packet_buf) {
 			packet_buf[12 + i*8+ j] = digital_milliwatt[j];
 		}
 	}
-
 }
-
-
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
