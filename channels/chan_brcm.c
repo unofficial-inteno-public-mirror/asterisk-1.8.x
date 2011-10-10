@@ -74,7 +74,7 @@ int ssrc = 0;
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
 void generate_rtp_packet(UINT8 *packet_buf);
-
+#define PACKET_BUFFER_SIZE 172
 
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
@@ -505,7 +505,7 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 }
 
 
-#define PACKET_BUFFER_SIZE 172*50
+
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
@@ -628,21 +628,24 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	int tcounter = 0;
 
 
-	if (ast->_state = AST_STATE_UP) {
+	if (ast->_state != AST_STATE_UP) {
+	  ast_verbose("error: channel not up\n");
+	  return -1;
+	}
 
-	  /* ast_verbose("ast_frame\n"); */
-	  /* ast_verbose("datalen: %d\n", frame->datalen); */
-	  /* ast_verbose("samples: %d\n", frame->samples); */
-	  /* ast_verbose("mallocd: %d\n", frame->mallocd); */
-	  /* ast_verbose("data: %p\n", frame->data.ptr); */
+	if(frame->frametype == AST_FRAME_VOICE) {
 
 	  /* send rtp packet to the endpoint */
 	  epPacket_send.mediaType   = 0;
-	  /* epPacket_send.packetp     = frame->data.ptr; */
-	  epPacket_send.packetp     = packet_buffer;
 
+	  /* copy frame data to local buffer */
+	  memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
+	    
+	  /* add buffer to outgoing packet */
+	  epPacket_send.packetp = packet_buffer;
+
+	  /* generate the rtp header */
 	  generate_rtp_packet(epPacket_send.packetp);
-	  /* ast_verbose("generated rtp_packet\n"); */
 
 	  tPacketParm_send.cnxId       = 0;
 	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
@@ -652,12 +655,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 	  tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-
-	  if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS ) {
+	  if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 	    ast_verbose("%s: error during ioctl", __FUNCTION__);
-	  } else {
-	    /* ast_verbose("Sent packet\n"); */
-	  }
 	}
 
 	return 0;
@@ -1711,7 +1710,7 @@ int create_connection() {
 
   int i;
   int buf_pos_idx = 0;
-#define PACKET_BUFFER_SIZE 172
+
   UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
   int tcounter = 0;
   UINT8 data[1024] = {0};
@@ -1817,11 +1816,7 @@ void generate_rtp_packet(UINT8 *packet_buf) {
 
 	//Add the payload
 	bidx = 12;
-	for(i=0 ; i<20 ; i++) {
-		for(j=0 ; j<8 ; j++) {
-			packet_buf[12 + i*8+ j] = digital_milliwatt[j];
-		}
-	}
+
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
