@@ -653,7 +653,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 	  tPacketParm_send.cnxId       = 0;
 	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
-	  tPacketParm_send.length      = 172;
+	  tPacketParm_send.length      = 12 + frame->datalen;
 	  tPacketParm_send.bufDesc     = (int)&epPacket_send;
 	  tPacketParm_send.epPacket    = &epPacket_send;
 	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
