@@ -547,7 +547,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	  if( rc2 == IOCTL_STATUS_SUCCESS )
 	    {
 
-	      unsigned short sn = (unsigned short)(data[3] | data[2] <<8);
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
 
 		memcpy(&packet_buffer[buf_pos_idx], &data[0], tPacketParm.length);
@@ -557,16 +556,17 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 
 		p->fr.data.ptr =  (data + 12);
 		p->fr.samples = 160;
-		p->fr.datalen = tPacketParm.length;
+		p->fr.datalen = tPacketParm.length - 12;
 		p->fr.frametype = AST_FRAME_VOICE;
 		p->fr.subclass.codec = AST_FORMAT_ULAW;
-		p->fr.offset = AST_FRIENDLY_OFFSET;
+		p->fr.offset = 0;
 
 		return &p->fr;
 
 	      }
 	    }
 	}
+
 	p->fr.samples = 8;
 	p->fr.datalen = 8;
 	p->fr.frametype = AST_FRAME_VOICE;
