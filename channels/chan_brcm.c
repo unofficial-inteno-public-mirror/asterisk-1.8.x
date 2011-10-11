@@ -650,27 +650,13 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 
 	if (tmp) {
 		tmp->tech = cur_tech;
-		/* ast_channel_set_fd(tmp, 0, i->fd); */
-		/* /\* XXX Switching formats silently causes kernel panics XXX *\/ */
-		/* if (i->mode == MODE_FXS && */
-		/*     ioctl(i->fd, PHONE_QUERY_CODEC, &queried_codec) == 0) { */
-		/* 	if (queried_codec.type == LINEAR16) */
-		/* 		tmp->nativeformats = */
-		/* 		tmp->rawreadformat = */
-		/* 		tmp->rawwriteformat = */
-		/* 		AST_FORMAT_SLINEAR; */
-		/* 	else { */
-		/* 		tmp->nativeformats = */
-		/* 		tmp->rawreadformat = */
-		/* 		tmp->rawwriteformat = */
-		/* 		prefformat & ~AST_FORMAT_SLINEAR; */
-		/* 	} */
-		/* } */
-		/* else { */
+		ast_channel_set_fd(tmp, 0, i->fd);
+
+		/* set codecs */
 		tmp->nativeformats  = AST_FORMAT_ULAW;
 		tmp->rawreadformat  = AST_FORMAT_ULAW;
 		tmp->rawwriteformat = AST_FORMAT_ULAW;
-		/* } */
+
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
 			tmp->rings = 1;
@@ -945,7 +931,6 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		}
 	}
 
-	tmp->fds[0] = p->fd;
 
 	return tmp;
 }
