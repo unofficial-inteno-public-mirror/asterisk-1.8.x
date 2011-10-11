@@ -121,7 +121,7 @@ static int echocancel = AEC_OFF;
 
 static int silencesupression = 0;
 
-static format_t prefformat = AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW;
+static format_t prefformat = AST_FORMAT_ULAW;
 
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
@@ -193,7 +193,7 @@ static int brcm_indicate(struct ast_channel *chan, int condition, const void *da
 static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_ALAW,
+	.capabilities = AST_FORMAT_ULAW,
 	.requester = brcm_request,
 	.send_digit_begin = brcm_digit_begin,
 	.send_digit_end = brcm_digit_end,
@@ -822,9 +822,9 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		/* 	} */
 		/* } */
 		/* else { */
-		tmp->nativeformats  = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
-		tmp->rawreadformat  = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
-		tmp->rawwriteformat = AST_FORMAT_ULAW | AST_FORMAT_ALAW;
+		tmp->nativeformats  = AST_FORMAT_ULAW;
+		tmp->rawreadformat  = AST_FORMAT_ULAW;
+		tmp->rawwriteformat = AST_FORMAT_ULAW;
 		/* } */
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -1092,7 +1092,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	/* restart_monitor(); */
 	if (tmp == NULL) {
 		oldformat = format;
-		format &= (AST_FORMAT_G729A | AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW);
+		format &= AST_FORMAT_ULAW;
 		if (!format) {
 			char buf[256];
 			ast_log(LOG_ERROR, "Asked to get a channel of unsupported format '%s'\n", ast_getformatname_multiple(buf, sizeof(buf), oldformat));
