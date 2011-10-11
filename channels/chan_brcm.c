@@ -74,7 +74,7 @@ int ssrc = 0;
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
 void generate_rtp_packet(UINT8 *packet_buf);
-#define PACKET_BUFFER_SIZE 172
+#define PACKET_BUFFER_SIZE 1024
 
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
@@ -514,12 +514,10 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
-	int res;
 	struct brcm_pvt *p = ast->tech_pvt;
-	UINT8 data[1024] = {0};	
+	UINT8 data[PACKET_BUFFER_SIZE] = {0};	
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
-	int rc2 = IOCTL_STATUS_SUCCESS;
 	
 
 	/* Some nice norms */
@@ -531,15 +529,14 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 
 	  /* Connection is established; try to read some data... */
 
-	  /* get rtp packets from endpoint */
 	  epPacket.mediaType   = 0;
 	  epPacket.packetp     = data;
 	  tPacketParm.epPacket = &epPacket;
 	  tPacketParm.cnxId    = 0;
 	  tPacketParm.length   = 0;
 
-	  rc2 = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm);
-	  if( rc2 == IOCTL_STATUS_SUCCESS )
+	  /* get rtp packets from endpoint */
+	  if(ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
 	    {
 
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
@@ -603,18 +600,10 @@ static int brcm_send_text(struct ast_channel *ast, const char *text)
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
 	struct brcm_pvt *p = ast->tech_pvt;
-	int res;
-	int maxfr=0;
-	char *pos;
-	int sofar;
-	int expected;
-	int codecset = 0;
-	char tmpbuf[4];
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-   	int buf_pos_idx = 0;
-	int tcounter = 0;
+
 
 	if (ast->_state != AST_STATE_UP) {
 	  ast_verbose("error: channel not up\n");
