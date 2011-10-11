@@ -38,9 +38,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <sys/ioctl.h>
 #include <signal.h>
 
-/* Still use some IXJ specific stuff */
-#include <linux/ixjuser.h>
-
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
 #include "asterisk/config.h"
@@ -117,7 +114,7 @@ static char context[AST_MAX_EXTENSION] = "default";
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
 
-static int echocancel = AEC_OFF;
+static int echocancel = 0;
 
 static int silencesupression = 0;
 
@@ -310,7 +307,6 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
 	struct brcm_pvt *p;
 
-	PHONE_CID cid;
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
 	int start;
@@ -318,23 +314,16 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	ast_log(LOG_WARNING, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
-	memset(&cid, 0, sizeof(PHONE_CID));
-	if(&tm != NULL) {
-		snprintf(cid.month, sizeof(cid.month), "%02d",(tm.tm_mon + 1));
-		snprintf(cid.day, sizeof(cid.day),     "%02d", tm.tm_mday);
-		snprintf(cid.hour, sizeof(cid.hour),   "%02d", tm.tm_hour);
-		snprintf(cid.min, sizeof(cid.min),     "%02d", tm.tm_min);
-	}
 	/* the standard format of ast->callerid is:  "name" <number>, but not always complete */
 	if (!ast->connected.id.name.valid
 		|| ast_strlen_zero(ast->connected.id.name.str)) {
-		strcpy(cid.name, DEFAULT_CALLER_ID);
+//		strcpy(cid.name, DEFAULT_CALLER_ID);
 	} else {
-		ast_copy_string(cid.name, ast->connected.id.name.str, sizeof(cid.name));
+//		ast_copy_string(cid.name, ast->connected.id.name.str, sizeof(cid.name));
 	}
 
 	if (ast->connected.id.number.valid && ast->connected.id.number.str) {
-		ast_copy_string(cid.number, ast->connected.id.number.str, sizeof(cid.number));
+//		ast_copy_string(cid.number, ast->connected.id.number.str, sizeof(cid.number));
 	}
 
 	p = ast->tech_pvt;
@@ -453,7 +442,6 @@ static int brcm_answer(struct ast_channel *ast)
 static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 {
 	int res;
-	union telephony_exception phonee;
 	struct brcm_pvt *p = ast->tech_pvt;
 	char digit;
 
@@ -466,41 +454,6 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 	
-	if (phonee.bits.dtmf_ready)  {
-		ast_debug(1, "brcm_exception(): DTMF\n");
-	
-		/* We've got a digit -- Just handle this nicely and easily */
-		p->fr.subclass.integer = digit;
-		p->fr.frametype = AST_FRAME_DTMF;
-		return &p->fr;
-	}
-	if (phonee.bits.hookstate) {
-		ast_debug(1, "Hookstate changed\n");
-		/* See if we've gone on hook, if so, notify by returning NULL */
-		ast_debug(1, "New hookstate: %d\n", res);
-		if (!res && (p->mode != MODE_FXO))
-			return NULL;
-		else {
-			if (ast->_state == AST_STATE_RINGING) {
-				/* They've picked up the phone */
-				p->fr.frametype = AST_FRAME_CONTROL;
-				p->fr.subclass.integer = AST_CONTROL_ANSWER;
-				brcm_setup(ast);
-				ast_setstate(ast, AST_STATE_UP);
-				return &p->fr;
-			}  else 
-				ast_log(LOG_WARNING, "Got off hook in weird state %d\n", ast->_state);
-		}
-	}
-#if 1
-	if (phonee.bits.pstn_ring)
-		ast_verbose("Unit is ringing\n");
-	if (phonee.bits.caller_id) {
-		ast_verbose("We have caller ID\n");
-	}
-	if (phonee.bits.pstn_wink)
-		ast_verbose("Detected Wink\n");
-#endif
 	/* Strange -- nothing there.. */
 	p->fr.frametype = AST_FRAME_NULL;
 	p->fr.subclass.integer = 0;
@@ -641,7 +594,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
 {
 	struct ast_channel *tmp;
-	struct phone_codec_data queried_codec;
 
 	ast_log(LOG_ERROR, "BRCM brcm_new 1\n");
 
@@ -874,8 +826,8 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 			ast_free(tmp);
 			return NULL;
 		}
-		if (echocancel != AEC_OFF)
-			ioctl(tmp->fd, IXJCTL_AEC_START, echocancel);
+//		if (echocancel != AEC_OFF)
+//			ioctl(tmp->fd, IXJCTL_AEC_START, echocancel);
 		if (silencesupression) 
 			tmp->silencesupression = 1;
 		tmp->mode = mode;
@@ -1100,13 +1052,7 @@ static int load_module(void)
 				ast_log(LOG_WARNING, "Unknown format '%s'\n", v->value);
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			if (!strcasecmp(v->value, "off")) {
-				echocancel = AEC_OFF;
-			} else if (!strcasecmp(v->value, "low")) {
-				echocancel = AEC_LOW;
-			} else if (!strcasecmp(v->value, "medium")) {
-				echocancel = AEC_MED;
-			} else if (!strcasecmp(v->value, "high")) {
-				echocancel = AEC_HIGH;
+				echocancel = 0;
 			} else 
 				ast_log(LOG_WARNING, "Unknown echo cancellation '%s'\n", v->value);
 		} else if (!strcasecmp(v->name, "txgain")) {
