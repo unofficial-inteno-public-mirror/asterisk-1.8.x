@@ -520,8 +520,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rc2 = IOCTL_STATUS_SUCCESS;
-   	int buf_pos_idx = 0;
-   	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+	
 
 	/* Some nice norms */
 	p->fr.src = "brcm";
@@ -544,11 +543,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	    {
 
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
-
-		memcpy(&packet_buffer[buf_pos_idx], &data[0], tPacketParm.length);
-		buf_pos_idx += tPacketParm.length;
-		if (buf_pos_idx >= PACKET_BUFFER_SIZE)
-		  buf_pos_idx = 0;
 
 		p->fr.data.ptr =  (data + 12);
 		p->fr.samples = 160;
@@ -655,132 +649,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 	return 0;
 
-	/* Write a frame of (presumably voice) data */
-	if (frame->frametype != AST_FRAME_VOICE && p->mode != MODE_FXS) {
-		if (frame->frametype != AST_FRAME_IMAGE)
-			ast_log(LOG_WARNING, "Don't know what to do with  frame type '%d'\n", frame->frametype);
-		return 0;
-	}
-	if (!(frame->subclass.codec &
-		(AST_FORMAT_G723_1 | AST_FORMAT_SLINEAR | AST_FORMAT_ULAW | AST_FORMAT_G729A)) && 
-	    p->mode != MODE_FXS) {
-		ast_log(LOG_WARNING, "Cannot handle frames in %s format\n", ast_getformatname(frame->subclass.codec));
-		return -1;
-	}
-#if 0
-	/* If we're not in up mode, go into up mode now */
-	if (ast->_state != AST_STATE_UP) {
-		ast_setstate(ast, AST_STATE_UP);
-		brcm_setup(ast);
-	}
-#else
-	if (ast->_state != AST_STATE_UP) {
-		/* Don't try tos end audio on-hook */
-		return 0;
-	}
-#endif	
-	if (frame->subclass.codec == AST_FORMAT_G729A) {
-		if (p->lastformat != AST_FORMAT_G729A) {
-			p->lastformat = AST_FORMAT_G729A;
-			p->lastinput = AST_FORMAT_G729A;
-			/* Reset output buffer */
-			p->obuflen = 0;
-			codecset = 1;
-		}
-		if (frame->datalen > 80) {
-			ast_log(LOG_WARNING, "Frame size too large for G.729 (%d bytes)\n", frame->datalen);
-			return -1;
-		}
-		maxfr = 80;
-        } else if (frame->subclass.codec == AST_FORMAT_G723_1) {
-		if (p->lastformat != AST_FORMAT_G723_1) {
-			p->lastformat = AST_FORMAT_G723_1;
-			p->lastinput = AST_FORMAT_G723_1;
-			/* Reset output buffer */
-			p->obuflen = 0;
-			codecset = 1;
-		}
-		if (frame->datalen > 24) {
-			ast_log(LOG_WARNING, "Frame size too large for G.723.1 (%d bytes)\n", frame->datalen);
-			return -1;
-		}
-		maxfr = 24;
-	} else if (frame->subclass.codec == AST_FORMAT_SLINEAR) {
-		if (p->lastformat != AST_FORMAT_SLINEAR) {
-			p->lastformat = AST_FORMAT_SLINEAR;
-			p->lastinput = AST_FORMAT_SLINEAR;
-			codecset = 1;
-			/* Reset output buffer */
-			p->obuflen = 0;
-		}
-		maxfr = 480;
-	} else if (frame->subclass.codec == AST_FORMAT_ULAW) {
-		if (p->lastformat != AST_FORMAT_ULAW) {
-			p->lastformat = AST_FORMAT_ULAW;
-			p->lastinput = AST_FORMAT_ULAW;
-			codecset = 1;
-			/* Reset output buffer */
-			p->obuflen = 0;
-		}
-		maxfr = 240;
-	} else {
-		if (p->lastformat != frame->subclass.codec) {
-			p->lastformat = frame->subclass.codec;
-			p->lastinput = frame->subclass.codec;
-			codecset = 1;
-			/* Reset output buffer */
-			p->obuflen = 0;
-		}
-		maxfr = 480;
-	}
- 	if (codecset) {
-	}
-	/* If we get here, we have a frame of Appropriate data */
-	sofar = 0;
-	pos = frame->data.ptr;
-	while(sofar < frame->datalen) {
-		/* Write in no more than maxfr sized frames */
-		expected = frame->datalen - sofar;
-		if (maxfr < expected)
-			expected = maxfr;
-		/* XXX Internet Phone Jack does not handle the 4-byte VAD frame properly! XXX 
-		   we have to pad it to 24 bytes still.  */
-		if (frame->datalen == 4) {
-			if (p->silencesupression) {
-				memcpy(tmpbuf, frame->data.ptr, 4);
-				expected = 24;
-				res = brcm_write_buf(p, tmpbuf, expected, maxfr, 0);
-			}
-			res = 4;
-			expected=4;
-		} else {
-			int swap = 0;
-#if __BYTE_ORDER == __BIG_ENDIAN
-			if (frame->subclass.codec == AST_FORMAT_SLINEAR)
-				swap = 1; /* Swap big-endian samples to little-endian as we copy */
-#endif
-			res = brcm_write_buf(p, pos, expected, maxfr, swap);
-		}
-		if (res != expected) {
-			if ((errno != EAGAIN) && (errno != EINTR)) {
-				if (res < 0) 
-					ast_log(LOG_WARNING, "Write returned error (%s)\n", strerror(errno));
-	/*
-	 * Card is in non-blocking mode now and it works well now, but there are
-	 * lot of messages like this. So, this message is temporarily disabled.
-	 */
-#if 0
-				else
-					ast_log(LOG_WARNING, "Only wrote %d of %d bytes\n", res, frame->datalen);
-#endif
-				return -1;
-			} else /* Pretend it worked */
-				res = expected;
-		}
-		sofar += res;
-		pos += res;
-	}
-	return 0;
 }
 
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
