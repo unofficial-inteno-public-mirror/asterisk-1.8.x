@@ -524,11 +524,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
 	/* Some nice norms */
-	p->fr.datalen = 0;
-	p->fr.samples = 0;
-	p->fr.data.ptr =  digital_milliwatt;
-	p->fr.src = "Phone";
-	p->fr.offset = 0;
+	p->fr.src = "brcm";
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 
@@ -567,13 +563,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	    }
 	}
 
-	p->fr.samples = 8;
-	p->fr.datalen = 8;
-	p->fr.frametype = AST_FRAME_VOICE;
-	p->fr.subclass.codec = AST_FORMAT_ULAW;
-	p->fr.offset = AST_FRIENDLY_OFFSET;
-
-	return &p->fr;
+	return &ast_null_frame;
 }
 
 static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
