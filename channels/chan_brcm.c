@@ -445,8 +445,6 @@ static int brcm_answer(struct ast_channel *ast)
 	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
-	create_connection();
-	ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 	ast_setstate(ast, AST_STATE_UP);
 	return 0;
 }
