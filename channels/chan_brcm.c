@@ -806,6 +806,7 @@ static void *do_monitor(void *data)
                 dtmfbuf[dtmf_len] = '\0';
 
                 /* Start the pbx */
+				create_connection();
                 brcm_new(i, AST_STATE_RING, i->context, NULL);
             }
         }
