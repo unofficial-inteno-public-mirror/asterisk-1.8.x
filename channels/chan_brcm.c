@@ -320,7 +320,6 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
-	int start;
 
 	ast_log(LOG_WARNING, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
@@ -452,9 +451,7 @@ static int brcm_answer(struct ast_channel *ast)
 
 static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 {
-	int res;
 	struct brcm_pvt *p = ast->tech_pvt;
-	char digit;
 
 	/* Some nice norms */
 	p->fr.datalen = 0;
@@ -561,7 +558,6 @@ static int brcm_send_text(struct ast_channel *ast, const char *text)
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
-	struct brcm_pvt *p = ast->tech_pvt;
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
@@ -680,18 +676,12 @@ enum channel_state {
 
 static void *do_monitor(void *data)
 {
-    struct pollfd *fds = NULL;
-    int nfds = 0, inuse_fds = 0, res;
-    int tonepos = 0;
     /* The tone we're playing this round */
-    struct timeval tv = { 0, 0 };
-    int dotone;
     /* This thread monitors all the frame relay interfaces which are not yet in use
        (and thus do not have a separate thread) indefinitely */
     ENDPOINTDRV_EVENT_PARM tEventParm = {0};
     ENDPT_STATE endptState;
     int rc = IOCTL_STATUS_FAILURE;
-    int event_cnt = 20;
     struct brcm_pvt *p;
     struct brcm_pvt *i = iflist;
     int channel_state = ONHOOK;
@@ -869,11 +859,6 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	format_t oldformat;
 	struct brcm_pvt *p;
 	struct ast_channel *tmp = NULL;
-	char *name = data;
-
-
-	format_t src, dst;
-	
 
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
@@ -1165,7 +1150,6 @@ int endpt_init(void)
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
 	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
 	int rc, i;
-	int retVal = 0;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
 	ast_verbose("Initializing endpoint interface\n");
@@ -1214,9 +1198,9 @@ int endpt_init(void)
 
 int signal_ringing(void)
 {
+#ifdef LOUD
   int i;
 
-#ifdef LOUD
    /* Check whether value is on or off */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 1, -1, -1 , -1);
@@ -1227,9 +1211,9 @@ int signal_ringing(void)
 
 int stop_ringing(void)
 {
+#ifdef LOUD
   int i;
 
-#ifdef LOUD
    /* Check whether value is on or off */
   for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 0, -1, -1 , -1);
@@ -1509,14 +1493,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 
 
 int create_connection() {
-
   int i;
-  int buf_pos_idx = 0;
-
-  UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-  int tcounter = 0;
-  UINT8 data[1024] = {0};
-  unsigned int *data32;
 
   /* generate random nr for rtp header */
   ssrc = rand();
@@ -1598,7 +1575,6 @@ int close_connection(void) {
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
 void generate_rtp_packet(UINT8 *packet_buf) {
-	int i,j;
 	int bidx = 0;
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
