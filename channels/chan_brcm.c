@@ -110,14 +110,15 @@ VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 
 /* Global brcm channel parameters */
 
-int num_fxs_endpoints = -1;
+static int num_fxs_endpoints = -1;
 
-int num_fxo_endpoints = -1;
+static int num_fxo_endpoints = -1;
 
-int num_dect_endpoints = -1;
+static int num_dect_endpoints = -1;
 
-int endpoint_fd = NOT_INITIALIZED;
+static int endpoint_fd = NOT_INITIALIZED;
 
+static int echocancel = 1;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -125,7 +126,6 @@ static char context[AST_MAX_EXTENSION] = "default";
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
 
-static int echocancel = 0;
 
 static int silencesupression = 0;
 
@@ -930,6 +930,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : %x\n", endpoint_fd);
+	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	return CLI_SUCCESS;
 
 }
@@ -1086,7 +1087,9 @@ static int load_module(void)
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			if (!strcasecmp(v->value, "off")) {
 				echocancel = 0;
-			} else 
+			} else if (!strcasecmp(v->value, "on")) {
+				echocancel = 1;
+			} else
 				ast_log(LOG_WARNING, "Unknown echo cancellation '%s'\n", v->value);
 		} else if (!strcasecmp(v->name, "txgain")) {
 			txgain = parse_gain_value(v->name, v->value);
@@ -1527,7 +1530,7 @@ int create_connection() {
     //         epCnxParms.cnxParmList.recv = codecListLocal;
     //         epCnxParms.cnxParmList.send = codecListRemote;
     //         epCnxParms.period = 20;
-    epCnxParms.echocancel = 1;
+    epCnxParms.echocancel = echocancel;
     epCnxParms.silence = 0;
     //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
