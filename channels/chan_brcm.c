@@ -114,6 +114,8 @@ int num_fxs_endpoints = -1;
 
 int num_fxo_endpoints = -1;
 
+int num_dect_endpoints = -1;
+
 int endpoint_fd = NOT_INITIALIZED;
 
 
@@ -939,8 +941,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		return NULL;
 
 	/* print chan brcm status information */
-	ast_cli(a->fd, "FXS endpoints: %d\n", num_fxs_endpoints);
-	ast_cli(a->fd, "FXO endpoints: %d\n", num_fxo_endpoints);
+	ast_cli(a->fd, "FXS  endpoints: %d\n", num_fxs_endpoints);
+	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
+	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	return CLI_SUCCESS;
 
 }
@@ -1192,6 +1195,11 @@ int endpt_init(void)
 		num_fxo_endpoints = endpointCount.endpointNum;
 	}
 
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+	} else {
+		num_dect_endpoints = endpointCount.endpointNum;
+	}
 
   /* Creating Endpt */
   for ( i = 0; i < num_fxs_endpoints; i++ )
