@@ -1360,21 +1360,9 @@ EPSTATUS vrgEndptInit
 */
 EPSTATUS vrgEndptDeinit( void )
 {
-   int filehandle = open("/dev/bcmendpoint0", O_RDWR);
-   if ( filehandle == -1 )
-   {
-      return( EPSTATUS_DRIVER_ERROR );
-   }
-
    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
    {
    }
-
-   /* bGlobalTaskExit = TRUE; */
-
-   close( filehandle );
-
-   /* endptDeinitialized = 1; */
 
    return( EPSTATUS_SUCCESS );
 }
