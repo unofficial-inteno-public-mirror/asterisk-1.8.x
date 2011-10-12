@@ -147,15 +147,6 @@ static pthread_t monitor_thread = AST_PTHREADT_NULL;
 
 static int restart_monitor(void);
 
-/* The private structures of the Phone Jack channels are linked for
-   selecting outgoing channels */
-   
-#define MODE_DIALTONE 	1
-#define MODE_IMMEDIATE	2
-#define MODE_FXO	3
-#define MODE_FXS        4
-#define MODE_SIGMA      5
-
 static struct brcm_pvt {
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
@@ -211,24 +202,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,
 	.write = brcm_write,
 	.exception = brcm_exception,
-	.indicate = brcm_indicate,
-	.fixup = brcm_fixup
-};
-
-static struct ast_channel_tech brcm_tech_fxs = {
-	.type = "BRCM",
-	.description = tdesc,
-	.requester = brcm_request,
-	.send_digit_begin = brcm_digit_begin,
-	.send_digit_end = brcm_digit_end,
-	.call = brcm_call,
-	.hangup = brcm_hangup,
-	.answer = brcm_answer,
-	.read = brcm_read,
-	.write = brcm_write,
-	.exception = brcm_exception,
-	.write_video = brcm_write,
-	.send_text = brcm_send_text,
 	.indicate = brcm_indicate,
 	.fixup = brcm_fixup
 };
@@ -346,20 +319,6 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	signal_ringing();
 
-	/* start = IXJ_PHONE_RING_START(cid); */
-	/* if (start == -1) */
-	/* 	return -1; */
-	
-	if (p->mode == MODE_FXS) {
-		char *digit = strchr(dest, '/');
-		if (digit)
-		{
-		  digit++;
-		  while (*digit)
-		    brcm_digit_end(ast, *digit++, 0);
-		}
-	}
- 
   	ast_setstate(ast, AST_STATE_RINGING);
 	ast_queue_control(ast, AST_CONTROL_RINGING);
 	return 0;
@@ -1011,7 +970,6 @@ static int load_module(void)
 	struct ast_config *cfg;
 	struct ast_variable *v;
 	struct brcm_pvt *tmp;
-	int mode = MODE_IMMEDIATE;
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
 
@@ -1034,7 +992,7 @@ static int load_module(void)
 	while(v) {
 		/* Create the interface list */
 		if (!strcasecmp(v->name, "device")) {
-				tmp = mkif(v->value, mode, txgain, rxgain);
+				tmp = mkif(v->value, 0, txgain, rxgain);
 				if (tmp) {
 					tmp->next = iflist;
 					iflist = tmp;
@@ -1052,21 +1010,6 @@ static int load_module(void)
 			ast_copy_string(language, v->value, sizeof(language));
 		} else if (!strcasecmp(v->name, "callerid")) {
 			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
-		} else if (!strcasecmp(v->name, "mode")) {
-			if (!strncasecmp(v->value, "di", 2)) 
-				mode = MODE_DIALTONE;
-			else if (!strncasecmp(v->value, "sig", 3))
-				mode = MODE_SIGMA;
-			else if (!strncasecmp(v->value, "im", 2))
-				mode = MODE_IMMEDIATE;
-			else if (!strncasecmp(v->value, "fxs", 3)) {
-				mode = MODE_FXS;
-				prefformat = 0x01ff0000; /* All non-voice */
-			}
-			else if (!strncasecmp(v->value, "fx", 2))
-				mode = MODE_FXO;
-			else
-				ast_log(LOG_WARNING, "Unknown mode: %s\n", v->value);
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(context, v->value, sizeof(context));
 		} else if (!strcasecmp(v->name, "format")) {
@@ -1074,10 +1017,6 @@ static int load_module(void)
 				prefformat = AST_FORMAT_G729A;
                         } else if (!strcasecmp(v->value, "g723.1")) {
 				prefformat = AST_FORMAT_G723_1;
-			} else if (!strcasecmp(v->value, "slinear")) {
-				if (mode == MODE_FXS)
-				    prefformat |= AST_FORMAT_SLINEAR;
-				else prefformat = AST_FORMAT_SLINEAR;
 			} else if (!strcasecmp(v->value, "ulaw")) {
 				prefformat = AST_FORMAT_ULAW;
 			} else
@@ -1098,10 +1037,6 @@ static int load_module(void)
 	}
 	ast_mutex_unlock(&iflock);
 
-	if (mode == MODE_FXS) {
-		brcm_tech_fxs.capabilities = prefformat;
-		cur_tech = &brcm_tech_fxs;
-	} else
 		cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
 	/* Make sure we can register our Adtranphone channel type */
