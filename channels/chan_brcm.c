@@ -56,6 +56,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
 
+#define LOUD
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
@@ -128,7 +129,7 @@ static char language[MAX_LANGUAGE] = "";
 
 static int silencesupression = 0;
 
-static format_t prefformat = AST_FORMAT_ULAW;
+static format_t prefformat = AST_FORMAT_ALAW;
 
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
@@ -200,7 +201,7 @@ static int brcm_indicate(struct ast_channel *chan, int condition, const void *da
 static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_ULAW,
+	.capabilities = AST_FORMAT_ALAW,
 	.requester = brcm_request,
 	.send_digit_begin = brcm_digit_begin,
 	.send_digit_end = brcm_digit_end,
@@ -402,8 +403,8 @@ static int brcm_setup(struct ast_channel *ast)
 	p = ast->tech_pvt;
 
 	/* Default to g711 */
-	p->lastinput = AST_FORMAT_ULAW;
-	ast_log(LOG_WARNING, "AST_FORMAT_ULAW set\n");
+	p->lastinput = AST_FORMAT_ALAW;
+	ast_log(LOG_WARNING, "AST_FORMAT_ALAW set\n");
 	/* Nothing to answering really, just start recording */
 /*	if (ast->rawreadformat == AST_FORMAT_G729A) {
 		if (p->lastinput != AST_FORMAT_G729A) {
@@ -503,7 +504,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 		p->fr.samples = 160;
 		p->fr.datalen = tPacketParm.length - 12;
 		p->fr.frametype = AST_FRAME_VOICE;
-		p->fr.subclass.codec = AST_FORMAT_ULAW;
+		p->fr.subclass.codec = AST_FORMAT_ALAW;
 		p->fr.offset = 0;
 
 		return &p->fr;
@@ -611,9 +612,9 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		ast_channel_set_fd(tmp, 0, i->fd);
 
 		/* set codecs */
-		tmp->nativeformats  = AST_FORMAT_ULAW;
-		tmp->rawreadformat  = AST_FORMAT_ULAW;
-		tmp->rawwriteformat = AST_FORMAT_ULAW;
+		tmp->nativeformats  = AST_FORMAT_ALAW;
+		tmp->rawreadformat  = AST_FORMAT_ALAW;
+		tmp->rawwriteformat = AST_FORMAT_ALAW;
 
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -869,7 +870,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	/* restart_monitor(); */
 	if (tmp == NULL) {
 		oldformat = format;
-		format &= AST_FORMAT_ULAW;
+		format &= AST_FORMAT_ALAW;
 		if (!format) {
 			char buf[256];
 			ast_log(LOG_ERROR, "Asked to get a channel of unsupported format '%s'\n", ast_getformatname_multiple(buf, sizeof(buf), oldformat));
@@ -1504,18 +1505,18 @@ int create_connection() {
 
     /* Enable sending a receving G711 */
     epCnxParms.cnxParmList.recv.numCodecs = 3;
-    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
     epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
     epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
     epCnxParms.cnxParmList.send.numCodecs = 3;
-    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
     epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
     epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
@@ -1583,7 +1584,7 @@ void generate_rtp_packet(UINT8 *packet_buf) {
 	//Extension 0
 	//CSRC count 0
 	//Marker 0
-	packet_buf[1] = 0; //Payload type PCMU = 0, FIXME use table to lookup value
+	packet_buf[1] = 8; //Payload type PCMU = 0,  PCMA = 8, FIXME use table to lookup value
 	packet_buf16[1] = sequence_number++; //Add sequence number
 	if (sequence_number > 0xFFFF) sequence_number=0;
 	packet_buf32[1] = time_stamp;	//Add timestamp
