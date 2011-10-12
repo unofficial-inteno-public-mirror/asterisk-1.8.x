@@ -896,7 +896,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 }
 
 
-/*! \brief SIP Cli commands definition */
+/*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
 };
