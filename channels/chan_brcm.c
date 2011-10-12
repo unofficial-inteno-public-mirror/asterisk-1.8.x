@@ -487,7 +487,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	p->fr.mallocd=0;
 	p->fr.delivery = ast_tv(0,0);
 
-	if (ast->_state = AST_STATE_UP) {
+	if (ast->_state == AST_STATE_UP) {
 
 	  /* Connection is established; try to read some data... */
 
