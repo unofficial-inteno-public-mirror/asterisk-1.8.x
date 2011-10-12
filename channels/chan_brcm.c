@@ -944,6 +944,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXS  endpoints: %d\n", num_fxs_endpoints);
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
+	ast_cli(a->fd, "Endpoint fd   : %x\n", endpoint_fd);
 	return CLI_SUCCESS;
 
 }
@@ -1126,7 +1127,7 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 	
-	/* Register all CLI functions for SIP */
+	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	
 	ast_config_destroy(cfg);
