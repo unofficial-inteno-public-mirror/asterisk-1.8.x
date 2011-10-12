@@ -1158,18 +1158,21 @@ int endpt_deinit(void)
 
 int endpt_init(void)
 {
-  VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
-  int rc, i;
+	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
+	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
+	int rc, i;
+	int retVal = 0;
+	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
-  ast_verbose("Initializing endpoint interface\n");
+	ast_verbose("Initializing endpoint interface\n");
 
-  vrgEndptDriverOpen();
+	vrgEndptDriverOpen();
 
-  vrgEndptInitCfg.country = VRG_COUNTRY_NORTH_AMERICA;
-  vrgEndptInitCfg.currentPowerSource = 0;
+	vrgEndptInitCfg.country = VRG_COUNTRY_NORTH_AMERICA;
+	vrgEndptInitCfg.currentPowerSource = 0;
 
-  /* Intialize endpoint */
-  rc = vrgEndptInit( &vrgEndptInitCfg,
+	/* Intialize endpoint */
+	rc = vrgEndptInit( &vrgEndptInitCfg,
 		     endptEventCb,
 		     ingressPktRecvCb,
 		     NULL,
@@ -1177,7 +1180,18 @@ int endpt_init(void)
 		     NULL,
 		     NULL );
 
-	num_fxs_endpoints = vrgEndptGetNumEndpoints();
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+	} else {
+		num_fxs_endpoints = endpointCount.endpointNum;
+	}
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+	} else {
+		num_fxo_endpoints = endpointCount.endpointNum;
+	}
+
 
   /* Creating Endpt */
   for ( i = 0; i < num_fxs_endpoints; i++ )
@@ -1415,38 +1429,6 @@ EPSTATUS vrgEndptSignal
    }
 
    return( tSignalParm.epStatus );
-}
-
-
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptGetNumEndpoints
-**
-** PURPOSE:    Retrieve the number of endpoints
-**
-** PARAMETERS: None
-**
-** RETURNS:    Number of endpoints
-**
-*****************************************************************************
-*/
-int vrgEndptGetNumEndpoints( void )
-{
-   ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
-   int retVal = 0;
-
-   endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
-
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-   {
-   }
-   else
-   {
-      retVal = endpointCount.endpointNum;
-   }
-
-
-   return( retVal );
 }
 
 
