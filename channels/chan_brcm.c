@@ -120,6 +120,8 @@ static int endpoint_fd = NOT_INITIALIZED;
 
 static int echocancel = 1;
 
+static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
+
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
 
@@ -888,6 +890,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : %x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
+	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	return CLI_SUCCESS;
 
 }
@@ -1008,6 +1011,18 @@ static int load_module(void)
 			silencesupression = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
+		// FIXME use a table for this
+		} else if (!strcasecmp(v->name, "country")) {
+			if      (!strcmp(v->value, "swe"))
+				endpoint_country = VRG_COUNTRY_SWEDEN;
+			else if (!strcmp(v->value, "fin"))
+				endpoint_country = VRG_COUNTRY_FINLAND;
+			else if (!strcmp(v->value, "dnk"))
+				endpoint_country = VRG_COUNTRY_DENMARK;
+			else if (!strcmp(v->value, "usa"))
+				endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
+			else
+				ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
 		} else if (!strcasecmp(v->name, "callerid")) {
 			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
@@ -1092,7 +1107,7 @@ int endpt_init(void)
 
 	vrgEndptDriverOpen();
 
-	vrgEndptInitCfg.country = VRG_COUNTRY_NORTH_AMERICA;
+	vrgEndptInitCfg.country = endpoint_country;
 	vrgEndptInitCfg.currentPowerSource = 0;
 
 	/* Intialize endpoint */
