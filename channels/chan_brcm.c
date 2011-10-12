@@ -827,8 +827,6 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 			ast_free(tmp);
 			return NULL;
 		}
-//		if (echocancel != AEC_OFF)
-//			ioctl(tmp->fd, IXJCTL_AEC_START, echocancel);
 		if (silencesupression) 
 			tmp->silencesupression = 1;
 		tmp->mode = mode;
