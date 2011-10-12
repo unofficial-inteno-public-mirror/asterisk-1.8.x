@@ -61,7 +61,6 @@ static const char config[] = "brcm.conf";
 
 static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
 uint32_t bogus_data[100];
-int fd;
 
 /* rtp stuff */
 int sequence_number = 0;
@@ -114,6 +113,9 @@ VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 int num_fxs_endpoints = -1;
 
 int num_fxo_endpoints = -1;
+
+int endpoint_fd = NOT_INITIALIZED;
+
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -494,7 +496,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	  tPacketParm.length   = 0;
 
 	  /* get rtp packets from endpoint */
-	  if(ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
+	  if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
 	    {
 
 	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
@@ -590,7 +592,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 	  tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-	  if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+	  if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 	    ast_verbose("%s: error during ioctl", __FUNCTION__);
 	}
 
@@ -701,7 +703,7 @@ static void *do_monitor(void *data)
         p = iflist;
 
         /* Get the event from the endpoint driver. */
-        rc = ioctl( fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
+        rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
         if( rc == IOCTL_STATUS_SUCCESS )
         {
             endptState.lineId = tEventParm.lineId;
@@ -1233,7 +1235,7 @@ int stop_ringing(void)
 EPSTATUS vrgEndptDriverOpen(void)
 {
    /* Open and initialize Endpoint driver */
-   if( ( fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
+   if( ( endpoint_fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
    {
       printf( "%s: open error %d\n", __FUNCTION__, errno );
       return ( EPSTATUS_DRIVER_ERROR );
@@ -1262,13 +1264,13 @@ EPSTATUS vrgEndptDriverOpen(void)
 */
 EPSTATUS vrgEndptDriverClose()
 {
-   if ( close( fd ) == -1 )
+   if ( close( endpoint_fd ) == -1 )
    {
       printf("%s: close error %d", __FUNCTION__, errno);
       return ( EPSTATUS_DRIVER_ERROR );
    }
 
-   fd = NOT_INITIALIZED;
+   endpoint_fd = NOT_INITIALIZED;
 
    return( EPSTATUS_SUCCESS );
 }
@@ -1322,7 +1324,7 @@ EPSTATUS vrgEndptInit
 
 
    /* Check if kernel driver is opened */
-   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
      return ( tStartupParam.epStatus );
 
    return ( tStartupParam.epStatus );
@@ -1364,7 +1366,7 @@ EPSTATUS vrgEndptDeinit( void )
       return( EPSTATUS_DRIVER_ERROR );
    }
 
-   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
    {
    }
 
@@ -1420,7 +1422,7 @@ EPSTATUS vrgEndptSignal
 
    /* Check if kernel driver is opened */
 
-   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_SIGNAL, &tSignalParm ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_SIGNAL, &tSignalParm ) != IOCTL_STATUS_SUCCESS )
    {
    }
 
@@ -1444,11 +1446,10 @@ int vrgEndptGetNumEndpoints( void )
 {
    ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
    int retVal = 0;
-   int filehandle = open("/dev/bcmendpoint0", O_RDWR);
 
    endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
-   if ( ioctl( filehandle, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
    {
    }
    else
@@ -1456,7 +1457,6 @@ int vrgEndptGetNumEndpoints( void )
       retVal = endpointCount.endpointNum;
    }
 
-   close(filehandle);
 
    return( retVal );
 }
@@ -1489,7 +1489,7 @@ EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 
    /* Check if kernel driver is opened */
 
-   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
    {
    }
 
@@ -1521,7 +1521,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 
    /* Check if kernel driver is opened */
 
-   if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS )
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS )
    {
    }
 
@@ -1582,7 +1582,7 @@ int create_connection() {
     tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
-    if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
+    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
       printf("%s: error during ioctl", __FUNCTION__);
     } else {
       printf("\n\nConnection %d created\n\n",i);
@@ -1605,7 +1605,7 @@ int close_connection(void) {
     tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
-    if ( ioctl( fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
+    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
       {
 	printf("%s: error during ioctl", __FUNCTION__);
       } else {
