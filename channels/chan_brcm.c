@@ -59,7 +59,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
-static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
 uint32_t bogus_data[100];
 
 /* rtp stuff */
@@ -1203,7 +1202,7 @@ int signal_ringing(void)
   int i;
 
    /* Check whether value is on or off */
-  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+  for ( i = 0; i < num_fxs_endpoints; i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 #endif
   return 0;
@@ -1216,7 +1215,7 @@ int stop_ringing(void)
   int i;
 
    /* Check whether value is on or off */
-  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+  for ( i = 0; i < num_fxs_endpoints; i++ )
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 #endif
 
@@ -1482,8 +1481,6 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
    tInitParm.endptState = endptState;
    tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
    tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
-
-   /* Check if kernel driver is opened */
 
    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS )
    {
