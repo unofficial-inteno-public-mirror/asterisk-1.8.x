@@ -40,6 +40,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
+#include "asterisk/cli.h"
 #include "asterisk/config.h"
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
@@ -107,6 +108,12 @@ void event_loop(void);
 
 ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
+
+/* Global brcm channel parameters */
+
+int num_fxs_endpoints = -1;
+
+int num_fxo_endpoints = -1;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -911,6 +918,38 @@ static int parse_gain_value(const char *gain_type, const char *value)
 	return (int)gain;
 }
 
+/*! \brief CLI for showing brcm status.
+ * This is a new-style CLI handler so a single function contains
+ * the prototype for the function, the 'generator' to produce multiple
+ * entries in case it is required, and the actual handler for the command.
+ */
+
+static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+
+	if (cmd == CLI_INIT) {
+		e->command = "brcm show status";
+		e->usage =
+			"Usage: brcm show status\n"
+			"       Shows the current chan_brcm status.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+
+	/* print chan brcm status information */
+	ast_cli(a->fd, "FXS endpoints: %d\n", num_fxs_endpoints);
+	ast_cli(a->fd, "FXO endpoints: %d\n", num_fxo_endpoints);
+	return CLI_SUCCESS;
+
+}
+
+
+/*! \brief SIP Cli commands definition */
+static struct ast_cli_entry cli_brcm[] = {
+	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
+};
+
+
 static int __unload_module(void)
 {
 	struct brcm_pvt *p, *pl;
@@ -963,6 +1002,9 @@ static int __unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
+	
+	/* Unregister CLI commands */
+	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
 	endpt_deinit();
 		
@@ -1078,6 +1120,10 @@ static int load_module(void)
 		__unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
+	
+	/* Register all CLI functions for SIP */
+	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
+	
 	ast_config_destroy(cfg);
 	/* And start the monitor for the first time */
 
@@ -1086,7 +1132,6 @@ static int load_module(void)
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
-
 
 
 void endptEventCb()
@@ -1111,7 +1156,6 @@ int endpt_deinit(void)
 
 int endpt_init(void)
 {
-  int num_endpts;
   VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
   int rc, i;
 
@@ -1131,12 +1175,10 @@ int endpt_init(void)
 		     NULL,
 		     NULL );
 
-  num_endpts = vrgEndptGetNumEndpoints();
-  
-  printf("Num endpoints: %d\n", num_endpts);
+	num_fxs_endpoints = vrgEndptGetNumEndpoints();
 
   /* Creating Endpt */
-  for ( i = 0; i < vrgEndptGetNumEndpoints(); i++ )
+  for ( i = 0; i < num_fxs_endpoints; i++ )
     {
       rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
     }
