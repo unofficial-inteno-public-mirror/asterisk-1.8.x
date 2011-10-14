@@ -153,6 +153,10 @@ static struct brcm_pvt {
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int mode;						/* Is this in the  */
+	int connection_id;				/* Id of the connection, used to map the correct port */
+	char dtmfbuf[300];				/* DTMF buffer per channel */
+	int dtmf_len;					/* Length of DTMF buffer */
+	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
 	format_t lastformat;            /* Last output format */
 	format_t lastinput;             /* Last input format */
 	int ministate;					/* Miniature state, for dialtone mode */
@@ -623,15 +627,15 @@ enum channel_state {
 
 #define DTMF_CHECK(dtmf_button, event_string) \
 {\
-    if (dtmf_first < 0) {\
-        dtmf_first = dtmf_button;\
-    } else if (dtmf_first == dtmf_button) {\
-        dtmfbuf[dtmf_len] = dtmf_button;\
-        dtmf_len++;\
-        dtmfbuf[dtmf_len] = '\0';\
-        dtmf_first = -1;\
+    if (p->dtmf_first < 0) {\
+        p->dtmf_first = dtmf_button;\
+    } else if (p->dtmf_first == dtmf_button) {\
+        p->dtmfbuf[p->dtmf_len] = dtmf_button;\
+        p->dtmf_len++;\
+        p->dtmfbuf[p->dtmf_len] = '\0';\
+        p->dtmf_first = -1;\
     } else {\
-        dtmf_first = -1;\
+        p->dtmf_first = -1;\
     }\
 }
 
@@ -644,11 +648,7 @@ static void *do_monitor(void *data)
     ENDPT_STATE endptState;
     int rc = IOCTL_STATUS_FAILURE;
     struct brcm_pvt *p;
-    struct brcm_pvt *i = iflist;
     int channel_state = ONHOOK;
-    char dtmfbuf[300];
-    int dtmf_len = 0;
-    int dtmf_first = -1;
 
     while (monitor) {
         tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
@@ -665,10 +665,10 @@ static void *do_monitor(void *data)
                     ast_verbose("EPEVT_OFFHOOK detected\n");
                     channel_state = OFFHOOK;
                     /* Reset the dtmf buffer */
-                    memset(dtmfbuf, 0, sizeof(dtmfbuf));
-                    dtmf_len          = 0;
-                    dtmf_first        = -1;
-                    dtmfbuf[dtmf_len] = '\0';
+                    memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+                    p->dtmf_len          = 0;
+                    p->dtmf_first        = -1;
+                    p->dtmfbuf[p->dtmf_len] = '\0';
                     if(p->owner) {
                         create_connection();
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
@@ -679,10 +679,10 @@ static void *do_monitor(void *data)
                     ast_verbose("EPEVT_ONHOOK detected\n");
                     channel_state = ONHOOK;
                     /* Reset the dtmf buffer */
-                    memset(dtmfbuf, 0, sizeof(dtmfbuf));
-                    dtmf_len          = 0;
-                    dtmf_first        = -1;
-                    dtmfbuf[dtmf_len] = '\0';
+                    memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+                    p->dtmf_len          = 0;
+                    p->dtmf_first        = -1;
+                    p->dtmfbuf[p->dtmf_len] = '\0';
                     if(p->owner) {
                         ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                         ast_setstate(p->owner, AST_STATE_DOWN);
@@ -704,24 +704,24 @@ static void *do_monitor(void *data)
                 default:
                     break;
             }
-            ast_verbose("DTMF string: %s\n", dtmfbuf);
+            ast_verbose("DTMF string: %s\n",p->dtmfbuf);
 
             /* Check if the dtmf string matches anything in the dialplan */
-            if (ast_exists_extension(NULL, i->context, dtmfbuf, 1, i->cid_num)) {
+            if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)) {
                 channel_state = INCALL;
-                ast_verbose("Extension matching: %s found\n", dtmfbuf);
-                ast_copy_string(i->ext, dtmfbuf, sizeof(dtmfbuf));
-                ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", i->context, i->cid_num, i->ext);
+                ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
+                ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
+                ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", p->context, p->cid_num, p->ext);
 
                 /* Reset the dtmf buffer */
-                memset(dtmfbuf, 0, sizeof(dtmfbuf));
-                dtmf_len          = 0;
-                dtmf_first        = -1;
-                dtmfbuf[dtmf_len] = '\0';
+                memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+                p->dtmf_len          = 0;
+                p->dtmf_first        = -1;
+                p->dtmfbuf[p->dtmf_len] = '\0';
 
                 /* Start the pbx */
 				create_connection();
-                brcm_new(i, AST_STATE_RING, i->context, NULL);
+                brcm_new(p, AST_STATE_RING, p->context, NULL);
             }
         }
     }
@@ -794,6 +794,8 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		flags = fcntl(tmp->fd, F_GETFL);
 		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
 		tmp->owner = NULL;
+		tmp->dtmf_len = 0;
+		tmp->dtmf_first = -1;
 		tmp->lastformat = -1;
 		tmp->lastinput = -1;
 		tmp->ministate = 0;
