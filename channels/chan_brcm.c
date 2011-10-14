@@ -670,7 +670,7 @@ static void *do_monitor(void *data)
                     p->dtmf_first        = -1;
                     p->dtmfbuf[p->dtmf_len] = '\0';
                     if(p->owner) {
-                        create_connection();
+                        create_connection(p->connection_id);
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
                         ast_setstate(p->owner, AST_STATE_UP);
                     }
@@ -686,7 +686,7 @@ static void *do_monitor(void *data)
                     if(p->owner) {
                         ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                         ast_setstate(p->owner, AST_STATE_DOWN);
-                        close_connection();
+                        close_connection(p->connection_id);
                     }
                     break;
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
@@ -720,7 +720,7 @@ static void *do_monitor(void *data)
                 p->dtmfbuf[p->dtmf_len] = '\0';
 
                 /* Start the pbx */
-				create_connection();
+				create_connection(p->connection_id);
                 brcm_new(p, AST_STATE_RING, p->context, NULL);
             }
         }
@@ -796,6 +796,7 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
+		tmp->connection_id = -1;
 		tmp->lastformat = -1;
 		tmp->lastinput = -1;
 		tmp->ministate = 0;
@@ -975,6 +976,7 @@ static int load_module(void)
 	struct ast_config *cfg;
 	struct ast_variable *v;
 	struct brcm_pvt *tmp;
+	int i;
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
 
@@ -982,6 +984,9 @@ static int load_module(void)
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
 		return AST_MODULE_LOAD_DECLINE;
 	}
+
+	/* Initialize the endpoints */
+	endpt_init();
 
 	/* We *must* have a config file otherwise stop immediately */
 	if (!cfg) {
@@ -1069,9 +1074,13 @@ static int load_module(void)
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	
 	ast_config_destroy(cfg);
-	/* And start the monitor for the first time */
 
-	endpt_init();
+	/* Assign connection_id's //FIXME iterate over all pvt's */
+	for (i=0 ; i<1 /*num_fxs_endpoints*/ ; i++) {
+		tmp->connection_id = i;
+	}
+
+	/* And start the monitor for the first time */
 	restart_monitor();
 
 	return AST_MODULE_LOAD_SUCCESS;
@@ -1443,13 +1452,12 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-int create_connection() {
-  int i;
+int create_connection(int connection_id) {
 
   /* generate random nr for rtp header */
-  ssrc = rand();
+		ast_log(LOG_ERROR, "connection_id = %d\n",connection_id);
+	ssrc = rand();
 
-  for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
     ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
     EPZCNXPARAM epCnxParms = {0};
     //		CODECLIST  codecListLocal = {0};
@@ -1483,32 +1491,32 @@ int create_connection() {
     //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
 
-    tConnectionParm.cnxId      = i;
+    tConnectionParm.cnxId      = connection_id;
     tConnectionParm.cnxParam   = &epCnxParms;
-    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[i];
+    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[connection_id];
     tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
       printf("%s: error during ioctl", __FUNCTION__);
     } else {
-      printf("\n\nConnection %d created\n\n",i);
+      printf("\n\nConnection %d created\n\n",connection_id);
     }
-  }
+
 
   return 0;
 }
 
 
-int close_connection(void) {
+int close_connection(int connection_id) {
   int i;
 
   /* Close connection */
   for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
     ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
 
-    tDelConnectionParm.cnxId      = i;
-    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[i];
+    tDelConnectionParm.cnxId      = connection_id;
+    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[connection_id];
     tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
