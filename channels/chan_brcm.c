@@ -142,9 +142,7 @@ AST_MUTEX_DEFINE_STATIC(monlock);
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
-   
-/* This is the thread for the monitor which checks for input on the channels
-   which are not currently in use.  */
+
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 
 static int restart_monitor(void);
@@ -639,13 +637,9 @@ enum channel_state {
     }\
 }
 
-static void *do_monitor(void *data)
+static void *brcm_monitor_events(void *data)
 {
-    /* The tone we're playing this round */
-    /* This thread monitors all the frame relay interfaces which are not yet in use
-       (and thus do not have a separate thread) indefinitely */
     ENDPOINTDRV_EVENT_PARM tEventParm = {0};
-    ENDPT_STATE endptState;
     int rc = IOCTL_STATUS_FAILURE;
     struct brcm_pvt *p;
     int channel_state = ONHOOK;
@@ -659,7 +653,6 @@ static void *do_monitor(void *data)
         rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
         if( rc == IOCTL_STATUS_SUCCESS )
         {
-            endptState.lineId = tEventParm.lineId;
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
                     ast_verbose("EPEVT_OFFHOOK detected\n");
@@ -764,7 +757,7 @@ static int restart_monitor()
 	ast_log(LOG_ERROR, "BRCM: restart_monitor 6\n");
 	monitor = 1;
 	/* Start a new monitor */
-	if (ast_pthread_create_background(&monitor_thread, NULL, do_monitor, NULL) < 0) {
+	if (ast_pthread_create_background(&monitor_thread, NULL, brcm_monitor_events, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
 		return -1;
