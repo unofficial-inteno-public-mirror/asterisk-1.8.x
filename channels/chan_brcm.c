@@ -721,7 +721,8 @@ static void brcm_event_handler(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
 				/* Start the pbx */
-				create_connection(p->connection_id);
+				if (!p->connection_id)
+					create_connection(p->connection_id);
 				brcm_new(p, AST_STATE_RING, p->context, NULL);
 			}
 
