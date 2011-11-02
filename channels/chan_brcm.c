@@ -59,6 +59,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define LOUD
 #define TIMEMSEC 1000
 #define TIMEOUTMSEC 2000
+
+#define PCMU 0
+#define PCMA 8
+
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
@@ -72,7 +76,7 @@ int ssrc = 0;
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
-void generate_rtp_packet(UINT8 *packet_buf);
+void generate_rtp_packet(UINT8 *packet_buf, int type);
 #define PACKET_BUFFER_SIZE 1024
 
 #define NOT_INITIALIZED -1
@@ -561,7 +565,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  epPacket_send.packetp = packet_buffer;
 
 	  /* generate the rtp header */
-	  generate_rtp_packet(epPacket_send.packetp);
+	  generate_rtp_packet(epPacket_send.packetp, PCMA);
 
 	  tPacketParm_send.cnxId       = 0;
 	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
@@ -579,27 +583,32 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 }
 
-static int brcm_send_dialtone(struct brcm_pvt *p) {
+static void brcm_send_dialtone(struct brcm_pvt *p) {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 	static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
 	int i;
+	static int dt_counter = 0;
 
 	/* send rtp packet to the endpoint */
 	epPacket_send.mediaType   = 0;
 
 	/* copy frame data to local buffer */
 	//memcpy(packet_buffer + 12, digital_milliwatt, 8);
-	for (i=0 ; i<20 ; i++) {
-		memcpy(&packet_buffer[12 + i*8], digital_milliwatt, 8);
-	}
+	memcpy(&packet_buffer[12], &DialTone[dt_counter], 160);
+	dt_counter += 160;
+	if (dt_counter >=2400) dt_counter = 0;
+
+//	for (i=0 ; i<20 ; i++) {
+//		memcpy(&packet_buffer[12 + i*8], digital_milliwatt, 8);
+//	}
 
 	/* add buffer to outgoing packet */
 	epPacket_send.packetp = packet_buffer;
 
 	/* generate the rtp header */
-	generate_rtp_packet(epPacket_send.packetp);
+	generate_rtp_packet(epPacket_send.packetp, PCMU);
 
 	tPacketParm_send.cnxId       = p->connection_id;
 	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
@@ -813,10 +822,10 @@ static void *brcm_monitor_events(void *data)
                         ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                         ast_setstate(p->owner, AST_STATE_DOWN);
                     }
-					if (p->connection_init) {
+					//if (p->connection_init) {
 						close_connection(p->connection_id);
 						p->connection_init=0;
-					}
+					//}
                     break;
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
                 case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
@@ -1659,7 +1668,7 @@ int close_connection(int connection_id) {
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
-void generate_rtp_packet(UINT8 *packet_buf) {
+void generate_rtp_packet(UINT8 *packet_buf, int type) {
 	int bidx = 0;
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
@@ -1670,7 +1679,7 @@ void generate_rtp_packet(UINT8 *packet_buf) {
 	//Extension 0
 	//CSRC count 0
 	//Marker 0
-	packet_buf[1] = 8; //Payload type PCMU = 0,  PCMA = 8, FIXME use table to lookup value
+	packet_buf[1] = type; //Payload type PCMU = 0,  PCMA = 8, FIXME use table to lookup value
 	packet_buf16[1] = sequence_number++; //Add sequence number
 	if (sequence_number > 0xFFFF) sequence_number=0;
 	packet_buf32[1] = time_stamp;	//Add timestamp
