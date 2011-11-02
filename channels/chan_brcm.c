@@ -192,6 +192,7 @@ static struct brcm_pvt {
 	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int channel_state;		/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
+	unsigned int last_dialtone_ts;	/* Timestamp to send a continious dialtone */
 } *iflist = NULL;
 
 static char cid_num[AST_MAX_EXTENSION];
@@ -687,14 +688,21 @@ static void brcm_event_handler(void *data)
 		//ast_verbose("msec = %d\n",ts);
 		/* loop over all pvt's */
 		while(p) {
-			/* If off hook send dialtone */
+			/* If off hook send dialtone every 20 ms*/
 			if (p->channel_state == OFFHOOK) {
-				ast_verbose("sending dialtone\n");
+				//ast_verbose("sending dialtone, %d > %d\n",ts, p->last_dialtone_ts + 20);
 				if (!p->connection_init) {
 					create_connection(p->connection_id);
 					p->connection_init = 1;
 				}
-				brcm_send_dialtone(p);
+
+				if (!p->last_dialtone_ts) p->last_dialtone_ts = ts;
+
+				if (ts > p->last_dialtone_ts + 20) {
+					//ast_verbose("sending tone\n");
+					brcm_send_dialtone(p);
+					p->last_dialtone_ts = p->last_dialtone_ts + 20;
+				}
 			}
 
 			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
@@ -729,7 +737,7 @@ static void brcm_event_handler(void *data)
 			/* Get next channel pvt if there is one */
 			p = brcm_get_next_pvt(p);
 		}
-		usleep(100*TIMEMSEC);
+		usleep(10*TIMEMSEC);
 	}
 }
 
@@ -799,6 +807,8 @@ static void *brcm_monitor_events(void *data)
                     p->dtmf_len          = 0;
                     p->dtmf_first        = -1;
                     p->dtmfbuf[p->dtmf_len] = '\0';
+
+					p->last_dialtone_ts = 0;
                     if(p->owner) {
                         ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                         ast_setstate(p->owner, AST_STATE_DOWN);
@@ -927,6 +937,7 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		tmp->last_dtmf_ts = 0;
 		tmp->channel_state = ONHOOK;
 		tmp->connection_init = 0;
+		tmp->last_dialtone_ts = 0;
 	}
 	return tmp;
 }
