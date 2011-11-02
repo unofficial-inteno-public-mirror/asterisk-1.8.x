@@ -57,6 +57,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define DEFAULT_GAIN 0x100
 
 #define LOUD
+#define TIMEMSEC 1000
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
@@ -100,6 +101,15 @@ EPSTATUS vrgEndptSignal
    int            repetition
  );
 
+enum channel_state {
+    ONHOOK,
+    OFFHOOK,
+    DIALING,
+    INCALL,
+    ANSWER,
+};
+
+
 EPSTATUS vrgEndptDriverOpen(void);
 int endpt_init(void);
 int endpt_deinit(void);
@@ -142,8 +152,11 @@ AST_MUTEX_DEFINE_STATIC(monlock);
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
+static unsigned int events = 1;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
+static pthread_t event_thread = AST_PTHREADT_NULL;
+
 
 static int restart_monitor(void);
 
@@ -175,6 +188,8 @@ static struct brcm_pvt {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
+	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
+	unsigned int channel_state;		/* Channel states */
 } *iflist = NULL;
 
 static char cid_num[AST_MAX_EXTENSION];
@@ -615,23 +630,48 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 	return tmp;
 }
 
-enum channel_state {
-    ONHOOK,
-    OFFHOOK,
-    DIALING,
-    INCALL,
-    ANSWER,
-};
+static struct brcm_pvt* brcm_get_next_pvt(struct brcm_pvt *p) {
+	if (p->next)
+		return p->next;
+	else
+		return NULL;
+}
+
+static void brcm_event_handler(void *data)
+{
+	struct brcm_pvt *p = iflist;
+	struct timeval tim;
+	unsigned int ts;
+
+	while(events) {
+		p = iflist;
+		gettimeofday(&tim, NULL);
+		ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+		//ast_verbose("msec = %d\n",ts);
+		/* loop over all pvt's */
+		while(p) {
+			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
+			if ((p->channel_state == OFFHOOK) && (ts - p->last_dtmf_ts > 2000))
+				ast_verbose("ts - last_dtmf_ts > 2000\n");
+			p = brcm_get_next_pvt(p);
+		}
+		usleep(500*TIMEMSEC);
+	}
+}
+
 
 #define DTMF_CHECK(dtmf_button, event_string) \
 {\
+    gettimeofday(&tim, NULL); \
     if (p->dtmf_first < 0) {\
         p->dtmf_first = dtmf_button;\
+        p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
     } else if (p->dtmf_first == dtmf_button) {\
         p->dtmfbuf[p->dtmf_len] = dtmf_button;\
         p->dtmf_len++;\
         p->dtmfbuf[p->dtmf_len] = '\0';\
         p->dtmf_first = -1;\
+        p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
     } else {\
         p->dtmf_first = -1;\
     }\
@@ -642,7 +682,7 @@ static void *brcm_monitor_events(void *data)
     ENDPOINTDRV_EVENT_PARM tEventParm = {0};
     int rc = IOCTL_STATUS_FAILURE;
     struct brcm_pvt *p;
-    int channel_state = ONHOOK;
+	struct timeval tim;
 
     while (monitor) {
         tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
@@ -656,7 +696,10 @@ static void *brcm_monitor_events(void *data)
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
                     ast_verbose("EPEVT_OFFHOOK detected\n");
-                    channel_state = OFFHOOK;
+					gettimeofday(&tim, NULL);
+					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
+                    p->channel_state = OFFHOOK;
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
@@ -670,7 +713,10 @@ static void *brcm_monitor_events(void *data)
                     break;
                 case EPEVT_ONHOOK:
                     ast_verbose("EPEVT_ONHOOK detected\n");
-                    channel_state = ONHOOK;
+					gettimeofday(&tim, NULL);
+					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
+					p->channel_state = ONHOOK;
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
@@ -701,7 +747,7 @@ static void *brcm_monitor_events(void *data)
 
             /* Check if the dtmf string matches anything in the dialplan */
             if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)) {
-                channel_state = INCALL;
+                p->channel_state = INCALL;
                 ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
                 ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
                 ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", p->context, p->cid_num, p->ext);
@@ -762,6 +808,15 @@ static int restart_monitor()
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
 		return -1;
 	}
+
+	/* Start a new event handler thread */
+	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
+		ast_mutex_unlock(&monlock);
+		ast_log(LOG_ERROR, "Unable to start event thread.\n");
+		return -1;
+	}
+
+
   ast_log(LOG_ERROR, "BRCM: restart_monitor 7\n");
 	ast_mutex_unlock(&monlock);
 	return 0;
@@ -805,6 +860,8 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		ast_copy_string(tmp->cid_name, cid_name, sizeof(tmp->cid_name));
 		tmp->txgain = txgain;
 		tmp->rxgain = rxgain;
+		tmp->last_dtmf_ts = 0;
+		tmp->channel_state = ONHOOK;
 	}
 	return tmp;
 }
