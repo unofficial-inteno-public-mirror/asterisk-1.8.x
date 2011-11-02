@@ -825,14 +825,14 @@ static void *brcm_monitor_events(void *data)
                     p->dtmfbuf[p->dtmf_len] = '\0';
 
 					p->last_dialtone_ts = 0;
-                    if(p->owner) {
-                        ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-                        ast_setstate(p->owner, AST_STATE_DOWN);
-                    }
 					//if (p->connection_init) {
 						close_connection(p->connection_id);
 						p->connection_init=0;
 					//}
+					if(p->owner) {
+						ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+						ast_setstate(p->owner, AST_STATE_DOWN);
+					}
                     break;
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
                 case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
@@ -847,12 +847,15 @@ static void *brcm_monitor_events(void *data)
                 case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
                 case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
                 default:
+					ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
                     break;
             }
             ast_verbose("DTMF string: %s\n",p->dtmfbuf);
 
 
-        }
+        } else {
+			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed\n");
+		}
     }
 
     return NULL;
