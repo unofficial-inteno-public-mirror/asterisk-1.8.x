@@ -454,7 +454,13 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 }
 
 
-
+static int map_rtp_to_ast_codec_id(int id) {
+	switch (id) {
+		case PCMU: return AST_FORMAT_ULAW;
+		case PCMA: return AST_FORMAT_ALAW;
+		default:   return AST_FORMAT_ALAW;
+	}
+}
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
@@ -476,26 +482,26 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	  epPacket.mediaType   = 0;
 	  epPacket.packetp     = data;
 	  tPacketParm.epPacket = &epPacket;
-	  tPacketParm.cnxId    = 0;
+	  tPacketParm.cnxId    = p->connection_id;
 	  tPacketParm.length   = 0;
 
 	  /* get rtp packets from endpoint */
 	  if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
 	    {
-
-	      if (tPacketParm.cnxId == 0 && tPacketParm.length == 172) {
-
-		p->fr.data.ptr =  (data + 12);
-		p->fr.samples = 160;
-		p->fr.datalen = tPacketParm.length - 12;
-		p->fr.frametype = AST_FRAME_VOICE;
-		p->fr.subclass.codec = AST_FORMAT_ALAW;
-		p->fr.offset = 0;
-
-		return &p->fr;
-
-	      }
-	    }
+			/* > RTP header max size, 16 for now, lots of assumptions here */
+			if (tPacketParm.length > 16) {
+				//RTP id marker
+				if (data[0] == 0x80) {
+					p->fr.data.ptr =  (data + 12);
+					p->fr.samples = 160;
+					p->fr.datalen = tPacketParm.length - 12;
+					p->fr.frametype = AST_FRAME_VOICE;
+					p->fr.subclass.codec = map_rtp_to_ast_codec_id(data[1]);
+					p->fr.offset = 0;
+					return &p->fr;
+				}
+			}
+		}
 	}
 
 	return &ast_null_frame;
@@ -545,6 +551,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
+	struct brcm_pvt *p = ast->tech_pvt;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
 
@@ -567,7 +574,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  /* generate the rtp header */
 	  generate_rtp_packet(epPacket_send.packetp, PCMA);
 
-	  tPacketParm_send.cnxId       = 0;
+	  tPacketParm_send.cnxId       = p->connection_id;
 	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
 	  tPacketParm_send.length      = 12 + frame->datalen;
 	  tPacketParm_send.bufDesc     = (int)&epPacket_send;
