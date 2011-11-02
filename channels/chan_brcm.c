@@ -58,6 +58,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #define LOUD
 #define TIMEMSEC 1000
+#define TIMEOUTMSEC 2000
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
@@ -651,11 +652,17 @@ static void brcm_event_handler(void *data)
 		/* loop over all pvt's */
 		while(p) {
 			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
-			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > 2000))
+			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 				ast_verbose("ts - last_dtmf_ts > 2000\n");
+				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
+			}
 
 			/* Check if the dtmf string matches anything in the dialplan */
-			if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)) {
+			if ((p->channel_state == DIALING) &&
+				(ts - p->last_dtmf_ts > TIMEOUTMSEC) &&
+				ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
+				!ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
+			) {
 				p->channel_state = INCALL;
 				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
 				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
