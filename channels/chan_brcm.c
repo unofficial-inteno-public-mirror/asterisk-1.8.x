@@ -166,7 +166,7 @@ static struct brcm_pvt {
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int mode;						/* Is this in the  */
 	int connection_id;				/* Id of the connection, used to map the correct port */
-	char dtmfbuf[300];				/* DTMF buffer per channel */
+	char dtmfbuf[AST_MAX_EXTENSION];/* DTMF buffer per channel */
 	int dtmf_len;					/* Length of DTMF buffer */
 	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
 	format_t lastformat;            /* Last output format */
