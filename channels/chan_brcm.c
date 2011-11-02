@@ -651,8 +651,28 @@ static void brcm_event_handler(void *data)
 		/* loop over all pvt's */
 		while(p) {
 			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
-			if ((p->channel_state == OFFHOOK) && (ts - p->last_dtmf_ts > 2000))
+			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > 2000))
 				ast_verbose("ts - last_dtmf_ts > 2000\n");
+
+			/* Check if the dtmf string matches anything in the dialplan */
+			if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)) {
+				p->channel_state = INCALL;
+				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
+				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
+				ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", p->context, p->cid_num, p->ext);
+
+				/* Reset the dtmf buffer */
+				memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+				p->dtmf_len          = 0;
+				p->dtmf_first        = -1;
+				p->dtmfbuf[p->dtmf_len] = '\0';
+
+				/* Start the pbx */
+				create_connection(p->connection_id);
+				brcm_new(p, AST_STATE_RING, p->context, NULL);
+			}
+
+			/* Get next channel pvt if there is one */
 			p = brcm_get_next_pvt(p);
 		}
 		usleep(500*TIMEMSEC);
@@ -672,6 +692,7 @@ static void brcm_event_handler(void *data)
         p->dtmfbuf[p->dtmf_len] = '\0';\
         p->dtmf_first = -1;\
         p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
+        if (p->channel_state == OFFHOOK) p->channel_state = DIALING; \
     } else {\
         p->dtmf_first = -1;\
     }\
@@ -745,23 +766,7 @@ static void *brcm_monitor_events(void *data)
             }
             ast_verbose("DTMF string: %s\n",p->dtmfbuf);
 
-            /* Check if the dtmf string matches anything in the dialplan */
-            if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)) {
-                p->channel_state = INCALL;
-                ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
-                ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
-                ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", p->context, p->cid_num, p->ext);
 
-                /* Reset the dtmf buffer */
-                memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-                p->dtmf_len          = 0;
-                p->dtmf_first        = -1;
-                p->dtmfbuf[p->dtmf_len] = '\0';
-
-                /* Start the pbx */
-				create_connection(p->connection_id);
-                brcm_new(p, AST_STATE_RING, p->context, NULL);
-            }
         }
     }
 
