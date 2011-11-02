@@ -191,6 +191,7 @@ static struct brcm_pvt {
 	char cid_name[AST_MAX_EXTENSION];
 	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int channel_state;		/* Channel states */
+	unsigned int connection_init;	/* State for endpoint id connection initialization */
 } *iflist = NULL;
 
 static char cid_num[AST_MAX_EXTENSION];
@@ -577,6 +578,41 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 }
 
+static int brcm_send_dialtone(struct brcm_pvt *p) {
+	EPPACKET epPacket_send;
+	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
+	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+	static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
+	int i;
+
+	/* send rtp packet to the endpoint */
+	epPacket_send.mediaType   = 0;
+
+	/* copy frame data to local buffer */
+	//memcpy(packet_buffer + 12, digital_milliwatt, 8);
+	for (i=0 ; i<20 ; i++) {
+		memcpy(&packet_buffer[12 + i*8], digital_milliwatt, 8);
+	}
+
+	/* add buffer to outgoing packet */
+	epPacket_send.packetp = packet_buffer;
+
+	/* generate the rtp header */
+	generate_rtp_packet(epPacket_send.packetp);
+
+	tPacketParm_send.cnxId       = p->connection_id;
+	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
+	tPacketParm_send.length      = 12 + 160;
+	tPacketParm_send.bufDesc     = (int)&epPacket_send;
+	tPacketParm_send.epPacket    = &epPacket_send;
+	tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
+	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+		ast_verbose("%s: error during ioctl", __FUNCTION__);
+
+}
+
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
 {
 	struct ast_channel *tmp;
@@ -651,6 +687,16 @@ static void brcm_event_handler(void *data)
 		//ast_verbose("msec = %d\n",ts);
 		/* loop over all pvt's */
 		while(p) {
+			/* If off hook send dialtone */
+			if (p->channel_state == OFFHOOK) {
+				ast_verbose("sending dialtone\n");
+				if (!p->connection_init) {
+					create_connection(p->connection_id);
+					p->connection_init = 1;
+				}
+				brcm_send_dialtone(p);
+			}
+
 			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
 			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 				ast_verbose("ts - last_dtmf_ts > 2000\n");
@@ -682,7 +728,7 @@ static void brcm_event_handler(void *data)
 			/* Get next channel pvt if there is one */
 			p = brcm_get_next_pvt(p);
 		}
-		usleep(500*TIMEMSEC);
+		usleep(100*TIMEMSEC);
 	}
 }
 
@@ -727,16 +773,18 @@ static void *brcm_monitor_events(void *data)
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
-                    p->channel_state = OFFHOOK;
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
                     p->dtmf_first        = -1;
                     p->dtmfbuf[p->dtmf_len] = '\0';
+					p->channel_state = OFFHOOK;
                     if(p->owner) {
+						ast_verbose("create_connection()\n");
                         create_connection(p->connection_id);
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
                         ast_setstate(p->owner, AST_STATE_UP);
+						p->channel_state = INCALL;
                     }
                     break;
                 case EPEVT_ONHOOK:
@@ -753,8 +801,11 @@ static void *brcm_monitor_events(void *data)
                     if(p->owner) {
                         ast_queue_control(p->owner, AST_CONTROL_HANGUP);
                         ast_setstate(p->owner, AST_STATE_DOWN);
-                        close_connection(p->connection_id);
                     }
+					if (p->connection_init) {
+						close_connection(p->connection_id);
+						p->connection_init=0;
+					}
                     break;
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
                 case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
@@ -874,6 +925,7 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		tmp->rxgain = rxgain;
 		tmp->last_dtmf_ts = 0;
 		tmp->channel_state = ONHOOK;
+		tmp->connection_init = 0;
 	}
 	return tmp;
 }
