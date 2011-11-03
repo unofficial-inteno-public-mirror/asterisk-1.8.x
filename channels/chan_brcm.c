@@ -56,7 +56,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
 
-#define LOUD
+//#define LOUD
 #define TIMEMSEC 1000
 #define TIMEOUTMSEC 2000
 
@@ -166,6 +166,7 @@ static unsigned int events = 1;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
+static pthread_t packet_thread = AST_PTHREADT_NULL;
 
 
 static int restart_monitor(void);
@@ -486,47 +487,6 @@ static int map_rtp_to_ast_codec_id(int id) {
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
-	struct brcm_pvt *p = ast->tech_pvt;
-	UINT8 data[PACKET_BUFFER_SIZE] = {0};	
-	EPPACKET epPacket;
-	ENDPOINTDRV_PACKET_PARM tPacketParm;
-	
-
-	/* Some nice norms */
-	p->fr.src = "brcm";
-	p->fr.mallocd=0;
-	p->fr.delivery = ast_tv(0,0);
-
-	if (ast->_state == AST_STATE_UP) {
-
-	  /* Connection is established; try to read some data... */
-
-	  epPacket.mediaType   = 0;
-	  epPacket.packetp     = data;
-	  tPacketParm.epPacket = &epPacket;
-	  tPacketParm.cnxId    = p->connection_id;
-	  tPacketParm.length   = 0;
-
-	  /* get rtp packets from endpoint */
-	  if (p->connection_init) {
-	  if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
-	    {
-			/* > RTP header max size, 16 for now, lots of assumptions here */
-			if (tPacketParm.length > 16) {
-				//RTP id marker
-				if (data[0] == 0x80) {
-					p->fr.data.ptr =  (data + 12);
-					p->fr.samples = 160;
-					p->fr.datalen = tPacketParm.length - 12;
-					p->fr.frametype = AST_FRAME_VOICE;
-					p->fr.subclass.codec = map_rtp_to_ast_codec_id(data[1]);
-					p->fr.offset = 0;
-					return &p->fr;
-				}
-			}
-		}
-		}
-	}
 
 	return &ast_null_frame;
 }
@@ -750,6 +710,7 @@ static void brcm_event_handler(void *data)
 
 				if (ts > p->last_dialtone_ts + 20) {
 					//ast_verbose("sending tone\n");
+
 					if (!p->connection_init)
 						brcm_create_connection(p);
 					brcm_send_dialtone(p);
@@ -811,6 +772,70 @@ static void brcm_event_handler(void *data)
     }\
 }
 
+
+
+
+static void *brcm_monitor_packets(void *data)
+{
+  struct brcm_pvt *p;
+	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
+	EPPACKET epPacket;
+	ENDPOINTDRV_PACKET_PARM tPacketParm;
+	struct ast_frame fr;
+
+	p = iflist;
+	/* Some nice norms */
+	fr.src = "brcm";
+	fr.mallocd=0;
+	/* fr.delivery = ast_tv(0,0); */
+	
+
+	while(1) {
+
+	  if (p->owner) {
+	    if (p->owner->_state == AST_STATE_UP) {
+
+	      /* Connection is established; try to read some data... */
+
+	      epPacket.mediaType   = 0;
+	      epPacket.packetp     = pdata;
+	      tPacketParm.epPacket = &epPacket;
+	      tPacketParm.cnxId    = 0;
+	      tPacketParm.length   = 0;
+
+	      /*   /\* get rtp packets from endpoint *\/ */
+	      if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
+		{
+		  /* > RTP header max size, 16 for now, lots of assumptions here */
+		  if (tPacketParm.length == 172) {
+		    //RTP id marker
+		    if (pdata[0] == 0x80) {
+		      fr.data.ptr =  (pdata + 12);
+		      fr.samples = 160;
+		      fr.datalen = tPacketParm.length - 12;
+		      fr.frametype = AST_FRAME_VOICE;
+		      fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
+		      fr.offset = 0;
+		      ast_queue_frame(p->owner, &fr);
+		    }
+		  }
+		}
+	    }
+	  }
+	  usleep(10);
+	  /* ast_verbose("brcm_monitor_packets\n"); */
+	}
+	
+
+
+}
+
+
+
+
+
+
+
 static void *brcm_monitor_events(void *data)
 {
     ENDPOINTDRV_EVENT_PARM tEventParm = {0};
@@ -842,6 +867,7 @@ static void *brcm_monitor_events(void *data)
 					p->channel_state = OFFHOOK;
                     if(p->owner) {
 						ast_verbose("create_connection()\n");
+
                         brcm_create_connection(p);
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
                         ast_setstate(p->owner, AST_STATE_UP);
@@ -938,11 +964,19 @@ static int restart_monitor()
 	}
 
 	/* Start a new event handler thread */
-	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
+	/* if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) { */
+	/* 	ast_mutex_unlock(&monlock); */
+	/* 	ast_log(LOG_ERROR, "Unable to start event thread.\n"); */
+	/* 	return -1; */
+	/* } */
+
+	/* Start a new sound polling thread */
+	if (ast_pthread_create_background(&packet_thread, NULL, brcm_monitor_packets, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
 		return -1;
 	}
+
 
 
   ast_log(LOG_ERROR, "BRCM: restart_monitor 7\n");
