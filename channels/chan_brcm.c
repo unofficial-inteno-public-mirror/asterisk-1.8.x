@@ -628,7 +628,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 
 	if (tmp) {
 		tmp->tech = cur_tech;
-		ast_channel_set_fd(tmp, 0, i->fd);
+		/* ast_channel_set_fd(tmp, 0, i->fd); */
 
 		/* set codecs */
 		tmp->nativeformats  = AST_FORMAT_ALAW;
@@ -782,7 +782,10 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	struct ast_frame fr;
-
+	struct timeval tim;
+	RTPPACKET *rtp;
+	
+	rtp = pdata;
 	p = iflist;
 	/* Some nice norms */
 	fr.src = "brcm";
@@ -816,6 +819,9 @@ static void *brcm_monitor_packets(void *data)
 		      fr.frametype = AST_FRAME_VOICE;
 		      fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
 		      fr.offset = 0;
+		      fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+		      fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+
 		      ast_queue_frame(p->owner, &fr);
 		    }
 		  }
