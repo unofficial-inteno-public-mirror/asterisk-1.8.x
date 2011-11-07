@@ -981,6 +981,21 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgai
 	}
 }
 
+
+static void brcm_assign_connection_id(struct brcm_pvt *p)
+{
+	struct brcm_pvt *tmp = p;
+	int i;
+	
+	/* Assign connection_id's */
+	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
+		tmp->connection_id = i;
+		tmp = brcm_get_next_pvt(tmp);
+		/* Break just in case */
+		if (tmp == p) break;
+	}
+}
+
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
 	format_t oldformat;
@@ -1150,17 +1165,18 @@ static int load_module(void)
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
-	/* Initialize the endpoints */
-	endpt_init();
-	brcm_get_endpoints_count();
-	brcm_create_fxs_endpoints();
-
 	/* We *must* have a config file otherwise stop immediately */
 	if (!cfg) {
 		ast_log(LOG_ERROR, "Unable to load config %s\n", config);
 		return AST_MODULE_LOAD_DECLINE;
 	}
 	if (ast_mutex_lock(&iflock)) {
+
+		/* Initialize the endpoints */
+		endpt_init();
+		brcm_get_endpoints_count();
+		brcm_create_fxs_endpoints();
+
 		/* It's a little silly to lock it, but we mind as well just to be sure */
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return AST_MODULE_LOAD_FAILURE;
@@ -1225,6 +1241,7 @@ static int load_module(void)
 		v = v->next;
 	}
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
+	brcm_assign_connection_id(iflist);
 	ast_mutex_unlock(&iflock);
 
 		cur_tech = (struct ast_channel_tech *) &brcm_tech;
@@ -1242,11 +1259,6 @@ static int load_module(void)
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	
 	ast_config_destroy(cfg);
-
-	/* Assign connection_id's //FIXME iterate over all pvt's */
-	for (i=0 ; i<1 /*num_fxs_endpoints*/ ; i++) {
-		tmp->connection_id = i;
-	}
 
 	/* And start the monitor for the first time */
 	restart_monitor();
