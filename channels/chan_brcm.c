@@ -217,6 +217,9 @@ static struct ast_frame *brcm_exception(struct ast_channel *ast);
 static int brcm_send_text(struct ast_channel *ast, const char *text);
 static int brcm_fixup(struct ast_channel *old, struct ast_channel *new);
 static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
+static int brcm_get_endpoints_count();
+static void brcm_create_fxs_endpoints();
+
 
 static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
@@ -1138,6 +1141,8 @@ static int load_module(void)
 
 	/* Initialize the endpoints */
 	endpt_init();
+	brcm_get_endpoints_count();
+	brcm_create_fxs_endpoints();
 
 	/* We *must* have a config file otherwise stop immediately */
 	if (!cfg) {
@@ -1258,12 +1263,54 @@ int endpt_deinit(void)
 }
 
 
-int endpt_init(void)
+static int brcm_get_endpoints_count()
 {
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
-	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
-	int rc, i;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+		ast_verbose("ENDPOINTIOCTL_ENDPOINTCOUNT failed");
+		return -1;
+	} else {
+		num_fxs_endpoints = endpointCount.endpointNum;
+	}
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+		ast_verbose("ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
+		return -1;
+	} else {
+		num_fxo_endpoints = endpointCount.endpointNum;
+	}
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
+	{
+		ast_verbose("ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
+		return -1;
+	} else {
+		num_dect_endpoints = endpointCount.endpointNum;
+	}
+	return 0;
+}
+
+
+static void brcm_create_fxs_endpoints()
+{
+	int i, rc;
+
+	/* Creating Endpt */
+	for ( i = 0; i < num_fxs_endpoints; i++ )
+	{
+		rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
+	}
+}
+
+
+int endpt_init(void)
+{
+	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
+	int rc;
 
 	ast_verbose("Initializing endpoint interface\n");
 
@@ -1281,31 +1328,7 @@ int endpt_init(void)
 		     NULL,
 		     NULL );
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
-	} else {
-		num_fxs_endpoints = endpointCount.endpointNum;
-	}
-
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
-	} else {
-		num_fxo_endpoints = endpointCount.endpointNum;
-	}
-
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
-	} else {
-		num_dect_endpoints = endpointCount.endpointNum;
-	}
-
-  /* Creating Endpt */
-  for ( i = 0; i < num_fxs_endpoints; i++ )
-    {
-      rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
-    }
-
-  return 0;
+	return 0;
 }
 
 
