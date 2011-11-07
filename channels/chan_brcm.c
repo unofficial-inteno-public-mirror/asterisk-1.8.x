@@ -61,7 +61,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define TIMEOUTMSEC 2000
 
 #define PCMU 0
+#define G726 2
+#define G723 4
 #define PCMA 8
+#define G729 18
 
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
@@ -457,7 +460,10 @@ static struct ast_frame  *brcm_exception(struct ast_channel *ast)
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
 		case PCMU: return AST_FORMAT_ULAW;
+		case G726: return AST_FORMAT_G726;
+		case G723: return AST_FORMAT_G723_1;
 		case PCMA: return AST_FORMAT_ALAW;
+		case G729: return AST_FORMAT_G729A;
 		default:   return AST_FORMAT_ALAW;
 	}
 }
