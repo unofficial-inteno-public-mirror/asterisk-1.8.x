@@ -172,6 +172,7 @@ static pthread_t packet_thread = AST_PTHREADT_NULL;
 static int restart_monitor(void);
 
 static struct brcm_pvt {
+  ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int mode;						/* Is this in the  */
@@ -381,6 +382,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_verbose("stop_ringing\n");
 	stop_ringing(p);
 
+	ast_mutex_lock(&p->lock);
 	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
 
@@ -397,7 +399,8 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_verbose("Hungup\n");
 	ast->tech_pvt = NULL;
 	ast_setstate(ast, AST_STATE_DOWN);
-	ast_verbose("State down\n");
+	ast_mutex_unlock(&p->lock);
+
 
 	return 0;
 }
@@ -795,6 +798,7 @@ static void *brcm_monitor_packets(void *data)
 
 	while(1) {
 
+	  ast_mutex_lock(&p->lock);
 	  if (p->owner) {
 	    if (p->owner->_state == AST_STATE_UP) {
 
@@ -823,19 +827,18 @@ static void *brcm_monitor_packets(void *data)
 		      fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
 		      ast_queue_frame(p->owner, &fr);
+
 		    }
 		  }
 		}
 	    }
 	  }
-	  usleep(10);
-	  /* ast_verbose("brcm_monitor_packets\n"); */
+	  ast_mutex_unlock(&p->lock);
+	  usleep(1000);
 	}
-	
 
 
 }
-
 
 
 
@@ -872,33 +875,38 @@ static void *brcm_monitor_events(void *data)
                     p->dtmfbuf[p->dtmf_len] = '\0';
 					p->channel_state = OFFHOOK;
                     if(p->owner) {
-						ast_verbose("create_connection()\n");
-
-                        brcm_create_connection(p);
-                        ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-                        ast_setstate(p->owner, AST_STATE_UP);
-						p->channel_state = INCALL;
+		      ast_verbose("create_connection()\n");
+		      brcm_create_connection(p);
+		      ast_mutex_lock(&p->lock);
+		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+		      ast_setstate(p->owner, AST_STATE_UP);
+		      p->channel_state = INCALL;
+		      ast_mutex_unlock(&p->lock);
                     }
                     break;
                 case EPEVT_ONHOOK:
-					ast_verbose("EPEVT_ONHOOK detected\n");
-					gettimeofday(&tim, NULL);
-					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-//					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
-					p->channel_state = ONHOOK;
+                    ast_verbose("EPEVT_ONHOOK detected\n");
+		    gettimeofday(&tim, NULL);
+		    p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+
+		    ast_mutex_lock(&p->lock);
+		    p->channel_state = ONHOOK;
+
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
                     p->dtmf_first        = -1;
                     p->dtmfbuf[p->dtmf_len] = '\0';
+		    p->last_dialtone_ts = 0;
+		    brcm_close_connection(p);
 
-					p->last_dialtone_ts = 0;
-					brcm_close_connection(p);
-					if(p->owner) {
-						ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-						ast_setstate(p->owner, AST_STATE_DOWN);
-					}
+		    if(p->owner) {
+		      ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+		      ast_setstate(p->owner, AST_STATE_DOWN);
+		    }
+		    ast_mutex_unlock(&p->lock);
                     break;
+
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
                 case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
                 case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
