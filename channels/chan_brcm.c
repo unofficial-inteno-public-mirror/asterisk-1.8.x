@@ -932,17 +932,17 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 	
 	tmp = ast_calloc(1, sizeof(*tmp));
 	if (tmp) {
-		tmp->fd = open(iface, O_RDWR);
+/*		tmp->fd = open(iface, O_RDWR);
 		if (tmp->fd < 0) {
 			ast_log(LOG_WARNING, "Unable to open '%s'\n", iface);
 			ast_free(tmp);
 			return NULL;
-		}
+		}*/
 		if (silencesupression) 
 			tmp->silencesupression = 1;
 		tmp->mode = mode;
-		flags = fcntl(tmp->fd, F_GETFL);
-		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
+//		flags = fcntl(tmp->fd, F_GETFL);
+//		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
@@ -968,6 +968,17 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		tmp->last_dialtone_ts = 0;
 	}
 	return tmp;
+}
+
+static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgain) {
+	int i;
+	struct brcm_pvt *tmp = p;
+
+	for (i=0 ; i<num_fxs_endpoints ; i++) {
+		tmp->next = mkif("", mode, txgain, rxgain);
+		tmp->next->next = p;
+		tmp = tmp->next;
+	}
 }
 
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
@@ -1157,7 +1168,7 @@ static int load_module(void)
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
 		/* Create the interface list */
-		if (!strcasecmp(v->name, "device")) {
+/*		if (!strcasecmp(v->name, "device")) {
 				tmp = mkif(v->value, 0, txgain, rxgain);
 				if (tmp) {
 					tmp->next = iflist;
@@ -1170,7 +1181,7 @@ static int load_module(void)
 					__unload_module();
 					return AST_MODULE_LOAD_FAILURE;
 				}
-		} else if (!strcasecmp(v->name, "silencesupression")) {
+		} else*/ if (!strcasecmp(v->name, "silencesupression")) {
 			silencesupression = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
@@ -1213,6 +1224,7 @@ static int load_module(void)
 		}	
 		v = v->next;
 	}
+	brcm_create_pvts(iflist, 0, txgain, rxgain);
 	ast_mutex_unlock(&iflock);
 
 		cur_tech = (struct ast_channel_tech *) &brcm_tech;
