@@ -876,7 +876,9 @@ static void *brcm_monitor_events(void *data)
 					p->channel_state = OFFHOOK;
                     if(p->owner) {
 		      ast_verbose("create_connection()\n");
+
 		      brcm_create_connection(p);
+
 		      ast_mutex_lock(&p->lock);
 		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 		      ast_setstate(p->owner, AST_STATE_UP);
