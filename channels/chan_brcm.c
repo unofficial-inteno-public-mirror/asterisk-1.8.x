@@ -863,7 +863,7 @@ static void *brcm_monitor_events(void *data)
 
 
         } else {
-			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed\n");
+			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 		}
     }
 
@@ -1171,16 +1171,16 @@ static int load_module(void)
 		return AST_MODULE_LOAD_DECLINE;
 	}
 	if (ast_mutex_lock(&iflock)) {
-
-		/* Initialize the endpoints */
-		endpt_init();
-		brcm_get_endpoints_count();
-		brcm_create_fxs_endpoints();
-
 		/* It's a little silly to lock it, but we mind as well just to be sure */
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
+	
+	/* Initialize the endpoints */
+	endpt_init();
+	brcm_get_endpoints_count();
+	brcm_create_fxs_endpoints();
+
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
 		/* Create the interface list */
@@ -1248,8 +1248,9 @@ static int load_module(void)
 
 	/* Make sure we can register our Adtranphone channel type */
 
-	if (ast_channel_register(cur_tech)) {
+	if (ast_channel_register(cur_tech) || (endpoint_fd == NOT_INITIALIZED)) {
 		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
+		ast_log(LOG_ERROR, "endpoint_fd = %x\n",endpoint_fd);
 		ast_config_destroy(cfg);
 		__unload_module();
 		return AST_MODULE_LOAD_FAILURE;
@@ -1261,7 +1262,7 @@ static int load_module(void)
 	ast_config_destroy(cfg);
 
 	/* And start the monitor for the first time */
-	restart_monitor();
+	//restart_monitor();
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -1298,6 +1299,7 @@ static int brcm_get_endpoints_count()
 		return -1;
 	} else {
 		num_fxs_endpoints = endpointCount.endpointNum;
+		ast_verbose("num_fxs_endpoints = %d\n", num_fxs_endpoints);
 	}
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
