@@ -800,38 +800,43 @@ static void *brcm_monitor_packets(void *data)
 
 	  ast_mutex_lock(&p->lock);
 	  if (p->owner) {
-	    if (p->owner->_state == AST_STATE_UP) {
 
-	      /* Connection is established; try to read some data... */
+	    /* The pvt is owned by a channel; try to read some data... */
 
-	      epPacket.mediaType   = 0;
-	      epPacket.packetp     = pdata;
-	      tPacketParm.epPacket = &epPacket;
-	      tPacketParm.cnxId    = 0;
-	      tPacketParm.length   = 0;
+	    epPacket.mediaType   = 0;
+	    epPacket.packetp     = pdata;
+	    tPacketParm.epPacket = &epPacket;
+	    tPacketParm.cnxId    = 0;
+	    tPacketParm.length   = 0;
 
-	      /*   /\* get rtp packets from endpoint *\/ */
-	      if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
-		{
-		  /* > RTP header max size, 16 for now, lots of assumptions here */
-		  if (tPacketParm.length == 172) {
-		    //RTP id marker
-		    if (pdata[0] == 0x80) {
-		      fr.data.ptr =  (pdata + 12);
-		      fr.samples = 160;
-		      fr.datalen = tPacketParm.length - 12;
-		      fr.frametype = AST_FRAME_VOICE;
-		      fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
-		      fr.offset = 0;
-		      fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-		      fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-
-		      ast_queue_frame(p->owner, &fr);
-
+	    /*   /\* get rtp packets from endpoint *\/ */
+	    if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
+	      {
+		/* > RTP header max size, 16 for now, lots of assumptions here */
+		if (tPacketParm.length == 172) {
+		  //RTP id marker
+		  if (pdata[0] == 0x80) {
+		    fr.data.ptr =  (pdata + 12);
+		    fr.samples = 160;
+		    fr.datalen = tPacketParm.length - 12;
+		    fr.frametype = AST_FRAME_VOICE;
+		    fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
+		    fr.offset = 0;
+		    fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+		    fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+		      
+		    /* try to lock channel */ 
+		    if(!ast_channel_trylock(p->owner)) {
+		      /* and enque frame if channel is up */
+		      if(p->owner->_state == AST_STATE_UP) {
+			ast_queue_frame(p->owner, &fr);
+		      }
+		      ast_channel_unlock(p->owner);
 		    }
+
 		  }
 		}
-	    }
+	      }
 	  }
 	  ast_mutex_unlock(&p->lock);
 	  sched_yield();
@@ -881,7 +886,7 @@ static void *brcm_monitor_events(void *data)
 
 		      ast_mutex_lock(&p->lock);
 		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-		      ast_setstate(p->owner, AST_STATE_UP);
+		      /* ast_setstate(p->owner, AST_STATE_UP); */
 		      p->channel_state = INCALL;
 		      ast_mutex_unlock(&p->lock);
                     }
