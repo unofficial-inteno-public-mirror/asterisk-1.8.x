@@ -834,7 +834,7 @@ static void *brcm_monitor_packets(void *data)
 	    }
 	  }
 	  ast_mutex_unlock(&p->lock);
-	  usleep(1);
+	  sched_yield();
 	}
 
 
