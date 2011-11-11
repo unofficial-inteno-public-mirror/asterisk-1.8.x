@@ -377,6 +377,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		return 0;
 	}
 	
+	ast_verbose("stop_ringing\n");
 	stop_ringing(p);
 
 	/* XXX Is there anything we can do to really hang up except stop recording? */
@@ -392,8 +393,10 @@ static int brcm_hangup(struct ast_channel *ast)
 	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
+	ast_verbose("Hungup\n");
 	ast->tech_pvt = NULL;
 	ast_setstate(ast, AST_STATE_DOWN);
+	ast_verbose("State down\n");
 
 	return 0;
 }
@@ -505,6 +508,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 	  tPacketParm.length   = 0;
 
 	  /* get rtp packets from endpoint */
+	  if (p->connection_init) {
 	  if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
 	    {
 			/* > RTP header max size, 16 for now, lots of assumptions here */
@@ -520,6 +524,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 					return &p->fr;
 				}
 			}
+		}
 		}
 	}
 
@@ -594,15 +599,17 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
 
 	  tPacketParm_send.cnxId       = p->connection_id;
-	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
+	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
 	  tPacketParm_send.length      = 12 + frame->datalen;
 	  tPacketParm_send.bufDesc     = (int)&epPacket_send;
 	  tPacketParm_send.epPacket    = &epPacket_send;
 	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 	  tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
+	  if (p->connection_init) {
 	  if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 	    ast_verbose("%s: error during ioctl", __FUNCTION__);
+	  }
 	}
 
 	return 0;
@@ -644,9 +651,10 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
+	if (p->connection_init) {
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 		ast_verbose("%s: error during ioctl", __FUNCTION__);
-
+	}
 }
 
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
@@ -737,15 +745,13 @@ static void brcm_event_handler(void *data)
 			/* If off hook send dialtone every 20 ms*/
 			if (p->channel_state == OFFHOOK) {
 				//ast_verbose("sending dialtone, %d > %d\n",ts, p->last_dialtone_ts + 20);
-				if (!p->connection_init) {
-					brcm_create_connection(p);
-					p->connection_init = 1;
-				}
 
 				if (!p->last_dialtone_ts) p->last_dialtone_ts = ts;
 
 				if (ts > p->last_dialtone_ts + 20) {
 					//ast_verbose("sending tone\n");
+					if (!p->connection_init)
+						brcm_create_connection(p);
 					brcm_send_dialtone(p);
 					p->last_dialtone_ts = p->last_dialtone_ts + 20;
 				}
@@ -775,8 +781,7 @@ static void brcm_event_handler(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
 				/* Start the pbx */
-				if (!p->connection_id)
-					brcm_create_connection(p);
+				brcm_create_connection(p);
 				brcm_new(p, AST_STATE_RING, p->context, NULL);
 			}
 
@@ -825,7 +830,7 @@ static void *brcm_monitor_events(void *data)
 			if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
-//					ast_verbose("EPEVT_OFFHOOK detected\n");
+					ast_verbose("EPEVT_OFFHOOK detected\n");
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 //					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
@@ -838,14 +843,13 @@ static void *brcm_monitor_events(void *data)
                     if(p->owner) {
 						ast_verbose("create_connection()\n");
                         brcm_create_connection(p);
-						p->connection_init = 1;
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
                         ast_setstate(p->owner, AST_STATE_UP);
 						p->channel_state = INCALL;
                     }
                     break;
                 case EPEVT_ONHOOK:
-//					ast_verbose("EPEVT_ONHOOK detected\n");
+					ast_verbose("EPEVT_ONHOOK detected\n");
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 //					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
@@ -857,10 +861,7 @@ static void *brcm_monitor_events(void *data)
                     p->dtmfbuf[p->dtmf_len] = '\0';
 
 					p->last_dialtone_ts = 0;
-					//if (p->connection_init) {
-						brcm_close_connection(p);
-						p->connection_init=0;
-					//}
+					brcm_close_connection(p);
 					if(p->owner) {
 						ast_queue_control(p->owner, AST_CONTROL_HANGUP);
 						ast_setstate(p->owner, AST_STATE_DOWN);
@@ -953,21 +954,12 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 {
 	/* Make a brcm_pvt structure for this interface */
 	struct brcm_pvt *tmp;
-	int flags;	
 	
 	tmp = ast_calloc(1, sizeof(*tmp));
 	if (tmp) {
-/*		tmp->fd = open(iface, O_RDWR);
-		if (tmp->fd < 0) {
-			ast_log(LOG_WARNING, "Unable to open '%s'\n", iface);
-			ast_free(tmp);
-			return NULL;
-		}*/
 		if (silencesupression) 
 			tmp->silencesupression = 1;
 		tmp->mode = 0;
-//		flags = fcntl(tmp->fd, F_GETFL);
-//		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
@@ -1354,18 +1346,6 @@ ast_verbose("test3\n");
 }
 
 
-void endptEventCb()
-{
-  printf("Received callback event.\n");
-}
-
-
-void ingressPktRecvCb( ENDPT_STATE *endptState, int cnxId, EPPACKET *epPacketp, int length )
-{
-
-}
-
-
 int endpt_deinit(void)
 {
   vrgEndptDeinit();
@@ -1433,8 +1413,8 @@ int endpt_init(void)
 
 	/* Intialize endpoint */
 	rc = vrgEndptInit( &vrgEndptInitCfg,
-		     endptEventCb,
-		     ingressPktRecvCb,
+		     NULL,
+		     NULL,
 		     NULL,
 		     NULL,
 		     NULL,
@@ -1737,7 +1717,6 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 int brcm_create_connection(struct brcm_pvt *p) {
 
   /* generate random nr for rtp header */
-		ast_log(LOG_ERROR, "connection_id = %d\n",p->connection_id);
 	p->ssrc = rand();
 
     ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
@@ -1779,13 +1758,15 @@ int brcm_create_connection(struct brcm_pvt *p) {
     tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
+	if (!p->connection_init) {
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
       printf("%s: error during ioctl", __FUNCTION__);
          return -1;
     } else {
       printf("\n\nConnection %d created\n\n",p->connection_id);
+	  p->connection_init = 1;
     }
-
+	}
 
   return 0;
 }
@@ -1801,14 +1782,16 @@ static int brcm_close_connection(struct brcm_pvt *p) {
     tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
+	if (p->connection_init) {
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
       {
 	printf("%s: error during ioctl", __FUNCTION__);
 		return -1;
       } else {
+		  p->connection_init = 0;
       printf("\n\nConnection %d closed\n\n",p->connection_id);
     }
-
+	}
   return 0;
 }
 
