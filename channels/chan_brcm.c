@@ -72,14 +72,10 @@ static const char config[] = "brcm.conf";
 uint32_t bogus_data[100];
 
 /* rtp stuff */
-int sequence_number = 0;
-int time_stamp = 3200;
 int bflag = 0;
-int ssrc = 0;
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
-void generate_rtp_packet(UINT8 *packet_buf, int type);
 #define PACKET_BUFFER_SIZE 1024
 
 #define NOT_INITIALIZED -1
@@ -206,6 +202,9 @@ static struct brcm_pvt {
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
 	unsigned int last_dialtone_ts;	/* Timestamp to send a continious dialtone */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
+	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
+	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
+	unsigned int ssrc;				/* Endpoint RTP synchronization source */
 } *iflist = NULL;
 
 static char cid_num[AST_MAX_EXTENSION];
@@ -225,6 +224,9 @@ static int brcm_fixup(struct ast_channel *old, struct ast_channel *new);
 static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
 static int brcm_get_endpoints_count();
 static void brcm_create_fxs_endpoints();
+static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
+static int brcm_create_connection(struct brcm_pvt *p);
+static int brcm_close_connection(struct brcm_pvt *p);
 
 
 static const struct ast_channel_tech brcm_tech = {
@@ -587,7 +589,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	  epPacket_send.packetp = packet_buffer;
 
 	  /* generate the rtp header */
-	  generate_rtp_packet(epPacket_send.packetp, PCMA);
+	  brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
 
 	  tPacketParm_send.cnxId       = p->connection_id;
 	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
@@ -630,7 +632,7 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	epPacket_send.packetp = packet_buffer;
 
 	/* generate the rtp header */
-	generate_rtp_packet(epPacket_send.packetp, PCMU);
+	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMU);
 
 	tPacketParm_send.cnxId       = p->connection_id;
 	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
@@ -734,7 +736,7 @@ static void brcm_event_handler(void *data)
 			if (p->channel_state == OFFHOOK) {
 				//ast_verbose("sending dialtone, %d > %d\n",ts, p->last_dialtone_ts + 20);
 				if (!p->connection_init) {
-					create_connection(p->connection_id);
+					brcm_create_connection(p);
 					p->connection_init = 1;
 				}
 
@@ -772,7 +774,7 @@ static void brcm_event_handler(void *data)
 
 				/* Start the pbx */
 				if (!p->connection_id)
-					create_connection(p->connection_id);
+					brcm_create_connection(p);
 				brcm_new(p, AST_STATE_RING, p->context, NULL);
 			}
 
@@ -833,7 +835,8 @@ static void *brcm_monitor_events(void *data)
 					p->channel_state = OFFHOOK;
                     if(p->owner) {
 						ast_verbose("create_connection()\n");
-                        create_connection(p->connection_id);
+                        brcm_create_connection(p);
+						p->connection_init = 1;
                         ast_queue_control(p->owner, AST_CONTROL_ANSWER);
                         ast_setstate(p->owner, AST_STATE_UP);
 						p->channel_state = INCALL;
@@ -853,7 +856,7 @@ static void *brcm_monitor_events(void *data)
 
 					p->last_dialtone_ts = 0;
 					//if (p->connection_init) {
-						close_connection(p->connection_id);
+						brcm_close_connection(p);
 						p->connection_init=0;
 					//}
 					if(p->owner) {
@@ -987,6 +990,9 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 		tmp->connection_init = 0;
 		tmp->last_dialtone_ts = 0;
 		tmp->endpoint_type = endpoint_type;
+		tmp->time_stamp = 0;
+		tmp->sequence_number = 0;
+		tmp->ssrc = 0;
 	}
 	return tmp;
 }
@@ -1725,11 +1731,11 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-int create_connection(int connection_id) {
+int brcm_create_connection(struct brcm_pvt *p) {
 
   /* generate random nr for rtp header */
-		ast_log(LOG_ERROR, "connection_id = %d\n",connection_id);
-	ssrc = rand();
+		ast_log(LOG_ERROR, "connection_id = %d\n",p->connection_id);
+	p->ssrc = rand();
 
     ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
     EPZCNXPARAM epCnxParms = {0};
@@ -1764,16 +1770,17 @@ int create_connection(int connection_id) {
     //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
 
-    tConnectionParm.cnxId      = connection_id;
+    tConnectionParm.cnxId      = p->connection_id;
     tConnectionParm.cnxParam   = &epCnxParms;
-    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[connection_id];
+    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
     tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
       printf("%s: error during ioctl", __FUNCTION__);
+         return -1;
     } else {
-      printf("\n\nConnection %d created\n\n",connection_id);
+      printf("\n\nConnection %d created\n\n",p->connection_id);
     }
 
 
@@ -1781,32 +1788,31 @@ int create_connection(int connection_id) {
 }
 
 
-int close_connection(int connection_id) {
+static int brcm_close_connection(struct brcm_pvt *p) {
   int i;
 
   /* Close connection */
-  for ( i = 0; i < /*vrgEndptGetNumEndpoints()*/1; i++ ) {
     ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
 
-    tDelConnectionParm.cnxId      = connection_id;
-    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[connection_id];
+    tDelConnectionParm.cnxId      = p->connection_id;
+    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
     tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
     tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
       {
 	printf("%s: error during ioctl", __FUNCTION__);
+		return -1;
       } else {
       printf("\n\nConnection %d closed\n\n",i);
     }
-  }
 
   return 0;
 }
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
-void generate_rtp_packet(UINT8 *packet_buf, int type) {
+static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type) {
 	int bidx = 0;
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
@@ -1818,11 +1824,11 @@ void generate_rtp_packet(UINT8 *packet_buf, int type) {
 	//CSRC count 0
 	//Marker 0
 	packet_buf[1] = type; //Payload type PCMU = 0,  PCMA = 8, FIXME use table to lookup value
-	packet_buf16[1] = sequence_number++; //Add sequence number
-	if (sequence_number > 0xFFFF) sequence_number=0;
-	packet_buf32[1] = time_stamp;	//Add timestamp
-	time_stamp += 160;
-	packet_buf32[2] = ssrc;	//Random SSRC
+	packet_buf16[1] = p->sequence_number++; //Add sequence number
+	if (p->sequence_number > 0xFFFF) p->sequence_number=0;
+	packet_buf32[1] = p->time_stamp;	//Add timestamp
+	p->time_stamp += 160;
+	packet_buf32[2] = p->ssrc;	//Random SSRC
 
 	//Add the payload
 	bidx = 12;
