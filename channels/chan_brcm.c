@@ -1444,7 +1444,6 @@ int endpt_init(void)
 int signal_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
-  int i;
 
    /* Check whether value is on or off */
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
@@ -1456,7 +1455,6 @@ int signal_ringing(struct brcm_pvt *p)
 int stop_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
-  int i;
 
    /* Check whether value is on or off */
      vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
