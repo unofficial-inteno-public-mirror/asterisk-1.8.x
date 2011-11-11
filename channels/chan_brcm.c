@@ -111,6 +111,7 @@ enum channel_state {
     DIALING,
     INCALL,
     ANSWER,
+	CALLENDED,
 };
 
 enum endpoint_type {
@@ -386,6 +387,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	p->ministate = 0;
 	p->obuflen = 0;
 	p->dialtone = 0;
+	p->channel_state = CALLENDED;
 	memset(p->ext, 0, sizeof(p->ext));
 	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
@@ -1103,6 +1105,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 			case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
 			case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
 			case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
+			case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
 			default:		ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
