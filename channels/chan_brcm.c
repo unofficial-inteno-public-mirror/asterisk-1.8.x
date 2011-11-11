@@ -985,11 +985,11 @@ static int restart_monitor()
 	}
 
 	/* Start a new event handler thread */
-	/* if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) { */
-	/* 	ast_mutex_unlock(&monlock); */
-	/* 	ast_log(LOG_ERROR, "Unable to start event thread.\n"); */
-	/* 	return -1; */
-	/* } */
+	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
+		ast_mutex_unlock(&monlock);
+		ast_log(LOG_ERROR, "Unable to start event thread.\n");
+		return -1;
+	}
 
 	/* Start a new sound polling thread */
 	if (ast_pthread_create_background(&packet_thread, NULL, brcm_monitor_packets, NULL) < 0) {
