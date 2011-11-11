@@ -117,6 +117,11 @@ enum channel_state {
     ANSWER,
 };
 
+enum endpoint_type {
+	FXS,
+	FXO,
+	DECT,
+};
 
 EPSTATUS vrgEndptDriverOpen(void);
 int endpt_init(void);
@@ -172,7 +177,7 @@ static struct brcm_pvt {
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int mode;						/* Is this in the  */
-	int connection_id;				/* Id of the connection, used to map the correct port */
+	int connection_id;				/* Id of the connection, used to map the correct port, lineid matching parameter */
 	char dtmfbuf[AST_MAX_EXTENSION];/* DTMF buffer per channel */
 	int dtmf_len;					/* Length of DTMF buffer */
 	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
@@ -200,6 +205,7 @@ static struct brcm_pvt {
 	unsigned int channel_state;		/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
 	unsigned int last_dialtone_ts;	/* Timestamp to send a continious dialtone */
+	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
 } *iflist = NULL;
 
 static char cid_num[AST_MAX_EXTENSION];
@@ -627,7 +633,7 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	generate_rtp_packet(epPacket_send.packetp, PCMU);
 
 	tPacketParm_send.cnxId       = p->connection_id;
-	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[0];
+	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
 	tPacketParm_send.length      = 12 + 160;
 	tPacketParm_send.bufDesc     = (int)&epPacket_send;
 	tPacketParm_send.epPacket    = &epPacket_send;
@@ -698,6 +704,17 @@ static struct brcm_pvt* brcm_get_next_pvt(struct brcm_pvt *p) {
 		return p->next;
 	else
 		return NULL;
+}
+
+static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
+{
+	struct brcm_pvt *tmp = p;
+	if (p->connection_id == connection_id) return p;
+
+	while(tmp = brcm_get_next_pvt(tmp)) {
+		if (!tmp || (tmp == p)) return NULL;
+		if (tmp->connection_id == connection_id) return tmp;
+	}
 }
 
 static void brcm_event_handler(void *data)
@@ -801,12 +818,13 @@ static void *brcm_monitor_events(void *data)
         rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
         if( rc == IOCTL_STATUS_SUCCESS )
         {
+			if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
-                    ast_verbose("EPEVT_OFFHOOK detected\n");
+//					ast_verbose("EPEVT_OFFHOOK detected\n");
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
+//					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
@@ -822,10 +840,10 @@ static void *brcm_monitor_events(void *data)
                     }
                     break;
                 case EPEVT_ONHOOK:
-                    ast_verbose("EPEVT_ONHOOK detected\n");
+//					ast_verbose("EPEVT_ONHOOK detected\n");
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
+//					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
 					p->channel_state = ONHOOK;
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
@@ -858,8 +876,10 @@ static void *brcm_monitor_events(void *data)
                 default:
 					ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
                     break;
-            }
-            ast_verbose("DTMF string: %s\n",p->dtmfbuf);
+			}
+			} else
+				ast_verbose("No pvt with the correct connection_id/lineId %d found!\n", tEventParm.lineId);
+//			ast_verbose("[%d] DTMF string: %s\n",tEventParm.lineId ,p->dtmfbuf);
 
 
         } else {
@@ -924,7 +944,7 @@ static int restart_monitor()
 	return 0;
 }
 
-static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain)
+static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, int txgain, int rxgain)
 {
 	/* Make a brcm_pvt structure for this interface */
 	struct brcm_pvt *tmp;
@@ -940,7 +960,7 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		}*/
 		if (silencesupression) 
 			tmp->silencesupression = 1;
-		tmp->mode = mode;
+		tmp->mode = 0;
 //		flags = fcntl(tmp->fd, F_GETFL);
 //		fcntl(tmp->fd, F_SETFL, flags | O_NONBLOCK);
 		tmp->owner = NULL;
@@ -966,19 +986,30 @@ static struct brcm_pvt *mkif(const char *iface, int mode, int txgain, int rxgain
 		tmp->channel_state = ONHOOK;
 		tmp->connection_init = 0;
 		tmp->last_dialtone_ts = 0;
+		tmp->endpoint_type = endpoint_type;
 	}
 	return tmp;
 }
 
 static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgain) {
 	int i;
-	struct brcm_pvt *tmp = p;
+	struct brcm_pvt *tmp = iflist;
+	struct brcm_pvt *tmp_next;
+	
+	ast_verbose("Creating pvts\n");
 
 	for (i=0 ; i<num_fxs_endpoints ; i++) {
-		tmp->next = mkif("", mode, txgain, rxgain);
-		tmp->next->next = p;
-		tmp = tmp->next;
+		tmp_next = brcm_allocate_pvt("", FXS, txgain, rxgain);
+		if (tmp != NULL) {
+			tmp->next = tmp_next;
+			tmp_next->next = NULL;
+		} else {
+			iflist = tmp_next;
+			tmp    = tmp_next;
+			tmp->next = NULL;
+		}
 	}
+	ast_verbose("Pvts created\n");
 }
 
 
@@ -986,14 +1017,15 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 {
 	struct brcm_pvt *tmp = p;
 	int i;
-	
+
+	ast_verbose("Assigning connection ids\n");
 	/* Assign connection_id's */
 	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
-		tmp->connection_id = i;
-		tmp = brcm_get_next_pvt(tmp);
-		/* Break just in case */
-		if (tmp == p) break;
+		tmp->connection_id = endptObjState[i].lineId;
+		tmp = tmp->next;
 	}
+	ast_verbose("Connection ids assigned\n");
+	
 }
 
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
@@ -1049,6 +1081,42 @@ static int parse_gain_value(const char *gain_type, const char *value)
 	return (int)gain;
 }
 
+
+static void brcm_show_pvts(struct ast_cli_args *a)
+{
+	struct brcm_pvt *p = iflist;
+	int i = 0;
+	
+	while(p) {
+		ast_cli(a->fd, "\nPvt nr: %d\n",i);
+		ast_cli(a->fd, "Connection id       : %d\n", p->connection_id);
+		ast_cli(a->fd, "Channel state       : ");
+		switch (p->channel_state) {
+			case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
+			case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
+			case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
+			case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
+			case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
+			default:		ast_cli(a->fd, "UNKNOWN\n"); break;
+		}
+		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
+		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", p->next);
+		ast_cli(a->fd, "Endpoint type       : ");
+		switch (p->endpoint_type) {
+			case FXS:  ast_cli(a->fd, "FXS\n");  break;
+			case FXO:  ast_cli(a->fd, "FXO\n");  break;
+			case DECT: ast_cli(a->fd, "DECT\n"); break;
+			default: ast_cli(a->fd, "Unknown\n");
+		}
+		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
+		ast_cli(a->fd, "Default context     : %s\n", p->context);
+		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
+		
+		i++;
+		p = brcm_get_next_pvt(p);
+	}
+}
+
 /*! \brief CLI for showing brcm status.
  * This is a new-style CLI handler so a single function contains
  * the prototype for the function, the 'generator' to produce multiple
@@ -1071,9 +1139,12 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXS  endpoints: %d\n", num_fxs_endpoints);
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
-	ast_cli(a->fd, "Endpoint fd   : %x\n", endpoint_fd);
+	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
+
+	brcm_show_pvts(a);
+
 	return CLI_SUCCESS;
 
 }
@@ -1243,11 +1314,11 @@ static int load_module(void)
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
 	brcm_assign_connection_id(iflist);
 	ast_mutex_unlock(&iflock);
-
+ast_verbose("test4\n");
 		cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
 	/* Make sure we can register our Adtranphone channel type */
-
+ast_verbose("test3\n");
 	if (ast_channel_register(cur_tech) || (endpoint_fd == NOT_INITIALIZED)) {
 		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
 		ast_log(LOG_ERROR, "endpoint_fd = %x\n",endpoint_fd);
@@ -1255,14 +1326,16 @@ static int load_module(void)
 		__unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
-	
+	ast_verbose("test2\n");
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
-	
+	ast_verbose("test1\n");
 	ast_config_destroy(cfg);
 
 	/* And start the monitor for the first time */
-	//restart_monitor();
+	restart_monitor();
+	
+	ast_verbose("BRCM init done\n");
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
