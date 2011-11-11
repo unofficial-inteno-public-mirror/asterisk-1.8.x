@@ -1793,7 +1793,6 @@ int brcm_create_connection(struct brcm_pvt *p) {
 
 
 static int brcm_close_connection(struct brcm_pvt *p) {
-  int i;
 
   /* Close connection */
     ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
@@ -1808,7 +1807,7 @@ static int brcm_close_connection(struct brcm_pvt *p) {
 	printf("%s: error during ioctl", __FUNCTION__);
 		return -1;
       } else {
-      printf("\n\nConnection %d closed\n\n",i);
+      printf("\n\nConnection %d closed\n\n",p->connection_id);
     }
 
   return 0;
