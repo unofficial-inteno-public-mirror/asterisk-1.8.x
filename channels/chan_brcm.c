@@ -1107,6 +1107,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", p->next);
+		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", p->owner);		
 		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
 			case FXS:  ast_cli(a->fd, "FXS\n");  break;
@@ -1117,6 +1118,9 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
 		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
+		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
+		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
+		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);		
 		
 		i++;
 		p = brcm_get_next_pvt(p);
