@@ -357,7 +357,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
 
-	signal_ringing();
+	signal_ringing(p);
 
   	ast_setstate(ast, AST_STATE_RINGING);
 	ast_queue_control(ast, AST_CONTROL_RINGING);
@@ -376,7 +376,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		return 0;
 	}
 	
-	stop_ringing();
+	stop_ringing(p);
 
 	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
@@ -1441,27 +1441,25 @@ int endpt_init(void)
 }
 
 
-int signal_ringing(void)
+int signal_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
   int i;
 
    /* Check whether value is on or off */
-  for ( i = 0; i < num_fxs_endpoints; i++ )
-     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 #endif
   return 0;
 }
 
 
-int stop_ringing(void)
+int stop_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
   int i;
 
    /* Check whether value is on or off */
-  for ( i = 0; i < num_fxs_endpoints; i++ )
-     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 #endif
 
   return 0;
