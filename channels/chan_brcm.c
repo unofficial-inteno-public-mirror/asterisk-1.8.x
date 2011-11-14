@@ -355,7 +355,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
 
-	signal_ringing(p);
+	brcm_signal_ringing(p);
 
   	ast_setstate(ast, AST_STATE_RINGING);
 	ast_queue_control(ast, AST_CONTROL_RINGING);
@@ -374,7 +374,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		return 0;
 	}
 
-	stop_ringing(p);
+	brcm_stop_ringing(p);
 
 	ast_mutex_lock(&p->lock);
 	/* XXX Is there anything we can do to really hang up except stop recording? */
@@ -1427,7 +1427,7 @@ int endpt_init(void)
 }
 
 
-int signal_ringing(struct brcm_pvt *p)
+int brcm_signal_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
 
@@ -1438,7 +1438,7 @@ int signal_ringing(struct brcm_pvt *p)
 }
 
 
-int stop_ringing(struct brcm_pvt *p)
+int brcm_stop_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
 
