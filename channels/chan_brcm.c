@@ -176,24 +176,18 @@ static struct brcm_pvt {
   ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
-	int mode;						/* Is this in the  */
 	int connection_id;				/* Id of the connection, used to map the correct port, lineid matching parameter */
 	char dtmfbuf[AST_MAX_EXTENSION];/* DTMF buffer per channel */
 	int dtmf_len;					/* Length of DTMF buffer */
 	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
 	format_t lastformat;            /* Last output format */
 	format_t lastinput;             /* Last input format */
-	int ministate;					/* Miniature state, for dialtone mode */
-	char dev[256];					/* Device name */
 	struct brcm_pvt *next;			/* Next channel in list */
 	struct ast_frame fr;			/* Frame */
 	char offset[AST_FRIENDLY_OFFSET];
 	char buf[PHONE_MAX_BUF];					/* Static buffer for reading frames */
-	int obuflen;
-	int dialtone;
 	int txgain, rxgain;             /* gain control for playing, recording  */
 									/* 0x100 - 1.0, 0x200 - 2.0, 0x80 - 0.5 */
-	int cpt;						/* Call Progress Tone playing? */
 	int silencesupression;
 	char context[AST_MAX_EXTENSION];
 	char obuf[PHONE_MAX_BUF * 2];
@@ -379,8 +373,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
 	}
-	
-	ast_verbose("stop_ringing\n");
+
 	stop_ringing(p);
 
 	ast_mutex_lock(&p->lock);
@@ -389,9 +382,6 @@ static int brcm_hangup(struct ast_channel *ast)
 
 	p->lastformat = -1;
 	p->lastinput = -1;
-	p->ministate = 0;
-	p->obuflen = 0;
-	p->dialtone = 0;
 	p->channel_state = CALLENDED;
 	memset(p->ext, 0, sizeof(p->ext));
 	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
@@ -497,35 +487,7 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 
 static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
 {
-	int res;
-	/* Store as much of the buffer as we can, then write fixed frames */
-	int space = sizeof(p->obuf) - p->obuflen;
-	/* Make sure we have enough buffer space to store the frame */
-	if (space < len)
-		len = space;
-	if (swap)
-		ast_swapcopy_samples(p->obuf+p->obuflen, buf, len/2);
-	else
-		memcpy(p->obuf + p->obuflen, buf, len);
-	p->obuflen += len;
-	while(p->obuflen > frlen) {
-		res = write(p->fd, p->obuf, frlen);
-		if (res != frlen) {
-			if (res < 1) {
-/*
- * Card is in non-blocking mode now and it works well now, but there are
- * lot of messages like this. So, this message is temporarily disabled.
- */
-				return 0;
-			} else {
-				ast_log(LOG_WARNING, "Only wrote %d of %d bytes\n", res, frlen);
-			}
-		}
-		p->obuflen -= frlen;
-		/* Move memory if necessary */
-		if (p->obuflen) 
-			memmove(p->obuf, p->obuf + frlen, p->obuflen);
-	}
+
 	return len;
 }
 
@@ -627,7 +589,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 
 	ast_log(LOG_ERROR, "BRCM brcm_new 1\n");
 
-	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", i->dev + 5);
+	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", "bcmendpoint0");
 	ast_log(LOG_ERROR, "BRCM brcm_new 2\n");
 
 	if (tmp) {
@@ -661,9 +623,6 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		i->owner = tmp;
 		ast_module_ref(ast_module_info->self);
 		if (state != AST_STATE_DOWN) {
-			if (state == AST_STATE_RING) {
-				i->cpt = 1;
-			}
 			if (ast_pbx_start(tmp)) {
 				ast_log(LOG_WARNING, "Unable to start PBX on %s\n", tmp->name);
 				ast_hangup(tmp);
@@ -1006,22 +965,16 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 	if (tmp) {
 		if (silencesupression) 
 			tmp->silencesupression = 1;
-		tmp->mode = 0;
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
 		tmp->connection_id = -1;
 		tmp->lastformat = -1;
 		tmp->lastinput = -1;
-		tmp->ministate = 0;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		ast_copy_string(tmp->language, language, sizeof(tmp->language));
-		ast_copy_string(tmp->dev, iface, sizeof(tmp->dev));
 		ast_copy_string(tmp->context, context, sizeof(tmp->context));
 		tmp->next = NULL;
-		tmp->obuflen = 0;
-		tmp->dialtone = 0;
-		tmp->cpt = 0;
 		ast_copy_string(tmp->cid_num, cid_num, sizeof(tmp->cid_num));
 		ast_copy_string(tmp->cid_name, cid_name, sizeof(tmp->cid_name));
 		tmp->txgain = txgain;
@@ -1194,6 +1147,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
+	ast_cli(a->fd, "Monitor thread: 0x%x\n", monitor_thread);
+	ast_cli(a->fd, "Event thread  : 0x%x\n", event_thread);
+	ast_cli(a->fd, "Packet thread : 0x%x\n", packet_thread);
 
 	brcm_show_pvts(a);
 
