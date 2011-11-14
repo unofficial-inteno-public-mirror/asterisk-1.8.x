@@ -52,6 +52,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
+/* Change this value when needed */
+#define CHANNEL_VERSION "1.0"
+
 #define DEFAULT_CALLER_ID "Unknown"
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
@@ -1108,6 +1111,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		return NULL;
 
 	/* print chan brcm status information */
+	ast_cli(a->fd, "Channel version: %s\n\n", CHANNEL_VERSION);
 	ast_cli(a->fd, "FXS  endpoints: %d\n", num_fxs_endpoints);
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
