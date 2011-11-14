@@ -26,6 +26,19 @@
  * \ingroup channel_drivers
  */
 
+/* TODO:
+ * Configurable packetization time for rtp codecs, 10,20,30 ms
+ * Prefered codec order mulaw/alaw/g729/g723.1/g726_24/g726_32
+ * Locale support AUS/BEL/BRA/CHL/CHN/CZK/DKN/ETS/FIN/FRA/DEU/HUN/IND/ITA/JPN/
+ *                NLD/NZL/USA/ESP/SWE/NOR/CHE/T57/GBR/TWN/UAR
+ * Hook Flash Relay setting, maybe
+ * Enable T38 support
+ * Enable V18 support
+ * Dtmf Relay setting: SipInfo/RFC2833/Inband
+ * VAD
+ * Ingress/egress gain
+ */
+
 #include "asterisk.h"
 
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
