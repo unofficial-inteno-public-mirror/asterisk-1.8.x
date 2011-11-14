@@ -168,6 +168,7 @@ static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
 static pthread_t packet_thread = AST_PTHREADT_NULL;
 
+AST_MUTEX_DEFINE_STATIC(lock);
 
 static int restart_monitor(void);
 
@@ -780,7 +781,7 @@ static void brcm_event_handler(void *data)
 
 static void *brcm_monitor_packets(void *data)
 {
-  struct brcm_pvt *p;
+	struct brcm_pvt *p;
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
@@ -789,57 +790,48 @@ static void *brcm_monitor_packets(void *data)
 	RTPPACKET *rtp;
 	
 	rtp = pdata;
-	p = iflist;
 	/* Some nice norms */
 	fr.src = "brcm";
 	fr.mallocd=0;
 	/* fr.delivery = ast_tv(0,0); */
-	
 
 	while(1) {
+		epPacket.mediaType   = 0;
+		epPacket.packetp     = pdata;
+		tPacketParm.epPacket = &epPacket;
+		tPacketParm.cnxId    = 0;
+		tPacketParm.length   = 0;
 
-	  ast_mutex_lock(&p->lock);
-	  if (p->owner) {
+		ast_mutex_lock(&lock);
+		if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS) {
+			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
+			/*   /\* get rtp packets from endpoint *\/ */
+			/* > RTP header max size, 16 for now, lots of assumptions here */
+			if (tPacketParm.length == 172 && p) {
+				//RTP id marker
+				if (pdata[0] == 0x80) {
+					fr.data.ptr =  (pdata + 12);
+					fr.samples = 160;
+					fr.datalen = tPacketParm.length - 12;
+					fr.frametype = AST_FRAME_VOICE;
+					fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
+					fr.offset = 0;
+					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
-	    /* The pvt is owned by a channel; try to read some data... */
-
-	    epPacket.mediaType   = 0;
-	    epPacket.packetp     = pdata;
-	    tPacketParm.epPacket = &epPacket;
-	    tPacketParm.cnxId    = 0;
-	    tPacketParm.length   = 0;
-
-	    /*   /\* get rtp packets from endpoint *\/ */
-	    if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS)
-	      {
-		/* > RTP header max size, 16 for now, lots of assumptions here */
-		if (tPacketParm.length == 172) {
-		  //RTP id marker
-		  if (pdata[0] == 0x80) {
-		    fr.data.ptr =  (pdata + 12);
-		    fr.samples = 160;
-		    fr.datalen = tPacketParm.length - 12;
-		    fr.frametype = AST_FRAME_VOICE;
-		    fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
-		    fr.offset = 0;
-		    fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-		    fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-		      
-		    /* try to lock channel */ 
-		    if(!ast_channel_trylock(p->owner)) {
-		      /* and enque frame if channel is up */
-		      if(p->owner->_state == AST_STATE_UP) {
-			ast_queue_frame(p->owner, &fr);
-		      }
-		      ast_channel_unlock(p->owner);
-		    }
-
-		  }
+					/* try to lock channel */
+					if(p->owner && !ast_channel_trylock(p->owner)) {
+						/* and enque frame if channel is up */
+						if(p->owner->_state == AST_STATE_UP) {
+							ast_queue_frame(p->owner, &fr);
+						}
+						ast_channel_unlock(p->owner);
+					}
+				}
+			}
 		}
-	      }
-	  }
-	  ast_mutex_unlock(&p->lock);
-	  sched_yield();
+		ast_mutex_unlock(&lock);
+		sched_yield();
 	}
 
 
