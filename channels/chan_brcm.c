@@ -367,7 +367,6 @@ static int brcm_hangup(struct ast_channel *ast)
 	struct brcm_pvt *p;
 	p = ast->tech_pvt;
 
-	ast_log(LOG_ERROR, "BRCM brcm_hangup\n");
 	ast_debug(1, "brcm_hangup(%s)\n", ast->name);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
@@ -375,9 +374,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	}
 
 	brcm_stop_ringing(p);
-
 	ast_mutex_lock(&p->lock);
-	/* XXX Is there anything we can do to really hang up except stop recording? */
 	ast_setstate(ast, AST_STATE_DOWN);
 
 	p->lastformat = -1;
@@ -387,7 +384,6 @@ static int brcm_hangup(struct ast_channel *ast)
 	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
-	ast_verbose("Hungup\n");
 	ast->tech_pvt = NULL;
 	ast_setstate(ast, AST_STATE_DOWN);
 	ast_mutex_unlock(&p->lock);
@@ -435,10 +431,7 @@ static int brcm_setup(struct ast_channel *ast)
 
 static int brcm_answer(struct ast_channel *ast)
 {
-	struct brcm_pvt *p;
-
-	ast_log(LOG_ERROR, "BRCM brcm_answer\n");
-	p = ast->tech_pvt;
+	struct brcm_pvt *p = ast->tech_pvt;
 
 	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
@@ -481,13 +474,11 @@ static int map_rtp_to_ast_codec_id(int id) {
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
-
 	return &ast_null_frame;
 }
 
 static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
 {
-
 	return len;
 }
 
@@ -503,7 +494,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	struct brcm_pvt *p = ast->tech_pvt;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-
 
 	if (ast->_state != AST_STATE_UP) {
 	  ast_verbose("error: channel not up\n");
@@ -546,22 +536,15 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-	static const char digital_milliwatt[] = {0x1e,0x0b,0x0b,0x1e,0x9e,0x8b,0x8b,0x9e};
-	int i;
 	static int dt_counter = 0;
 
 	/* send rtp packet to the endpoint */
 	epPacket_send.mediaType   = 0;
 
 	/* copy frame data to local buffer */
-	//memcpy(packet_buffer + 12, digital_milliwatt, 8);
 	memcpy(&packet_buffer[12], &DialTone[dt_counter], 160);
 	dt_counter += 160;
 	if (dt_counter >=2400) dt_counter = 0;
-
-//	for (i=0 ; i<20 ; i++) {
-//		memcpy(&packet_buffer[12 + i*8], digital_milliwatt, 8);
-//	}
 
 	/* add buffer to outgoing packet */
 	epPacket_send.packetp = packet_buffer;
@@ -587,10 +570,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 {
 	struct ast_channel *tmp;
 
-	ast_log(LOG_ERROR, "BRCM brcm_new 1\n");
-
 	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", "bcmendpoint0");
-	ast_log(LOG_ERROR, "BRCM brcm_new 2\n");
 
 	if (tmp) {
 		tmp->tech = cur_tech;
@@ -630,7 +610,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		}
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
-	ast_log(LOG_ERROR, "BRCM brcm_new 3\n");
+
 	return tmp;
 }
 
@@ -820,7 +800,7 @@ static void *brcm_monitor_events(void *data)
 			if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
-					ast_verbose("EPEVT_OFFHOOK detected\n");
+					//ast_verbose("EPEVT_OFFHOOK detected\n");
 					gettimeofday(&tim, NULL);
 					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 //					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
@@ -843,7 +823,7 @@ static void *brcm_monitor_events(void *data)
                     }
                     break;
                 case EPEVT_ONHOOK:
-                    ast_verbose("EPEVT_ONHOOK detected\n");
+                    //ast_verbose("EPEVT_ONHOOK detected\n");
 		    gettimeofday(&tim, NULL);
 		    p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
@@ -897,36 +877,35 @@ static void *brcm_monitor_events(void *data)
 
 static int restart_monitor()
 {
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 1\n");
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
 		return 0;
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 2\n");
+
 	if (ast_mutex_lock(&monlock)) {
 		ast_log(LOG_WARNING, "Unable to lock monitor\n");
 		return -1;
 	}
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 3\n");
+
 	if (monitor_thread == pthread_self()) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_WARNING, "Cannot kill myself\n");
 		return -1;
 	}
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 4\n");
+
 	if (monitor_thread != AST_PTHREADT_NULL) {
 		if (ast_mutex_lock(&iflock)) {
 			ast_mutex_unlock(&monlock);
 			ast_log(LOG_WARNING, "Unable to lock the interface list\n");
 			return -1;
 		}
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 5\n");
+
 		monitor = 0;
 		while (pthread_kill(monitor_thread, SIGURG) == 0)
 			sched_yield();
 		pthread_join(monitor_thread, NULL);
 		ast_mutex_unlock(&iflock);
 	}
-	ast_log(LOG_ERROR, "BRCM: restart_monitor 6\n");
+
 	monitor = 1;
 	/* Start a new monitor */
 	if (ast_pthread_create_background(&monitor_thread, NULL, brcm_monitor_events, NULL) < 0) {
@@ -949,9 +928,6 @@ static int restart_monitor()
 		return -1;
 	}
 
-
-
-  ast_log(LOG_ERROR, "BRCM: restart_monitor 7\n");
 	ast_mutex_unlock(&monlock);
 	return 0;
 }
@@ -995,8 +971,6 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgai
 	int i;
 	struct brcm_pvt *tmp = iflist;
 	struct brcm_pvt *tmp_next;
-	
-	ast_verbose("Creating pvts\n");
 
 	for (i=0 ; i<num_fxs_endpoints ; i++) {
 		tmp_next = brcm_allocate_pvt("", FXS, txgain, rxgain);
@@ -1009,7 +983,6 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgai
 			tmp->next = NULL;
 		}
 	}
-	ast_verbose("Pvts created\n");
 }
 
 
@@ -1018,14 +991,11 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 	struct brcm_pvt *tmp = p;
 	int i;
 
-	ast_verbose("Assigning connection ids\n");
 	/* Assign connection_id's */
 	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
 		tmp->connection_id = endptObjState[i].lineId;
 		tmp = tmp->next;
 	}
-	ast_verbose("Connection ids assigned\n");
-	
 }
 
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
@@ -1053,7 +1023,6 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 			return NULL;
 		}
 	}
-
 
 	return tmp;
 }
@@ -1262,21 +1231,7 @@ static int load_module(void)
 
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
-		/* Create the interface list */
-/*		if (!strcasecmp(v->name, "device")) {
-				tmp = mkif(v->value, 0, txgain, rxgain);
-				if (tmp) {
-					tmp->next = iflist;
-					iflist = tmp;
-					
-				} else {
-					ast_log(LOG_ERROR, "Unable to register channel '%s'\n", v->value);
-					ast_config_destroy(cfg);
-					ast_mutex_unlock(&iflock);
-					__unload_module();
-					return AST_MODULE_LOAD_FAILURE;
-				}
-		} else*/ if (!strcasecmp(v->name, "silencesupression")) {
+		if (!strcasecmp(v->name, "silencesupression")) {
 			silencesupression = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
@@ -1322,11 +1277,9 @@ static int load_module(void)
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
 	brcm_assign_connection_id(iflist);
 	ast_mutex_unlock(&iflock);
-ast_verbose("test4\n");
-		cur_tech = (struct ast_channel_tech *) &brcm_tech;
+	cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
 	/* Make sure we can register our Adtranphone channel type */
-ast_verbose("test3\n");
 	if (ast_channel_register(cur_tech) || (endpoint_fd == NOT_INITIALIZED)) {
 		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
 		ast_log(LOG_ERROR, "endpoint_fd = %x\n",endpoint_fd);
@@ -1334,10 +1287,9 @@ ast_verbose("test3\n");
 		__unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
-	ast_verbose("test2\n");
+
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
-	ast_verbose("test1\n");
 	ast_config_destroy(cfg);
 
 	/* And start the monitor for the first time */
