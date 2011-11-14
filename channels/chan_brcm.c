@@ -941,6 +941,8 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 	if (tmp) {
 		if (silencesupression) 
 			tmp->silencesupression = 1;
+		else
+			tmp->silencesupression = 0;
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
@@ -1172,9 +1174,6 @@ static int __unload_module(void)
 		p = iflist;
 		while(p) {
 			/* Close the socket, assuming it's real */
-			if (p->fd > -1)
-				close(p->fd);
-			pl = p;
 			p = p->next;
 			/* Free associated memory */
 			ast_free(pl);
