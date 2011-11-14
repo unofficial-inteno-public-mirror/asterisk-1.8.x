@@ -71,8 +71,6 @@ static const char config[] = "brcm.conf";
 
 uint32_t bogus_data[100];
 
-/* rtp stuff */
-int bflag = 0;
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
@@ -388,7 +386,6 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_setstate(ast, AST_STATE_DOWN);
 	ast_mutex_unlock(&p->lock);
 
-
 	return 0;
 }
 
@@ -429,10 +426,9 @@ static int brcm_setup(struct ast_channel *ast)
 	return 0;
 }
 
+
 static int brcm_answer(struct ast_channel *ast)
 {
-	struct brcm_pvt *p = ast->tech_pvt;
-
 	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
@@ -472,21 +468,25 @@ static int map_rtp_to_ast_codec_id(int id) {
 	}
 }
 
+
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
 	return &ast_null_frame;
 }
+
 
 static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
 {
 	return len;
 }
 
+
 static int brcm_send_text(struct ast_channel *ast, const char *text)
 {
     int length = strlen(text);
     return brcm_write_buf(ast->tech_pvt, text, length, length, 0) == length ? 0 : -1;
 }
+
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
@@ -527,10 +527,9 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	    ast_verbose("%s: error during ioctl", __FUNCTION__);
 	  }
 	}
-
 	return 0;
-
 }
+
 
 static void brcm_send_dialtone(struct brcm_pvt *p) {
 	EPPACKET epPacket_send;
@@ -565,6 +564,7 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 		ast_verbose("%s: error during ioctl", __FUNCTION__);
 	}
 }
+
 
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
 {
@@ -614,12 +614,14 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 	return tmp;
 }
 
+
 static struct brcm_pvt* brcm_get_next_pvt(struct brcm_pvt *p) {
 	if (p->next)
 		return p->next;
 	else
 		return NULL;
 }
+
 
 static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
 {
@@ -630,7 +632,9 @@ static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
 		if (!tmp || (tmp == p)) return NULL;
 		if (tmp->connection_id == connection_id) return tmp;
 	}
+	return NULL;
 }
+
 
 static void brcm_event_handler(void *data)
 {
@@ -715,17 +719,13 @@ static void brcm_event_handler(void *data)
     }\
 }
 
-
-
-
-static void *brcm_monitor_packets(void *data)
+static void brcm_monitor_packets(void *data)
 {
 	struct brcm_pvt *p;
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	struct ast_frame fr;
-	struct timeval tim;
 	RTPPACKET *rtp;
 	
 	rtp = pdata;
@@ -772,16 +772,11 @@ static void *brcm_monitor_packets(void *data)
 		ast_mutex_unlock(&lock);
 		sched_yield();
 	}
-
-
+	return;
 }
 
 
-
-
-
-
-static void *brcm_monitor_events(void *data)
+static void brcm_monitor_events(void *data)
 {
     ENDPOINTDRV_EVENT_PARM tEventParm = {0};
     int rc = IOCTL_STATUS_FAILURE;
@@ -870,8 +865,6 @@ static void *brcm_monitor_events(void *data)
 			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 		}
     }
-
-    return NULL;
 }
 
 
@@ -932,6 +925,7 @@ static int restart_monitor()
 	return 0;
 }
 
+
 static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, int txgain, int rxgain)
 {
 	/* Make a brcm_pvt structure for this interface */
@@ -969,6 +963,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 	return tmp;
 }
 
+
 static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgain) {
 	int i;
 	struct brcm_pvt *tmp = iflist;
@@ -1000,6 +995,7 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 	}
 }
 
+
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
 	format_t oldformat;
@@ -1025,9 +1021,9 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 			return NULL;
 		}
 	}
-
 	return tmp;
 }
+
 
 /* parse gain value from config file */
 static int parse_gain_value(const char *gain_type, const char *value)
@@ -1072,8 +1068,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 			default:		ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
-		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", p->next);
-		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", p->owner);		
+		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int*) p->next);
+		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int*) p->owner);		
 		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
 			case FXS:  ast_cli(a->fd, "FXS\n");  break;
@@ -1123,7 +1119,6 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Packet thread : 0x%x\n", packet_thread);
 
 	brcm_show_pvts(a);
-
 	return CLI_SUCCESS;
 
 }
@@ -1135,7 +1130,7 @@ static struct ast_cli_entry cli_brcm[] = {
 };
 
 
-static int __unload_module(void)
+static int unload_module(void)
 {
 	struct brcm_pvt *p, *pl;
 	/* First, take us out of the channel loop */
@@ -1174,6 +1169,7 @@ static int __unload_module(void)
 		p = iflist;
 		while(p) {
 			/* Close the socket, assuming it's real */
+			pl = p;
 			p = p->next;
 			/* Free associated memory */
 			ast_free(pl);
@@ -1193,17 +1189,11 @@ static int __unload_module(void)
 	return 0;
 }
 
-static int unload_module(void)
-{
-	return __unload_module();
-}
 
 static int load_module(void)
 {
 	struct ast_config *cfg;
 	struct ast_variable *v;
-	struct brcm_pvt *tmp;
-	int i;
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
 
@@ -1313,8 +1303,7 @@ static int brcm_get_endpoints_count()
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_verbose("ENDPOINTIOCTL_ENDPOINTCOUNT failed");
 		return -1;
 	} else {
@@ -1322,16 +1311,14 @@ static int brcm_get_endpoints_count()
 		ast_verbose("num_fxs_endpoints = %d\n", num_fxs_endpoints);
 	}
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_verbose("ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
 		return -1;
 	} else {
 		num_fxo_endpoints = endpointCount.endpointNum;
 	}
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS )
-	{
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_verbose("ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
 		return -1;
 	} else {
@@ -1660,8 +1647,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
    tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
    tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
 
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS )
-   {
+   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
    }
 
    return( tInitParm.epStatus );
@@ -1737,8 +1723,7 @@ static int brcm_close_connection(struct brcm_pvt *p) {
     tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
 	if (p->connection_init) {
-    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS )
-      {
+    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
 	printf("%s: error during ioctl", __FUNCTION__);
 		return -1;
       } else {
@@ -1752,7 +1737,6 @@ static int brcm_close_connection(struct brcm_pvt *p) {
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
 static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type) {
-	int bidx = 0;
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
 
@@ -1768,10 +1752,6 @@ static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int 
 	packet_buf32[1] = p->time_stamp;	//Add timestamp
 	p->time_stamp += 160;
 	packet_buf32[2] = p->ssrc;	//Random SSRC
-
-	//Add the payload
-	bidx = 12;
-
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
