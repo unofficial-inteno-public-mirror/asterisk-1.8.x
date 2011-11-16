@@ -706,7 +706,7 @@ static void brcm_event_handler(void *data)
 
 				/* Start the pbx */
 				brcm_create_connection(p);
-				brcm_new(p, AST_STATE_RING, p->context, NULL);
+				brcm_new(p, AST_STATE_UP, p->context, NULL);
 			}
 
 			/* Get next channel pvt if there is one */
