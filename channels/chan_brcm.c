@@ -74,7 +74,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 //#define LOUD
 #define TIMEMSEC 1000
-#define TIMEOUTMSEC 2000
+#define TIMEOUTMSEC 4000
 
 #define PCMU 0
 #define G726 2
