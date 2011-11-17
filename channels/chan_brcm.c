@@ -80,6 +80,8 @@ static int endpoint_fd = NOT_INITIALIZED;
 static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 
+static int dtmf_relay = EPDTMFRFC2833_DISABLED;	// inband
+
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
 
@@ -502,6 +504,8 @@ static void *brcm_monitor_packets(void *data)
 						}
 					}
 				}
+			} else {
+				ast_verbose("[%d,%d] %X%X%X%X\n",pdata[0], p->connection_id, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 			ast_mutex_unlock(&p->lock);
 		}
@@ -883,6 +887,14 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Event thread  : 0x%x\n", (unsigned int) event_thread);
 	ast_cli(a->fd, "Packet thread : 0x%x\n", (unsigned int) packet_thread);
 
+	ast_cli(a->fd, "DTMF relay    : ");
+	switch (dtmf_relay) {
+		case EPDTMFRFC2833_DISABLED:  ast_cli(a->fd, "InBand\n");  break;
+		case EPDTMFRFC2833_ENABLED:   ast_cli(a->fd, "RFC2833\n");  break;
+		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "SipInfo\n"); break;
+		default: ast_cli(a->fd, "Unknown\n");
+	}
+
 	brcm_show_pvts(a);
 
 	return CLI_SUCCESS;
@@ -1025,7 +1037,15 @@ static int load_module(void)
 			txgain = parse_gain_value(v->name, v->value);
 		} else if (!strcasecmp(v->name, "rxgain")) {
 			rxgain = parse_gain_value(v->name, v->value);
-		}	
+		} else if (!strcasecmp(v->name, "dtmfrelay")) {
+			if (!strcasecmp(v->value, "sipinfo")) {
+				dtmf_relay = DTMF_RELAY_RFC2833_SUBTRACT;
+			} else if (!strcasecmp(v->value, "rfc2833")) {
+				dtmf_relay = DTMF_RELAY_RFC2833_ENABLED;
+			} else
+				dtmf_relay = DTMF_RELAY_RFC2833_DISABLED;
+		}
+				
 		v = v->next;
 	}
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
@@ -1424,44 +1444,46 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 	/* generate random nr for rtp header */
 	p->ssrc = rand();
 
-	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-	EPZCNXPARAM epCnxParms = {0};
-	//		CODECLIST  codecListLocal = {0};
-	//		CODECLIST  codecListRemote = {0};
+    ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
+    EPZCNXPARAM epCnxParms = {0};
+    //		CODECLIST  codecListLocal = {0};
+    //		CODECLIST  codecListRemote = {0};
 
-	/* Enable sending a receving G711 */
-	epCnxParms.cnxParmList.recv.numCodecs = 3;
-	epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
-	epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-	epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
-	epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-	epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
-	epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+    /* Enable sending a receving G711 */
+    epCnxParms.cnxParmList.recv.numCodecs = 3;
+    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
+    epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
+    epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
-	epCnxParms.cnxParmList.send.numCodecs = 3;
-	epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
-	epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-	epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
-	epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-	epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
-	epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+    epCnxParms.cnxParmList.send.numCodecs = 3;
+    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
+    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
+    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
+    epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
+    epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
-	// Set 20ms packetization period
-	epCnxParms.cnxParmList.send.period[0] = 20;
-	epCnxParms.mode  =   EPCNXMODE_SNDRX;
-	//         epCnxParms.cnxParmList.recv = codecListLocal;
-	//         epCnxParms.cnxParmList.send = codecListRemote;
-	//         epCnxParms.period = 20;
-	epCnxParms.echocancel = echocancel;
-	epCnxParms.silence = 0;
-	//         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
+    // Set 20ms packetization period
+    epCnxParms.cnxParmList.send.period[0] = 20;
+    epCnxParms.mode  =   EPCNXMODE_SNDRX;
+    //         epCnxParms.cnxParmList.recv = codecListLocal;
+    //         epCnxParms.cnxParmList.send = codecListRemote;
+    //         epCnxParms.period = 20;
+    epCnxParms.echocancel = echocancel;
+    epCnxParms.silence = 0;
+	epCnxParms.digitRelayType = dtmf_relay;
+    //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
 
-	tConnectionParm.cnxId      = p->connection_id;
-	tConnectionParm.cnxParam   = &epCnxParms;
-	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
-	tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-	tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+    tConnectionParm.cnxId      = p->connection_id;
+    tConnectionParm.cnxParam   = &epCnxParms;
+    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+    tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+    tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+
 
 	if (!p->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
