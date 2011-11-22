@@ -666,6 +666,7 @@ static void brcm_event_handler(void *data)
 		/* loop over all pvt's */
 		while(p) {
 			/* If off hook send dialtone every 20 ms*/
+		  ast_mutex_lock(&p->lock);
 			if (p->channel_state == OFFHOOK) {
 				//ast_verbose("sending dialtone, %d > %d\n",ts, p->last_dialtone_ts + 20);
 
@@ -674,10 +675,13 @@ static void brcm_event_handler(void *data)
 				if (ts > p->last_dialtone_ts + 20) {
 					//ast_verbose("sending tone\n");
 
-					if (!p->connection_init)
+				  if (!p->connection_init)
 						brcm_create_connection(p);
-					brcm_send_dialtone(p);
-					p->last_dialtone_ts = p->last_dialtone_ts + 20;
+
+
+
+				  brcm_send_dialtone(p);
+				  p->last_dialtone_ts = p->last_dialtone_ts + 20;
 				}
 			}
 
@@ -705,11 +709,15 @@ static void brcm_event_handler(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
 				/* Start the pbx */
-				brcm_create_connection(p);
-				brcm_new(p, AST_STATE_UP, p->context, NULL);
+				  if (!p->connection_init)
+						brcm_create_connection(p);
+
+				  brcm_new(p, AST_STATE_UP, p->context, NULL);
+
 			}
 
 			/* Get next channel pvt if there is one */
+			ast_mutex_unlock(&p->lock);
 			p = brcm_get_next_pvt(p);
 		}
 		usleep(10*TIMEMSEC);
@@ -808,37 +816,43 @@ static void brcm_monitor_events(void *data)
         rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
         if( rc == IOCTL_STATUS_SUCCESS )
         {
-			if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
+	  if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
             switch (tEventParm.event) {
                 case EPEVT_OFFHOOK:
-					//ast_verbose("EPEVT_OFFHOOK detected\n");
-					gettimeofday(&tim, NULL);
-					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-//					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
+		  ast_verbose("EPEVT_OFFHOOK detected\n");
+		  ast_mutex_lock(&p->lock);		  
+		  ast_verbose("me: got mutex\n");
+		  gettimeofday(&tim, NULL);
+		  p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+		  //					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
                     /* Reset the dtmf buffer */
                     memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
                     p->dtmf_len          = 0;
                     p->dtmf_first        = -1;
                     p->dtmfbuf[p->dtmf_len] = '\0';
-					p->channel_state = OFFHOOK;
+		    p->channel_state = OFFHOOK;
+
+
                     if(p->owner) {
 		      ast_verbose("create_connection()\n");
+		      if (!p->connection_init)
+			brcm_create_connection(p);
 
-		      brcm_create_connection(p);
-
-		      ast_mutex_lock(&p->lock);
 		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 		      /* ast_setstate(p->owner, AST_STATE_UP); */
 		      p->channel_state = INCALL;
-		      ast_mutex_unlock(&p->lock);
                     }
+		    ast_mutex_unlock(&p->lock);
+		    ast_verbose("me: unlocked mutex\n");
+
                     break;
                 case EPEVT_ONHOOK:
-                    //ast_verbose("EPEVT_ONHOOK detected\n");
+                    ast_verbose("EPEVT_ONHOOK detected\n");
 		    gettimeofday(&tim, NULL);
 		    p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
 		    ast_mutex_lock(&p->lock);
+		    ast_verbose("me: got mutex\n");
 		    p->channel_state = ONHOOK;
 
                     /* Reset the dtmf buffer */
@@ -854,6 +868,7 @@ static void brcm_monitor_events(void *data)
 		      ast_setstate(p->owner, AST_STATE_DOWN);
 		    }
 		    ast_mutex_unlock(&p->lock);
+		    ast_verbose("me: unlocked mutex\n");
                     break;
 
                 case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
@@ -1717,10 +1732,10 @@ int brcm_create_connection(struct brcm_pvt *p) {
 
 	if (!p->connection_init) {
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-      printf("%s: error during ioctl", __FUNCTION__);
+      ast_verbose("%s: error during ioctl", __FUNCTION__);
          return -1;
     } else {
-      printf("\n\nConnection %d created\n\n",p->connection_id);
+      ast_verbose("\n\nConnection %d created\n\n",p->connection_id);
 	  p->connection_init = 1;
     }
 	}
@@ -1741,11 +1756,11 @@ static int brcm_close_connection(struct brcm_pvt *p) {
 
 	if (p->connection_init) {
     if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-	printf("%s: error during ioctl", __FUNCTION__);
+	ast_verbose("%s: error during ioctl", __FUNCTION__);
 		return -1;
       } else {
 		  p->connection_init = 0;
-      printf("\n\nConnection %d closed\n\n",p->connection_id);
+      ast_verbose("\n\nConnection %d closed\n\n",p->connection_id);
     }
 	}
   return 0;
