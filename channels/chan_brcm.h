@@ -74,6 +74,8 @@
 #define G723 4
 #define PCMA 8
 #define G729 18
+#define DTMF 128
+#define RTCP 200
 
 
 

@@ -65,6 +65,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
+
 /* Global brcm channel parameters */
 
 static const char tdesc[] = "Brcm SLIC Driver";
@@ -80,7 +81,7 @@ static int endpoint_fd = NOT_INITIALIZED;
 static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 
-static int dtmf_relay = EPDTMFRFC2833_DISABLED;	// inband
+static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -196,15 +197,40 @@ static int brcm_answer(struct ast_channel *ast)
 
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
-	case PCMU: return AST_FORMAT_ULAW;
-	case G726: return AST_FORMAT_G726;
-	case G723: return AST_FORMAT_G723_1;
-	case PCMA: return AST_FORMAT_ALAW;
-	case G729: return AST_FORMAT_G729A;
-	default:   return AST_FORMAT_ALAW;
+		case PCMU: return AST_FORMAT_ULAW;
+		case G726: return AST_FORMAT_G726;
+		case G723: return AST_FORMAT_G723_1;
+		case PCMA: return AST_FORMAT_ALAW;
+		case G729: return AST_FORMAT_G729A;
+		default:
+		{
+			ast_verbose("Unknown rtp codec id [%d]\n", id);
+			return AST_FORMAT_ALAW;
+		}
 	}
 }
 
+enum rtp_type {
+	BRCM_UNKNOWN,
+	BRCM_AUDIO,
+	BRCM_DTMF,
+	BRCM_RTCP,
+};
+
+static int brcm_classify_rtp_packet(int id) {
+	switch (id) {
+		case PCMU: return BRCM_AUDIO;
+		case G726: return BRCM_AUDIO;
+		case G723: return BRCM_AUDIO;
+		case PCMA: return BRCM_AUDIO;
+		case G729: return BRCM_AUDIO;
+		case DTMF: return BRCM_DTMF;
+		case RTCP: return BRCM_RTCP;
+		default:
+			ast_verbose("Unknown rtp packet id %d\n", id);
+			return BRCM_UNKNOWN;
+	}
+}
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
@@ -467,6 +493,7 @@ static void *brcm_monitor_packets(void *data)
 	fr.mallocd=0;
 
 	while(1) {
+		int rtp_packet_type  = BRCM_UNKNOWN;
 		epPacket.mediaType   = 0;
 		epPacket.packetp     = pdata;
 		tPacketParm.epPacket = &epPacket;
@@ -476,36 +503,51 @@ static void *brcm_monitor_packets(void *data)
 		if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS) {
 
 			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
+			
+			/* Classify the rtp packet */
+			if (tPacketParm.length > 2)
+				rtp_packet_type = brcm_classify_rtp_packet(pdata[1]);
+
+			/* Handle rtp packet accoarding to classification */
+			if ((rtp_packet_type == BRCM_AUDIO) && (tPacketParm.length == 172) && p) {
+				//RTP id marker
+				if (pdata[0] == 0x80) {
+					fr.data.ptr =  (pdata + 12);
+					fr.samples = 160;
+					fr.datalen = tPacketParm.length - 12;
+					fr.frametype = AST_FRAME_VOICE;
+					fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
+					fr.offset = 0;
+					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+
+				}
+			} else if (rtp_packet_type == BRCM_DTMF) {
+				//	ast_verbose("[%d,%d] %02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3],
+				//			pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+				
+				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
+				fr.subclass.integer = pdata[12];
+				fr.offset = 0;
+				fr.datalen = 0;
+				fr.samples = 0;
+				fr.mallocd = 0;
+				//ast_verbose("[%d] (%s)\n", fr.subclass.integer, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+			} else {
+				//ast_verbose("[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
+			}
 
 			ast_mutex_lock(&p->lock);
 			if (p->owner) {
 
-				/*   get rtp packets from endpoint */
-				/* > RTP header max size, 16 for now, lots of assumptions here */
-				if (tPacketParm.length == 172 && p) {
-					//RTP id marker
-					if (pdata[0] == 0x80) {
-						fr.data.ptr =  (pdata + 12);
-						fr.samples = 160;
-						fr.datalen = tPacketParm.length - 12;
-						fr.frametype = AST_FRAME_VOICE;
-						fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
-						fr.offset = 0;
-						fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-						fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-
-						/* try to lock channel */
-						if(!ast_channel_trylock(p->owner)) {
-							/* and enque frame if channel is up */
-							if(p->owner->_state == AST_STATE_UP) {
-								ast_queue_frame(p->owner, &fr);
-							}
-							ast_channel_unlock(p->owner);
-						}
+				/* try to lock channel and send frame */
+				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
+					/* and enque frame if channel is up */
+					if(p->owner->_state == AST_STATE_UP) {
+						ast_queue_frame(p->owner, &fr);
 					}
+					ast_channel_unlock(p->owner);
 				}
-			} else {
-				ast_verbose("[%d,%d] %X%X%X%X\n",pdata[0], p->connection_id, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 			ast_mutex_unlock(&p->lock);
 		}
@@ -1039,11 +1081,11 @@ static int load_module(void)
 			rxgain = parse_gain_value(v->name, v->value);
 		} else if (!strcasecmp(v->name, "dtmfrelay")) {
 			if (!strcasecmp(v->value, "sipinfo")) {
-				dtmf_relay = DTMF_RELAY_RFC2833_SUBTRACT;
+				dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 			} else if (!strcasecmp(v->value, "rfc2833")) {
-				dtmf_relay = DTMF_RELAY_RFC2833_ENABLED;
+				dtmf_relay = EPDTMFRFC2833_ENABLED;
 			} else
-				dtmf_relay = DTMF_RELAY_RFC2833_DISABLED;
+				dtmf_relay = EPDTMFRFC2833_DISABLED;
 		}
 				
 		v = v->next;
