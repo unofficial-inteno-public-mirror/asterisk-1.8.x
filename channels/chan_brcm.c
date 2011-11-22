@@ -72,7 +72,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
 
-//#define LOUD
+#define LOUD
 #define TIMEMSEC 1000
 #define TIMEOUTMSEC 4000
 
@@ -834,9 +834,11 @@ static void brcm_monitor_events(void *data)
 
 
                     if(p->owner) {
-		      ast_verbose("create_connection()\n");
-		      if (!p->connection_init)
+
+		      if (!p->connection_init) {
+			ast_verbose("create_connection()\n");
 			brcm_create_connection(p);
+		      }
 
 		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 		      /* ast_setstate(p->owner, AST_STATE_UP); */
@@ -1038,9 +1040,18 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return NULL;
 	}
+	ast_verbose("brcm_request\n");
 
 	p = iflist;
-	tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+	ast_mutex_lock(&p->lock);
+	if ((!p->owner) && (!p->connection_init)) {
+	  ast_verbose("connection init\n");
+	  tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+	} else {
+	  *cause = AST_CAUSE_BUSY;
+	}
+	ast_mutex_unlock(&p->lock);
+
 	ast_mutex_unlock(&iflock);
 	/* restart_monitor(); */
 	if (tmp == NULL) {
