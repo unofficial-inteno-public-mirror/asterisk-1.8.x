@@ -485,7 +485,7 @@ static void *brcm_monitor_packets(void *data)
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
-	struct ast_frame fr;
+
 	RTPPACKET *rtp;
 	
 	rtp = (RTPPACKET *)pdata;
@@ -494,6 +494,9 @@ static void *brcm_monitor_packets(void *data)
 
 	while(1) {
 		int rtp_packet_type  = BRCM_UNKNOWN;
+		struct ast_frame fr;
+		fr.src = "brcm";
+		fr.mallocd=0;
 		epPacket.mediaType   = 0;
 		epPacket.packetp     = pdata;
 		tPacketParm.epPacket = &epPacket;
@@ -520,21 +523,13 @@ static void *brcm_monitor_packets(void *data)
 					fr.offset = 0;
 					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-
 				}
 			} else if (rtp_packet_type == BRCM_DTMF) {
 				ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 
-				
-				fr.subclass.codec = NULL;
-				fr.datalen = 0;
-				fr.data.ptr = NULL;
-				fr.offset = 0;
-				fr.datalen = 0;
-				fr.samples = 0;
-				fr.mallocd = 0;
 				fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-				fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
+				fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
 				fr.subclass.integer = pdata[12];
 
 				ast_verbose("[%d] (%s)\n", fr.subclass.integer, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
