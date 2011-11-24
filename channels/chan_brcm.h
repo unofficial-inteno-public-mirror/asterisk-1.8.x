@@ -91,6 +91,8 @@
 #define MAX_NUM_LINEID 2
 
 
+
+
 enum channel_state {
     ONHOOK,
     OFFHOOK,
@@ -3681,8 +3683,12 @@ EPSTATUS vrgEndptSignal
 
 
 
-
-
+enum rtp_type {
+	BRCM_UNKNOWN,
+	BRCM_AUDIO,
+	BRCM_DTMF,
+	BRCM_RTCP,
+};
 
 
 /* function declaration */

@@ -111,8 +111,6 @@ AST_MUTEX_DEFINE_STATIC(iflock);
    when it's doing something critical. */
 AST_MUTEX_DEFINE_STATIC(monlock);
 
-AST_MUTEX_DEFINE_STATIC(lock);
-
 
 
 /* exported capabilities */
@@ -210,12 +208,6 @@ static int map_rtp_to_ast_codec_id(int id) {
 	}
 }
 
-enum rtp_type {
-	BRCM_UNKNOWN,
-	BRCM_AUDIO,
-	BRCM_DTMF,
-	BRCM_RTCP,
-};
 
 static int brcm_classify_rtp_packet(int id) {
 	switch (id) {
