@@ -184,7 +184,6 @@ static int brcm_hangup(struct ast_channel *ast)
 
 static int brcm_answer(struct ast_channel *ast)
 {
-	brcm_setup(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 	ast->rings = 0;
 	ast_setstate(ast, AST_STATE_UP);
@@ -361,7 +360,7 @@ static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
 }
 
 
-static void brcm_event_handler(void *data)
+static void *brcm_event_handler(void *data)
 {
 	struct brcm_pvt *p = iflist;
 	struct timeval tim;
@@ -403,7 +402,7 @@ static void brcm_event_handler(void *data)
 				p->channel_state = INCALL;
 				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
 				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
-				ast_verbose("Starting pbx in context: %s with cid: %d ext: %s\n", p->context, p->cid_num, p->ext);
+				ast_verbose("Starting pbx in context: %s with cid: %s ext: %s\n", p->context, p->cid_num, p->ext);
 
 				/* Reset the dtmf buffer */
 				memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
@@ -425,6 +424,10 @@ static void brcm_event_handler(void *data)
 		}
 		usleep(10*TIMEMSEC);
 	}
+
+	/* Never reached */
+	return NULL;
+
 }
 
 
@@ -446,7 +449,7 @@ static void brcm_event_handler(void *data)
 		}							\
 	}
 
-static void brcm_monitor_packets(void *data)
+static void *brcm_monitor_packets(void *data)
 {
 	struct brcm_pvt *p;
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
@@ -455,7 +458,7 @@ static void brcm_monitor_packets(void *data)
 	struct ast_frame fr;
 	RTPPACKET *rtp;
 	
-	rtp = pdata;
+	rtp = (RTPPACKET *)pdata;
 	fr.src = "brcm";
 	fr.mallocd=0;
 
@@ -497,11 +500,13 @@ static void brcm_monitor_packets(void *data)
 		ast_mutex_unlock(&lock);
 		sched_yield();
 	}
-	return;
+	
+	/* Never reached */
+	return NULL;
 }
 
 
-static void brcm_monitor_events(void *data)
+static void *brcm_monitor_events(void *data)
 {
 	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
 	int rc = IOCTL_STATUS_FAILURE;
@@ -597,12 +602,15 @@ static void brcm_monitor_events(void *data)
 			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 		}
 	}
+
+	/* Never reached */
+	return NULL;
 }
 
 
 
 
-static int start_threads()
+static int start_threads(void)
 {
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
@@ -816,8 +824,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		default:		ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
-		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int*) p->next);
-		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int*) p->owner);		
+		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int) p->next);
+		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int) p->owner);		
 		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
 		case FXS:  ast_cli(a->fd, "FXS\n");  break;
@@ -863,13 +871,13 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
-	ast_cli(a->fd, "Monitor thread: 0x%x\n", monitor_thread);
-	ast_cli(a->fd, "Event thread  : 0x%x\n", event_thread);
-	ast_cli(a->fd, "Packet thread : 0x%x\n", packet_thread);
+	ast_cli(a->fd, "Monitor thread: 0x%x\n", (unsigned int) monitor_thread);
+	ast_cli(a->fd, "Event thread  : 0x%x\n", (unsigned int) event_thread);
+	ast_cli(a->fd, "Packet thread : 0x%x\n", (unsigned int) packet_thread);
 
 	brcm_show_pvts(a);
-	return CLI_SUCCESS;
 
+	return CLI_SUCCESS;
 }
 
 
@@ -1022,7 +1030,7 @@ static int load_module(void)
 		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
 		ast_log(LOG_ERROR, "endpoint_fd = %x\n",endpoint_fd);
 		ast_config_destroy(cfg);
-		__unload_module();
+		unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
@@ -1047,7 +1055,7 @@ int endpt_deinit(void)
 }
 
 
-static int brcm_get_endpoints_count()
+static int brcm_get_endpoints_count(void)
 {
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
@@ -1077,7 +1085,7 @@ static int brcm_get_endpoints_count()
 }
 
 
-static void brcm_create_fxs_endpoints()
+static void brcm_create_fxs_endpoints(void)
 {
 	int i, rc;
 
@@ -1183,7 +1191,7 @@ EPSTATUS vrgEndptDriverOpen(void)
 ** NOTE:
 *****************************************************************************
 */
-EPSTATUS vrgEndptDriverClose()
+EPSTATUS vrgEndptDriverClose(void)
 {
 	if ( close( endpoint_fd ) == -1 )
 		{

@@ -105,24 +105,10 @@ enum endpoint_type {
 };
 
 
-int endpt_init(void);
-int endpt_deinit(void);
-void event_loop(void);
-static int restart_monitor(void);
-static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
-static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
-static int brcm_hangup(struct ast_channel *ast);
-static int brcm_answer(struct ast_channel *ast);
-static struct ast_frame *brcm_read(struct ast_channel *ast);
-static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
-static int brcm_send_text(struct ast_channel *ast, const char *text);
-static int brcm_get_endpoints_count();
-static void brcm_create_fxs_endpoints();
-
 
 
 static struct brcm_pvt {
-  ast_mutex_t lock;
+	ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
 	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int connection_id;				/* Id of the connection, used to map the correct port, lineid matching parameter */
@@ -3691,10 +3677,34 @@ EPSTATUS vrgEndptSignal
    int            repetition
  );
 
+
+
+
+
+
+
+/* function declaration */
+
 EPSTATUS vrgEndptDriverOpen(void);
+EPSTATUS vrgEndptDriverClose(void);
 static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
 static int brcm_create_connection(struct brcm_pvt *p);
 static int brcm_close_connection(struct brcm_pvt *p);
+int endpt_init(void);
+int endpt_deinit(void);
+void event_loop(void);
+static int restart_monitor(void);
+static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
+static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
+static int brcm_hangup(struct ast_channel *ast);
+static int brcm_answer(struct ast_channel *ast);
+static struct ast_frame *brcm_read(struct ast_channel *ast);
+static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
+static int brcm_send_text(struct ast_channel *ast, const char *text);
+static int brcm_get_endpoints_count(void);
+static void brcm_create_fxs_endpoints(void);
+int brcm_signal_ringing(struct brcm_pvt *p);
+int brcm_stop_ringing(struct brcm_pvt *p);
 
 
 #endif // _ENDPOINTDRV_H_
