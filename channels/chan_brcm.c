@@ -352,9 +352,11 @@ static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
 	struct brcm_pvt *tmp = p;
 	if (p->connection_id == connection_id) return p;
 
-	while(tmp = brcm_get_next_pvt(tmp)) {
-		if (!tmp || (tmp == p)) return NULL;
+	tmp = brcm_get_next_pvt(tmp);
+
+	while(tmp) {
 		if (tmp->connection_id == connection_id) return tmp;
+		tmp = brcm_get_next_pvt(tmp);
 	}
 	return NULL;
 }
@@ -527,7 +529,8 @@ static void *brcm_monitor_events(void *data)
 		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
 		if( rc == IOCTL_STATUS_SUCCESS )
 			{
-				if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
+				p = brcm_get_cid_pvt(iflist, tEventParm.lineId);
+				if (p) {
 					switch (tEventParm.event) {
 					case EPEVT_OFFHOOK:
 						ast_verbose("EPEVT_OFFHOOK detected\n");
