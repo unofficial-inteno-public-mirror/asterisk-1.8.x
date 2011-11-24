@@ -469,38 +469,43 @@ static void *brcm_monitor_packets(void *data)
 		tPacketParm.cnxId    = 0;
 		tPacketParm.length   = 0;
 
-		ast_mutex_lock(&lock);
 		if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS) {
-			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
-			/*   /\* get rtp packets from endpoint *\/ */
-			/* > RTP header max size, 16 for now, lots of assumptions here */
-			if (tPacketParm.length == 172 && p) {
-				//RTP id marker
-				if (pdata[0] == 0x80) {
-					fr.data.ptr =  (pdata + 12);
-					fr.samples = 160;
-					fr.datalen = tPacketParm.length - 12;
-					fr.frametype = AST_FRAME_VOICE;
-					fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
-					fr.offset = 0;
-					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
-					/* try to lock channel */
-					if(p->owner && !ast_channel_trylock(p->owner)) {
-						/* and enque frame if channel is up */
-						if(p->owner->_state == AST_STATE_UP) {
-							ast_queue_frame(p->owner, &fr);
+			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
+
+			ast_mutex_lock(&p->lock);
+			if (p->owner) {
+
+				/*   get rtp packets from endpoint */
+				/* > RTP header max size, 16 for now, lots of assumptions here */
+				if (tPacketParm.length == 172 && p) {
+					//RTP id marker
+					if (pdata[0] == 0x80) {
+						fr.data.ptr =  (pdata + 12);
+						fr.samples = 160;
+						fr.datalen = tPacketParm.length - 12;
+						fr.frametype = AST_FRAME_VOICE;
+						fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
+						fr.offset = 0;
+						fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+						fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+
+						/* try to lock channel */
+						if(!ast_channel_trylock(p->owner)) {
+							/* and enque frame if channel is up */
+							if(p->owner->_state == AST_STATE_UP) {
+								ast_queue_frame(p->owner, &fr);
+							}
+							ast_channel_unlock(p->owner);
 						}
-						ast_channel_unlock(p->owner);
 					}
 				}
 			}
+			ast_mutex_unlock(&p->lock);
 		}
-		ast_mutex_unlock(&lock);
 		sched_yield();
-	}
-	
+	} /* while */
+
 	/* Never reached */
 	return NULL;
 }
