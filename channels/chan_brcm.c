@@ -65,95 +65,19 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
-/* Change this value when needed */
-#define CHANNEL_VERSION "1.0"
-
-#define DEFAULT_CALLER_ID "Unknown"
-#define PHONE_MAX_BUF 480
-#define DEFAULT_GAIN 0x100
-
-#define LOUD
-#define TIMEMSEC 1000
-#define TIMEOUTMSEC 4000
-
-#define PCMU 0
-#define G726 2
-#define G723 4
-#define PCMA 8
-#define G729 18
+/* Global brcm channel parameters */
 
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
-uint32_t bogus_data[100];
-
-#define NOT_INITIALIZED -1
-#define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 2
-#define PACKET_BUFFER_SIZE 1024
-
-#define NOT_INITIALIZED -1
-#define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 2
-
-typedef void (*rtpDropPacketResetCallback)(void);
-
-typedef struct
-{
-   endptEventCallback         pEventCallBack;
-   endptPacketCallback        pPacketCallBack;
-   rtpDropPacketResetCallback pRtpDropPacketResetCallBack;
-   int                        fileHandle;
-   int                        logFileHandle;
-
-} ENDPTUSER_CTRLBLOCK;
-
-EPSTATUS vrgEndptSignal
-(
-   ENDPT_STATE   *endptState,
-   int            cnxId,
-   EPSIG          signal,
-   unsigned int   value,
-   int            duration,
-   int            period,
-   int            repetition
- );
-
-enum channel_state {
-    ONHOOK,
-    OFFHOOK,
-    DIALING,
-    INCALL,
-    ANSWER,
-	CALLENDED,
-};
-
-enum endpoint_type {
-	FXS,
-	FXO,
-	DECT,
-};
-
-EPSTATUS vrgEndptDriverOpen(void);
-int endpt_init(void);
-int endpt_deinit(void);
-void event_loop(void);
-
 ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 
-/* Global brcm channel parameters */
-
 static int num_fxs_endpoints = -1;
-
 static int num_fxo_endpoints = -1;
-
 static int num_dect_endpoints = -1;
-
 static int endpoint_fd = NOT_INITIALIZED;
-
 static int echocancel = 1;
-
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 
 /* Default context for dialtone mode */
@@ -161,18 +85,9 @@ static char context[AST_MAX_EXTENSION] = "default";
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
-
-
 static int silencesupression = 0;
-
 static format_t prefformat = AST_FORMAT_ALAW;
 
-/* Protect the interface list (of brcm_pvt's) */
-AST_MUTEX_DEFINE_STATIC(iflock);
-
-/* Protect the monitoring thread, so only one process can kill or start it, and not
-   when it's doing something critical. */
-AST_MUTEX_DEFINE_STATIC(monlock);
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
@@ -181,163 +96,37 @@ static unsigned int events = 1;
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
 static pthread_t packet_thread = AST_PTHREADT_NULL;
-
-AST_MUTEX_DEFINE_STATIC(lock);
-
-static int restart_monitor(void);
-
-static struct brcm_pvt {
-  ast_mutex_t lock;
-	int fd;							/* Raw file descriptor for this device */
-	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
-	int connection_id;				/* Id of the connection, used to map the correct port, lineid matching parameter */
-	char dtmfbuf[AST_MAX_EXTENSION];/* DTMF buffer per channel */
-	int dtmf_len;					/* Length of DTMF buffer */
-	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
-	format_t lastformat;            /* Last output format */
-	format_t lastinput;             /* Last input format */
-	struct brcm_pvt *next;			/* Next channel in list */
-	struct ast_frame fr;			/* Frame */
-	char offset[AST_FRIENDLY_OFFSET];
-	char buf[PHONE_MAX_BUF];					/* Static buffer for reading frames */
-	int txgain, rxgain;             /* gain control for playing, recording  */
-									/* 0x100 - 1.0, 0x200 - 2.0, 0x80 - 0.5 */
-	int silencesupression;
-	char context[AST_MAX_EXTENSION];
-	char obuf[PHONE_MAX_BUF * 2];
-	char ext[AST_MAX_EXTENSION];
-	char language[MAX_LANGUAGE];
-	char cid_num[AST_MAX_EXTENSION];
-	char cid_name[AST_MAX_EXTENSION];
-	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
-	unsigned int channel_state;		/* Channel states */
-	unsigned int connection_init;	/* State for endpoint id connection initialization */
-	unsigned int last_dialtone_ts;	/* Timestamp to send a continious dialtone */
-	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
-	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
-	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
-	unsigned int ssrc;				/* Endpoint RTP synchronization source */
-} *iflist = NULL;
-
 static char cid_num[AST_MAX_EXTENSION];
 static char cid_name[AST_MAX_EXTENSION];
 
-static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
-static int brcm_digit_begin(struct ast_channel *ast, char digit);
-static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int duration);
-static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
-static int brcm_hangup(struct ast_channel *ast);
-static int brcm_answer(struct ast_channel *ast);
-static struct ast_frame *brcm_read(struct ast_channel *ast);
-static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
-static struct ast_frame *brcm_exception(struct ast_channel *ast);
-static int brcm_send_text(struct ast_channel *ast, const char *text);
-static int brcm_fixup(struct ast_channel *old, struct ast_channel *new);
-static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen);
-static int brcm_get_endpoints_count();
-static void brcm_create_fxs_endpoints();
-static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
-static int brcm_create_connection(struct brcm_pvt *p);
-static int brcm_close_connection(struct brcm_pvt *p);
+static struct ast_channel_tech *cur_tech;
+
+/* Protect the interface list (of brcm_pvt's) */
+AST_MUTEX_DEFINE_STATIC(iflock);
+
+/* Protect the monitoring thread, so only one process can kill or start it, and not
+   when it's doing something critical. */
+AST_MUTEX_DEFINE_STATIC(monlock);
+
+AST_MUTEX_DEFINE_STATIC(lock);
 
 
+
+/* exported capabilities */
 static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_ALAW,
 	.requester = brcm_request,
-	.send_digit_begin = brcm_digit_begin,
-	.send_digit_end = brcm_digit_end,
 	.call = brcm_call,
 	.hangup = brcm_hangup,
 	.answer = brcm_answer,
 	.read = brcm_read,
 	.write = brcm_write,
-	.exception = brcm_exception,
-	.indicate = brcm_indicate,
-	.fixup = brcm_fixup
 };
 
-static struct ast_channel_tech *cur_tech;
 
-static int brcm_indicate(struct ast_channel *chan, int condition, const void *data, size_t datalen)
-{
-	struct brcm_pvt *p = chan->tech_pvt;
-	int res=-1;
-	ast_debug(1, "Requested indication %d on channel %s\n", condition, chan->name);
-	switch(condition) {
-	case AST_CONTROL_FLASH:
-		usleep(320000);
-			p->lastformat = -1;
-			res = 0;
-			break;
-	case AST_CONTROL_HOLD:
-		ast_moh_start(chan, data, NULL);
-		break;
-	case AST_CONTROL_UNHOLD:
-		ast_moh_stop(chan);
-		break;
-	case AST_CONTROL_SRCUPDATE:
-		res = 0;
-		break;
-	default:
-		ast_log(LOG_WARNING, "Condition %d is not supported on channel %s\n", condition, chan->name);
-	}
-	return res;
-}
 
-static int brcm_fixup(struct ast_channel *old, struct ast_channel *new)
-{
-	struct brcm_pvt *pvt = old->tech_pvt;
-	if (pvt && pvt->owner == old)
-		pvt->owner = new;
-	return 0;
-}
-
-static int brcm_digit_begin(struct ast_channel *chan, char digit)
-{
-	/* XXX Modify this callback to let Asterisk support controlling the length of DTMF */
-	return 0;
-}
-
-static int brcm_digit_end(struct ast_channel *ast, char digit, unsigned int duration)
-{
-	struct brcm_pvt *p;
-	int outdigit;
-	p = ast->tech_pvt;
-	ast_debug(1, "Dialed %c\n", digit);
-	switch(digit) {
-	case '0':
-	case '1':
-	case '2':
-	case '3':
-	case '4':
-	case '5':
-	case '6':
-	case '7':
-	case '8':
-	case '9':
-		outdigit = digit - '0';
-		break;
-	case '*':
-		outdigit = 11;
-		break;
-	case '#':
-		outdigit = 12;
-		break;
-	case 'f':	/*flash*/
-	case 'F':
-		usleep(320000);
-		p->lastformat = -1;
-		return 0;
-	default:
-		ast_log(LOG_WARNING, "Unknown digit '%c'\n", digit);
-		return -1;
-	}
-	ast_debug(1, "Dialed %d\n", outdigit);
-	p->lastformat = -1;
-	return 0;
-}
 
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
@@ -405,43 +194,6 @@ static int brcm_hangup(struct ast_channel *ast)
 	return 0;
 }
 
-static int brcm_setup(struct ast_channel *ast)
-{
-	struct brcm_pvt *p;
-	p = ast->tech_pvt;
-
-	/* Default to g711 */
-	p->lastinput = AST_FORMAT_ALAW;
-	ast_log(LOG_WARNING, "AST_FORMAT_ALAW set\n");
-	/* Nothing to answering really, just start recording */
-/*	if (ast->rawreadformat == AST_FORMAT_G729A) {
-		if (p->lastinput != AST_FORMAT_G729A) {
-			p->lastinput = AST_FORMAT_G729A;
-		}
-        } else if (ast->rawreadformat == AST_FORMAT_G723_1) {
-		if (p->lastinput != AST_FORMAT_G723_1) {
-			p->lastinput = AST_FORMAT_G723_1;
-		}
-	} else if (ast->rawreadformat == AST_FORMAT_SLINEAR) {
-		if (p->lastinput != AST_FORMAT_SLINEAR) {
-			p->lastinput = AST_FORMAT_SLINEAR;
-		}
-	} else if (ast->rawreadformat == AST_FORMAT_ULAW) {
-		if (p->lastinput != AST_FORMAT_ULAW) {
-			p->lastinput = AST_FORMAT_ULAW;
-		}
-	} else if (p->mode == MODE_FXS) {
-		if (p->lastinput != ast->rawreadformat) {
-			p->lastinput = ast->rawreadformat;
-		}
-	} else {
-		ast_log(LOG_WARNING, "Can't do format %s\n", ast_getformatname(ast->rawreadformat));
-		return -1;
-	}
-*/
-	return 0;
-}
-
 
 static int brcm_answer(struct ast_channel *ast)
 {
@@ -452,25 +204,6 @@ static int brcm_answer(struct ast_channel *ast)
 	return 0;
 }
 
-
-static struct ast_frame  *brcm_exception(struct ast_channel *ast)
-{
-	struct brcm_pvt *p = ast->tech_pvt;
-
-	/* Some nice norms */
-	p->fr.datalen = 0;
-	p->fr.samples = 0;
-	p->fr.data.ptr =  bogus_data;
-	p->fr.src = "Phone";
-	p->fr.offset = 0;
-	p->fr.mallocd=0;
-	p->fr.delivery = ast_tv(0,0);
-	
-	/* Strange -- nothing there.. */
-	p->fr.frametype = AST_FRAME_NULL;
-	p->fr.subclass.integer = 0;
-	return &p->fr;
-}
 
 
 static int map_rtp_to_ast_codec_id(int id) {
@@ -491,17 +224,6 @@ static struct ast_frame  *brcm_read(struct ast_channel *ast)
 }
 
 
-static int brcm_write_buf(struct brcm_pvt *p, const char *buf, int len, int frlen, int swap)
-{
-	return len;
-}
-
-
-static int brcm_send_text(struct ast_channel *ast, const char *text)
-{
-    int length = strlen(text);
-    return brcm_write_buf(ast->tech_pvt, text, length, length, 0) == length ? 0 : -1;
-}
 
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
@@ -901,7 +623,7 @@ static void brcm_monitor_events(void *data)
 }
 
 
-static int restart_monitor()
+static int start_threads()
 {
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
@@ -1053,7 +775,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	ast_mutex_unlock(&p->lock);
 
 	ast_mutex_unlock(&iflock);
-	/* restart_monitor(); */
+
 	if (tmp == NULL) {
 		oldformat = format;
 		format &= AST_FORMAT_ALAW;
@@ -1324,8 +1046,8 @@ static int load_module(void)
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	ast_config_destroy(cfg);
 
-	/* And start the monitor for the first time */
-	restart_monitor();
+	/* Start channel threads */
+	start_threads();
 	
 	ast_verbose("BRCM init done\n");
 
@@ -1697,7 +1419,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-int brcm_create_connection(struct brcm_pvt *p) {
+static int brcm_create_connection(struct brcm_pvt *p) {
 
   /* generate random nr for rtp header */
 	p->ssrc = rand();
