@@ -114,7 +114,7 @@ AST_MUTEX_DEFINE_STATIC(lock);
 
 /* exported capabilities */
 static const struct ast_channel_tech brcm_tech = {
-	.type = "BRCM",
+        .type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_ALAW,
 	.requester = brcm_request,
@@ -138,25 +138,12 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	ast_log(LOG_WARNING, "BRCM brcm_call\n");
 	ast_localtime(&UtcTime, &tm, NULL);
 
-	/* the standard format of ast->callerid is:  "name" <number>, but not always complete */
-	if (!ast->connected.id.name.valid
-		|| ast_strlen_zero(ast->connected.id.name.str)) {
-//		strcpy(cid.name, DEFAULT_CALLER_ID);
-	} else {
-//		ast_copy_string(cid.name, ast->connected.id.name.str, sizeof(cid.name));
-	}
-
-	if (ast->connected.id.number.valid && ast->connected.id.number.str) {
-//		ast_copy_string(cid.number, ast->connected.id.number.str, sizeof(cid.number));
-	}
-
 	p = ast->tech_pvt;
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
 		return -1;
 	}
-	ast_debug(1, "Ringing %s on %s (%d)\n", dest, ast->name, ast->fds[0]);
 
 	brcm_signal_ringing(p);
 
@@ -208,12 +195,12 @@ static int brcm_answer(struct ast_channel *ast)
 
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
-		case PCMU: return AST_FORMAT_ULAW;
-		case G726: return AST_FORMAT_G726;
-		case G723: return AST_FORMAT_G723_1;
-		case PCMA: return AST_FORMAT_ALAW;
-		case G729: return AST_FORMAT_G729A;
-		default:   return AST_FORMAT_ALAW;
+	case PCMU: return AST_FORMAT_ULAW;
+	case G726: return AST_FORMAT_G726;
+	case G723: return AST_FORMAT_G723_1;
+	case PCMA: return AST_FORMAT_ALAW;
+	case G729: return AST_FORMAT_G729A;
+	default:   return AST_FORMAT_ALAW;
 	}
 }
 
@@ -234,36 +221,36 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
 	if (ast->_state != AST_STATE_UP) {
-	  ast_verbose("error: channel not up\n");
-	  return -1;
+		ast_verbose("error: channel not up\n");
+		return -1;
 	}
 
 	if(frame->frametype == AST_FRAME_VOICE) {
 
-	  /* send rtp packet to the endpoint */
-	  epPacket_send.mediaType   = 0;
+		/* send rtp packet to the endpoint */
+		epPacket_send.mediaType   = 0;
 
-	  /* copy frame data to local buffer */
-	  memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
+		/* copy frame data to local buffer */
+		memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
 	    
-	  /* add buffer to outgoing packet */
-	  epPacket_send.packetp = packet_buffer;
+		/* add buffer to outgoing packet */
+		epPacket_send.packetp = packet_buffer;
 
-	  /* generate the rtp header */
-	  brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
+		/* generate the rtp header */
+		brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
 
-	  tPacketParm_send.cnxId       = p->connection_id;
-	  tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
-	  tPacketParm_send.length      = 12 + frame->datalen;
-	  tPacketParm_send.bufDesc     = (int)&epPacket_send;
-	  tPacketParm_send.epPacket    = &epPacket_send;
-	  tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
-	  tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+		tPacketParm_send.cnxId       = p->connection_id;
+		tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
+		tPacketParm_send.length      = 12 + frame->datalen;
+		tPacketParm_send.bufDesc     = (int)&epPacket_send;
+		tPacketParm_send.epPacket    = &epPacket_send;
+		tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
+		tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-	  if (p->connection_init) {
-	  if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-	    ast_verbose("%s: error during ioctl", __FUNCTION__);
-	  }
+		if (p->connection_init) {
+			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+				ast_verbose("%s: error during ioctl", __FUNCTION__);
+		}
 	}
 	return 0;
 }
@@ -298,8 +285,8 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
 	if (p->connection_init) {
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-		ast_verbose("%s: error during ioctl", __FUNCTION__);
+		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+			ast_verbose("%s: error during ioctl", __FUNCTION__);
 	}
 }
 
@@ -384,30 +371,24 @@ static void brcm_event_handler(void *data)
 		p = iflist;
 		gettimeofday(&tim, NULL);
 		ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-		//ast_verbose("msec = %d\n",ts);
+
 		/* loop over all pvt's */
 		while(p) {
 			/* If off hook send dialtone every 20 ms*/
-		  ast_mutex_lock(&p->lock);
+			ast_mutex_lock(&p->lock);
 			if (p->channel_state == OFFHOOK) {
-				//ast_verbose("sending dialtone, %d > %d\n",ts, p->last_dialtone_ts + 20);
 
 				if (!p->last_dialtone_ts) p->last_dialtone_ts = ts;
 
 				if (ts > p->last_dialtone_ts + 20) {
-					//ast_verbose("sending tone\n");
-
-				  if (!p->connection_init)
+					if (!p->connection_init)
 						brcm_create_connection(p);
 
-
-
-				  brcm_send_dialtone(p);
-				  p->last_dialtone_ts = p->last_dialtone_ts + 20;
+					brcm_send_dialtone(p);
+					p->last_dialtone_ts = p->last_dialtone_ts + 20;
 				}
 			}
 
-			//ast_verbose("%d - %d = %d\n",ts,p->last_dtmf_ts, ts-p->last_dtmf_ts);
 			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 				ast_verbose("ts - last_dtmf_ts > 2000\n");
 				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
@@ -415,10 +396,10 @@ static void brcm_event_handler(void *data)
 
 			/* Check if the dtmf string matches anything in the dialplan */
 			if ((p->channel_state == DIALING) &&
-				(ts - p->last_dtmf_ts > TIMEOUTMSEC) &&
-				ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
-				!ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
-			) {
+			    (ts - p->last_dtmf_ts > TIMEOUTMSEC) &&
+			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
+			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
+			    ) {
 				p->channel_state = INCALL;
 				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
 				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
@@ -431,10 +412,10 @@ static void brcm_event_handler(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
 				/* Start the pbx */
-				  if (!p->connection_init)
-						brcm_create_connection(p);
+				if (!p->connection_init)
+					brcm_create_connection(p);
 
-				  brcm_new(p, AST_STATE_UP, p->context, NULL);
+				brcm_new(p, AST_STATE_UP, p->context, NULL);
 
 			}
 
@@ -447,23 +428,23 @@ static void brcm_event_handler(void *data)
 }
 
 
-#define DTMF_CHECK(dtmf_button, event_string) \
-{\
-    gettimeofday(&tim, NULL); \
-    if (p->dtmf_first < 0) {\
-        p->dtmf_first = dtmf_button;\
-        p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
-    } else if (p->dtmf_first == dtmf_button) {\
-        p->dtmfbuf[p->dtmf_len] = dtmf_button;\
-        p->dtmf_len++;\
-        p->dtmfbuf[p->dtmf_len] = '\0';\
-        p->dtmf_first = -1;\
-        p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
-        if (p->channel_state == OFFHOOK) p->channel_state = DIALING; \
-    } else {\
-        p->dtmf_first = -1;\
-    }\
-}
+#define DTMF_CHECK(dtmf_button, event_string)				\
+	{								\
+		gettimeofday(&tim, NULL);				\
+		if (p->dtmf_first < 0) {				\
+			p->dtmf_first = dtmf_button;			\
+			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
+		} else if (p->dtmf_first == dtmf_button) {		\
+			p->dtmfbuf[p->dtmf_len] = dtmf_button;		\
+			p->dtmf_len++;					\
+			p->dtmfbuf[p->dtmf_len] = '\0';			\
+			p->dtmf_first = -1;				\
+			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
+			if (p->channel_state == OFFHOOK) p->channel_state = DIALING; \
+		} else {						\
+			p->dtmf_first = -1;				\
+		}							\
+	}
 
 static void brcm_monitor_packets(void *data)
 {
@@ -475,10 +456,8 @@ static void brcm_monitor_packets(void *data)
 	RTPPACKET *rtp;
 	
 	rtp = pdata;
-	/* Some nice norms */
 	fr.src = "brcm";
 	fr.mallocd=0;
-	/* fr.delivery = ast_tv(0,0); */
 
 	while(1) {
 		epPacket.mediaType   = 0;
@@ -524,103 +503,103 @@ static void brcm_monitor_packets(void *data)
 
 static void brcm_monitor_events(void *data)
 {
-    ENDPOINTDRV_EVENT_PARM tEventParm = {0};
-    int rc = IOCTL_STATUS_FAILURE;
-    struct brcm_pvt *p;
+	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
+	int rc = IOCTL_STATUS_FAILURE;
+	struct brcm_pvt *p;
 	struct timeval tim;
 
-    while (monitor) {
-        tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
-        tEventParm.length = 0;
-        p = iflist;
+	while (monitor) {
+		tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
+		tEventParm.length = 0;
+		p = iflist;
 
-        /* Get the event from the endpoint driver. */
-        rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
-        if( rc == IOCTL_STATUS_SUCCESS )
-        {
-	  if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
-            switch (tEventParm.event) {
-                case EPEVT_OFFHOOK:
-		  ast_verbose("EPEVT_OFFHOOK detected\n");
-		  ast_mutex_lock(&p->lock);		  
-		  ast_verbose("me: got mutex\n");
-		  gettimeofday(&tim, NULL);
-		  p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-		  //					ast_verbose("last_dtmf_ts = %d\n",p->last_dtmf_ts);
-                    /* Reset the dtmf buffer */
-                    memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-                    p->dtmf_len          = 0;
-                    p->dtmf_first        = -1;
-                    p->dtmfbuf[p->dtmf_len] = '\0';
-		    p->channel_state = OFFHOOK;
+		/* Get the event from the endpoint driver. */
+		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
+		if( rc == IOCTL_STATUS_SUCCESS )
+			{
+				if (p = brcm_get_cid_pvt(iflist, tEventParm.lineId)) {
+					switch (tEventParm.event) {
+					case EPEVT_OFFHOOK:
+						ast_verbose("EPEVT_OFFHOOK detected\n");
+						ast_mutex_lock(&p->lock);		  
+						ast_verbose("me: got mutex\n");
+						gettimeofday(&tim, NULL);
+						p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
-
-                    if(p->owner) {
-
-		      if (!p->connection_init) {
-			ast_verbose("create_connection()\n");
-			brcm_create_connection(p);
-		      }
-
-		      ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-		      /* ast_setstate(p->owner, AST_STATE_UP); */
-		      p->channel_state = INCALL;
-                    }
-		    ast_mutex_unlock(&p->lock);
-		    ast_verbose("me: unlocked mutex\n");
-
-                    break;
-                case EPEVT_ONHOOK:
-                    ast_verbose("EPEVT_ONHOOK detected\n");
-		    gettimeofday(&tim, NULL);
-		    p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-
-		    ast_mutex_lock(&p->lock);
-		    ast_verbose("me: got mutex\n");
-		    p->channel_state = ONHOOK;
-
-                    /* Reset the dtmf buffer */
-                    memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-                    p->dtmf_len          = 0;
-                    p->dtmf_first        = -1;
-                    p->dtmfbuf[p->dtmf_len] = '\0';
-		    p->last_dialtone_ts = 0;
-		    brcm_close_connection(p);
-
-		    if(p->owner) {
-		      ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-		      ast_setstate(p->owner, AST_STATE_DOWN);
-		    }
-		    ast_mutex_unlock(&p->lock);
-		    ast_verbose("me: unlocked mutex\n");
-                    break;
-
-                case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
-                case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
-                case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
-                case EPEVT_DTMF3: DTMF_CHECK('3', "EPEVT_DTMF3"); break;
-                case EPEVT_DTMF4: DTMF_CHECK('4', "EPEVT_DTMF4"); break;
-                case EPEVT_DTMF5: DTMF_CHECK('5', "EPEVT_DTMF5"); break;
-                case EPEVT_DTMF6: DTMF_CHECK('6', "EPEVT_DTMF6"); break;
-                case EPEVT_DTMF7: DTMF_CHECK('7', "EPEVT_DTMF7"); break;
-                case EPEVT_DTMF8: DTMF_CHECK('8', "EPEVT_DTMF8"); break;
-                case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
-                case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
-                case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
-                default:
-					ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
-                    break;
-			}
-			} else
-				ast_verbose("No pvt with the correct connection_id/lineId %d found!\n", tEventParm.lineId);
-//			ast_verbose("[%d] DTMF string: %s\n",tEventParm.lineId ,p->dtmfbuf);
+						/* Reset the dtmf buffer */
+						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+						p->dtmf_len          = 0;
+						p->dtmf_first        = -1;
+						p->dtmfbuf[p->dtmf_len] = '\0';
+						p->channel_state = OFFHOOK;
 
 
-        } else {
+						if(p->owner) {
+
+							if (!p->connection_init) {
+								ast_verbose("create_connection()\n");
+								brcm_create_connection(p);
+							}
+
+							ast_queue_control(p->owner, AST_CONTROL_ANSWER);
+							p->channel_state = INCALL;
+						}
+						ast_mutex_unlock(&p->lock);
+						ast_verbose("me: unlocked mutex\n");
+
+						break;
+					case EPEVT_ONHOOK:
+						ast_verbose("EPEVT_ONHOOK detected\n");
+						gettimeofday(&tim, NULL);
+						p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+
+						ast_mutex_lock(&p->lock);
+						ast_verbose("me: got mutex\n");
+						p->channel_state = ONHOOK;
+
+						/* Reset the dtmf buffer */
+						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+						p->dtmf_len          = 0;
+						p->dtmf_first        = -1;
+						p->dtmfbuf[p->dtmf_len] = '\0';
+						p->last_dialtone_ts = 0;
+						brcm_close_connection(p);
+
+						if(p->owner) {
+							ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+							ast_setstate(p->owner, AST_STATE_DOWN);
+						}
+						ast_mutex_unlock(&p->lock);
+						ast_verbose("me: unlocked mutex\n");
+						break;
+
+					case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
+					case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
+					case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
+					case EPEVT_DTMF3: DTMF_CHECK('3', "EPEVT_DTMF3"); break;
+					case EPEVT_DTMF4: DTMF_CHECK('4', "EPEVT_DTMF4"); break;
+					case EPEVT_DTMF5: DTMF_CHECK('5', "EPEVT_DTMF5"); break;
+					case EPEVT_DTMF6: DTMF_CHECK('6', "EPEVT_DTMF6"); break;
+					case EPEVT_DTMF7: DTMF_CHECK('7', "EPEVT_DTMF7"); break;
+					case EPEVT_DTMF8: DTMF_CHECK('8', "EPEVT_DTMF8"); break;
+					case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
+					case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
+					case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
+					default:
+						ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
+						break;
+					}
+				} else
+					ast_verbose("No pvt with the correct connection_id/lineId %d found!\n", tEventParm.lineId);
+
+
+			} else {
 			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 		}
-    }
+	}
 }
+
+
 
 
 static int start_threads()
@@ -655,7 +634,9 @@ static int start_threads()
 	}
 
 	monitor = 1;
-	/* Start a new monitor */
+
+	/* Start an event polling thread */
+	/* This thread blocks on ioctl and wakes up when an event is avaliable from the endpoint  */
 	if (ast_pthread_create_background(&monitor_thread, NULL, brcm_monitor_events, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
@@ -663,6 +644,7 @@ static int start_threads()
 	}
 
 	/* Start a new event handler thread */
+	/* This thread processes events recieved by brcm_monitor_events */
 	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
@@ -670,6 +652,8 @@ static int start_threads()
 	}
 
 	/* Start a new sound polling thread */
+	/* This thread blocks on ioctl and wakes up when an rpt packet is avaliable from the endpoint  */
+	/* It then enques the packet on the channel which owns the pvt   */
 	if (ast_pthread_create_background(&packet_thread, NULL, brcm_monitor_packets, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
@@ -767,10 +751,10 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	p = iflist;
 	ast_mutex_lock(&p->lock);
 	if ((!p->owner) && (!p->connection_init)) {
-	  ast_verbose("connection init\n");
-	  tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+		ast_verbose("connection init\n");
+		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
 	} else {
-	  *cause = AST_CAUSE_BUSY;
+		*cause = AST_CAUSE_BUSY;
 	}
 	ast_mutex_unlock(&p->lock);
 
@@ -796,11 +780,11 @@ static int parse_gain_value(const char *gain_type, const char *value)
 
 	/* try to scan number */
 	if (sscanf(value, "%30f", &gain) != 1)
-	{
-		ast_log(LOG_ERROR, "Invalid %s value '%s' in '%s' config\n",
-			value, gain_type, config);
-		return DEFAULT_GAIN;
-	}
+		{
+			ast_log(LOG_ERROR, "Invalid %s value '%s' in '%s' config\n",
+				value, gain_type, config);
+			return DEFAULT_GAIN;
+		}
 
 	/* multiplicate gain by 1.0 gain value */ 
 	gain = gain * (float)DEFAULT_GAIN;
@@ -823,23 +807,23 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Connection id       : %d\n", p->connection_id);
 		ast_cli(a->fd, "Channel state       : ");
 		switch (p->channel_state) {
-			case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
-			case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
-			case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
-			case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
-			case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
-			case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
-			default:		ast_cli(a->fd, "UNKNOWN\n"); break;
+		case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
+		case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
+		case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
+		case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
+		case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
+		case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
+		default:		ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int*) p->next);
 		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int*) p->owner);		
 		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
-			case FXS:  ast_cli(a->fd, "FXS\n");  break;
-			case FXO:  ast_cli(a->fd, "FXO\n");  break;
-			case DECT: ast_cli(a->fd, "DECT\n"); break;
-			default: ast_cli(a->fd, "Unknown\n");
+		case FXS:  ast_cli(a->fd, "FXS\n");  break;
+		case FXO:  ast_cli(a->fd, "FXO\n");  break;
+		case DECT: ast_cli(a->fd, "DECT\n"); break;
+		default: ast_cli(a->fd, "Unknown\n");
 		}
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
@@ -989,7 +973,7 @@ static int load_module(void)
 			silencesupression = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
-		// FIXME use a table for this
+			// FIXME use a table for this
 		} else if (!strcasecmp(v->name, "country")) {
 			if      (!strcmp(v->value, "swe"))
 				endpoint_country = VRG_COUNTRY_SWEDEN;
@@ -1057,9 +1041,9 @@ static int load_module(void)
 
 int endpt_deinit(void)
 {
-  vrgEndptDeinit();
+	vrgEndptDeinit();
 
-  return 0;
+	return 0;
 }
 
 
@@ -1099,9 +1083,9 @@ static void brcm_create_fxs_endpoints()
 
 	/* Creating Endpt */
 	for ( i = 0; i < num_fxs_endpoints; i++ )
-	{
-		rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
-	}
+		{
+			rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
+		}
 }
 
 
@@ -1119,12 +1103,12 @@ int endpt_init(void)
 
 	/* Intialize endpoint */
 	rc = vrgEndptInit( &vrgEndptInitCfg,
-		     NULL,
-		     NULL,
-		     NULL,
-		     NULL,
-		     NULL,
-		     NULL );
+			   NULL,
+			   NULL,
+			   NULL,
+			   NULL,
+			   NULL,
+			   NULL );
 
 	return 0;
 }
@@ -1134,10 +1118,10 @@ int brcm_signal_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
 
-   /* Check whether value is on or off */
-     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+	/* Check whether value is on or off */
+	vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 #endif
-  return 0;
+	return 0;
 }
 
 
@@ -1145,11 +1129,11 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 {
 #ifdef LOUD
 
-   /* Check whether value is on or off */
-     vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+	/* Check whether value is on or off */
+	vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 #endif
 
-  return 0;
+	return 0;
 }
 
 
@@ -1171,18 +1155,18 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 */
 EPSTATUS vrgEndptDriverOpen(void)
 {
-   /* Open and initialize Endpoint driver */
-   if( ( endpoint_fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
-   {
-      printf( "%s: open error %d\n", __FUNCTION__, errno );
-      return ( EPSTATUS_DRIVER_ERROR );
-   }
-   else
-   {
-      printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
-   }
+	/* Open and initialize Endpoint driver */
+	if( ( endpoint_fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
+		{
+			printf( "%s: open error %d\n", __FUNCTION__, errno );
+			return ( EPSTATUS_DRIVER_ERROR );
+		}
+	else
+		{
+			printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
+		}
 
-   return ( EPSTATUS_SUCCESS );
+	return ( EPSTATUS_SUCCESS );
 }
 
 
@@ -1201,15 +1185,15 @@ EPSTATUS vrgEndptDriverOpen(void)
 */
 EPSTATUS vrgEndptDriverClose()
 {
-   if ( close( endpoint_fd ) == -1 )
-   {
-      printf("%s: close error %d", __FUNCTION__, errno);
-      return ( EPSTATUS_DRIVER_ERROR );
-   }
+	if ( close( endpoint_fd ) == -1 )
+		{
+			printf("%s: close error %d", __FUNCTION__, errno);
+			return ( EPSTATUS_DRIVER_ERROR );
+		}
 
-   endpoint_fd = NOT_INITIALIZED;
+	endpoint_fd = NOT_INITIALIZED;
 
-   return( EPSTATUS_SUCCESS );
+	return( EPSTATUS_SUCCESS );
 }
 
 
@@ -1244,27 +1228,27 @@ EPSTATUS vrgEndptDriverClose()
 */
 EPSTATUS vrgEndptInit
 (
-   VRG_ENDPT_INIT_CFG        *endptInitCfg,
-   endptEventCallback         notifyCallback,
-   endptPacketCallback        packetCallback,
-   endptGetProvCallback       getProvisionCallback,
-   endptSetProvCallback       setProvisionCallback,
-   endptPacketReleaseCallback packetReleaseCallback,
-   endptTaskShutdownCallback  taskShutdownCallback
-)
+ VRG_ENDPT_INIT_CFG        *endptInitCfg,
+ endptEventCallback         notifyCallback,
+ endptPacketCallback        packetCallback,
+ endptGetProvCallback       getProvisionCallback,
+ endptSetProvCallback       setProvisionCallback,
+ endptPacketReleaseCallback packetReleaseCallback,
+ endptTaskShutdownCallback  taskShutdownCallback
+ )
 {
-   ENDPOINTDRV_INIT_PARAM tStartupParam;
+	ENDPOINTDRV_INIT_PARAM tStartupParam;
 
-   tStartupParam.endptInitCfg = endptInitCfg;
-   tStartupParam.epStatus     = EPSTATUS_DRIVER_ERROR;
-   tStartupParam.size         = sizeof(ENDPOINTDRV_INIT_PARAM);
+	tStartupParam.endptInitCfg = endptInitCfg;
+	tStartupParam.epStatus     = EPSTATUS_DRIVER_ERROR;
+	tStartupParam.size         = sizeof(ENDPOINTDRV_INIT_PARAM);
 
 
-   /* Check if kernel driver is opened */
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
-     return ( tStartupParam.epStatus );
+	/* Check if kernel driver is opened */
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
+		return ( tStartupParam.epStatus );
 
-   return ( tStartupParam.epStatus );
+	return ( tStartupParam.epStatus );
 }
 
 
@@ -1297,61 +1281,61 @@ EPSTATUS vrgEndptInit
 */
 EPSTATUS vrgEndptDeinit( void )
 {
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
-   {
-   }
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
+		{
+		}
 
-   return( EPSTATUS_SUCCESS );
+	return( EPSTATUS_SUCCESS );
 }
 
 
 /*****************************************************************************
-*  FUNCTION:   vrgEndptSignal
-*
-*  PURPOSE:    Generate a signal on the endpoint (or connection)
-*
-*  PARAMETERS: endptState  - state of the endpt object
-*              cnxId       - connection identifier (-1 if not applicable)
-*              signal      - signal type code (see EPSIG)
-*              value       - signal value
-*                          BR signal types - 1
-*                          OO signal types - 0 == off, 1 == on
-*                          TO signal types - 0 = stop/off, 1= start/on
-*                          String types - (char *) cast to NULL-term string value
-*
-*  RETURNS:    EPSTATUS
-*
-*****************************************************************************/
+ *  FUNCTION:   vrgEndptSignal
+ *
+ *  PURPOSE:    Generate a signal on the endpoint (or connection)
+ *
+ *  PARAMETERS: endptState  - state of the endpt object
+ *              cnxId       - connection identifier (-1 if not applicable)
+ *              signal      - signal type code (see EPSIG)
+ *              value       - signal value
+ *                          BR signal types - 1
+ *                          OO signal types - 0 == off, 1 == on
+ *                          TO signal types - 0 = stop/off, 1= start/on
+ *                          String types - (char *) cast to NULL-term string value
+ *
+ *  RETURNS:    EPSTATUS
+ *
+ *****************************************************************************/
 EPSTATUS vrgEndptSignal
 (
-   ENDPT_STATE   *endptState,
-   int            cnxId,
-   EPSIG          signal,
-   unsigned int   value,
-   int            duration,
-   int            period,
-   int            repetition
-)
+ ENDPT_STATE   *endptState,
+ int            cnxId,
+ EPSIG          signal,
+ unsigned int   value,
+ int            duration,
+ int            period,
+ int            repetition
+ )
 {
-   ENDPOINTDRV_SIGNAL_PARM tSignalParm;
+	ENDPOINTDRV_SIGNAL_PARM tSignalParm;
 
-   tSignalParm.cnxId    = cnxId;
-   tSignalParm.state    = endptState;
-   tSignalParm.signal   = signal;
-   tSignalParm.value    = value;
-   tSignalParm.epStatus = EPSTATUS_DRIVER_ERROR;
-   tSignalParm.duration = duration;
-   tSignalParm.period   = period;
-   tSignalParm.repetition = repetition;
-   tSignalParm.size     = sizeof(ENDPOINTDRV_SIGNAL_PARM);
+	tSignalParm.cnxId    = cnxId;
+	tSignalParm.state    = endptState;
+	tSignalParm.signal   = signal;
+	tSignalParm.value    = value;
+	tSignalParm.epStatus = EPSTATUS_DRIVER_ERROR;
+	tSignalParm.duration = duration;
+	tSignalParm.period   = period;
+	tSignalParm.repetition = repetition;
+	tSignalParm.size     = sizeof(ENDPOINTDRV_SIGNAL_PARM);
 
-   /* Check if kernel driver is opened */
+	/* Check if kernel driver is opened */
 
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_SIGNAL, &tSignalParm ) != IOCTL_STATUS_SUCCESS )
-   {
-   }
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_SIGNAL, &tSignalParm ) != IOCTL_STATUS_SUCCESS )
+		{
+		}
 
-   return( tSignalParm.epStatus );
+	return( tSignalParm.epStatus );
 }
 
 
@@ -1372,21 +1356,21 @@ EPSTATUS vrgEndptSignal
 */
 EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 {
-   ENDPOINTDRV_CREATE_PARM tInitParm;
+	ENDPOINTDRV_CREATE_PARM tInitParm;
 
-   tInitParm.physId     = physId;
-   tInitParm.lineId     = lineId;
-   tInitParm.endptState = endptState;
-   tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-   tInitParm.size       = sizeof(ENDPOINTDRV_CREATE_PARM);
+	tInitParm.physId     = physId;
+	tInitParm.lineId     = lineId;
+	tInitParm.endptState = endptState;
+	tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+	tInitParm.size       = sizeof(ENDPOINTDRV_CREATE_PARM);
 
-   /* Check if kernel driver is opened */
+	/* Check if kernel driver is opened */
 
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
-   {
-   }
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
+		{
+		}
 
-   return( tInitParm.epStatus );
+	return( tInitParm.epStatus );
 }
 
 
@@ -1406,97 +1390,97 @@ EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 */
 EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 {
-   ENDPOINTDRV_DESTROY_PARM tInitParm;
+	ENDPOINTDRV_DESTROY_PARM tInitParm;
 
-   tInitParm.endptState = endptState;
-   tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-   tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
+	tInitParm.endptState = endptState;
+	tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+	tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
 
-   if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
-   }
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
+	}
 
-   return( tInitParm.epStatus );
+	return( tInitParm.epStatus );
 }
 
 
 static int brcm_create_connection(struct brcm_pvt *p) {
 
-  /* generate random nr for rtp header */
+	/* generate random nr for rtp header */
 	p->ssrc = rand();
 
-    ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-    EPZCNXPARAM epCnxParms = {0};
-    //		CODECLIST  codecListLocal = {0};
-    //		CODECLIST  codecListRemote = {0};
+	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
+	EPZCNXPARAM epCnxParms = {0};
+	//		CODECLIST  codecListLocal = {0};
+	//		CODECLIST  codecListRemote = {0};
 
-    /* Enable sending a receving G711 */
-    epCnxParms.cnxParmList.recv.numCodecs = 3;
-    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
-    epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+	/* Enable sending a receving G711 */
+	epCnxParms.cnxParmList.recv.numCodecs = 3;
+	epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
+	epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+	epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
+	epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
+	epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
+	epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
-    epCnxParms.cnxParmList.send.numCodecs = 3;
-    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
-    epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+	epCnxParms.cnxParmList.send.numCodecs = 3;
+	epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
+	epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
+	epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
+	epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
+	epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
+	epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
-    // Set 20ms packetization period
-    epCnxParms.cnxParmList.send.period[0] = 20;
-    epCnxParms.mode  =   EPCNXMODE_SNDRX;
-    //         epCnxParms.cnxParmList.recv = codecListLocal;
-    //         epCnxParms.cnxParmList.send = codecListRemote;
-    //         epCnxParms.period = 20;
-    epCnxParms.echocancel = echocancel;
-    epCnxParms.silence = 0;
-    //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
+	// Set 20ms packetization period
+	epCnxParms.cnxParmList.send.period[0] = 20;
+	epCnxParms.mode  =   EPCNXMODE_SNDRX;
+	//         epCnxParms.cnxParmList.recv = codecListLocal;
+	//         epCnxParms.cnxParmList.send = codecListRemote;
+	//         epCnxParms.period = 20;
+	epCnxParms.echocancel = echocancel;
+	epCnxParms.silence = 0;
+	//         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
 
-    tConnectionParm.cnxId      = p->connection_id;
-    tConnectionParm.cnxParam   = &epCnxParms;
-    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
-    tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-    tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+	tConnectionParm.cnxId      = p->connection_id;
+	tConnectionParm.cnxParam   = &epCnxParms;
+	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+	tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 	if (!p->connection_init) {
-    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-      ast_verbose("%s: error during ioctl", __FUNCTION__);
-         return -1;
-    } else {
-      ast_verbose("\n\nConnection %d created\n\n",p->connection_id);
-	  p->connection_init = 1;
-    }
+		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
+			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			return -1;
+		} else {
+			ast_verbose("\n\nConnection %d created\n\n",p->connection_id);
+			p->connection_init = 1;
+		}
 	}
 
-  return 0;
+	return 0;
 }
 
 
 static int brcm_close_connection(struct brcm_pvt *p) {
 
-  /* Close connection */
-    ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
+	/* Close connection */
+	ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
 
-    tDelConnectionParm.cnxId      = p->connection_id;
-    tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
-    tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-    tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
+	tDelConnectionParm.cnxId      = p->connection_id;
+	tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+	tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
 	if (p->connection_init) {
-    if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-	ast_verbose("%s: error during ioctl", __FUNCTION__);
-		return -1;
-      } else {
-		  p->connection_init = 0;
-      ast_verbose("\n\nConnection %d closed\n\n",p->connection_id);
-    }
+		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
+			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			return -1;
+		} else {
+			p->connection_init = 0;
+			ast_verbose("\n\nConnection %d closed\n\n",p->connection_id);
+		}
 	}
-  return 0;
+	return 0;
 }
 
 
