@@ -474,9 +474,9 @@ static void *brcm_event_handler(void *data)
 
 static char phone_2digit(char c)
 {
-	if (c == 12)
+	if (c == 11)
 		return '#';
-	else if (c == 11)
+	else if (c == 10)
 		return '*';
 	else if ((c < 10) && (c >= 0))
 		return '0' + c;
