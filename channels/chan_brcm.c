@@ -645,6 +645,7 @@ static void *brcm_monitor_events(void *data)
 					case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
 					case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
 					case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
+					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
 					default:
 						ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
 						break;
