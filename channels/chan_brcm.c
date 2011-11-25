@@ -628,7 +628,6 @@ static void *brcm_monitor_events(void *data)
 
 						if(p->owner) {
 							ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-							ast_setstate(p->owner, AST_STATE_DOWN);
 						}
 						ast_mutex_unlock(&p->lock);
 						ast_verbose("me: unlocked mutex\n");
