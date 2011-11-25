@@ -471,6 +471,19 @@ static void *brcm_event_handler(void *data)
 		}							\
 	}
 
+
+static char phone_2digit(char c)
+{
+	if (c == 12)
+		return '#';
+	else if (c == 11)
+		return '*';
+	else if ((c < 10) && (c >= 0))
+		return '0' + c - 1;
+	else
+		return '?';
+}
+
 static void *brcm_monitor_packets(void *data)
 {
 	struct brcm_pvt *p;
@@ -519,7 +532,7 @@ static void *brcm_monitor_packets(void *data)
 				fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 				fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
-				fr.subclass.integer = pdata[12];
+				fr.subclass.integer = phone_2digit(pdata[12]);
 
 				//				ast_verbose("[%d] (%s)\n", fr.subclass.integer, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			} else {
