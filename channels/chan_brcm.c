@@ -479,7 +479,7 @@ static char phone_2digit(char c)
 	else if (c == 11)
 		return '*';
 	else if ((c < 10) && (c >= 0))
-		return '0' + c - 1;
+		return '0' + c;
 	else
 		return '?';
 }
