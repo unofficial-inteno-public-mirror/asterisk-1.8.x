@@ -94,7 +94,7 @@ static format_t prefformat = AST_FORMAT_ALAW;
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
-static unsigned int events = 1;
+static unsigned int events;
 static unsigned int packets;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
@@ -712,6 +712,7 @@ static int start_threads(void)
 
 	/* Start a new event handler thread */
 	/* This thread processes events recieved by brcm_monitor_events */
+	events = 1;
 	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
@@ -721,12 +722,13 @@ static int start_threads(void)
 	/* Start a new sound polling thread */
 	/* This thread blocks on ioctl and wakes up when an rpt packet is avaliable from the endpoint  */
 	/* It then enques the packet on the channel which owns the pvt   */
+	packets = 1;
 	if (ast_pthread_create_background(&packet_thread, NULL, brcm_monitor_packets, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
 		return -1;
 	}
-	packets = 1;
+
 
 	ast_mutex_unlock(&monlock);
 	return 0;
