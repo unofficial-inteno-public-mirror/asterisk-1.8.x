@@ -95,6 +95,7 @@ static format_t prefformat = AST_FORMAT_ALAW;
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
 static unsigned int events = 1;
+static unsigned int packets;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
@@ -447,9 +448,9 @@ static void *brcm_event_handler(void *data)
 		usleep(10*TIMEMSEC);
 	}
 
+	ast_verbose("Events thread ended\n");
 	/* Never reached */
 	return NULL;
-
 }
 
 
@@ -498,7 +499,7 @@ static void *brcm_monitor_packets(void *data)
 	fr.src = "brcm";
 	fr.mallocd=0;
 
-	while(1) {
+	while(packets) {
 		epPacket.mediaType   = 0;
 		epPacket.packetp     = pdata;
 		tPacketParm.epPacket = &epPacket;
@@ -556,6 +557,7 @@ static void *brcm_monitor_packets(void *data)
 		sched_yield();
 	} /* while */
 
+	ast_verbose("Packets thread ended\n");
 	/* Never reached */
 	return NULL;
 }
@@ -659,6 +661,7 @@ static void *brcm_monitor_events(void *data)
 		}
 	}
 
+	ast_verbose("Monitor thread ended\n");
 	/* Never reached */
 	return NULL;
 }
@@ -723,6 +726,7 @@ static int start_threads(void)
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
 		return -1;
 	}
+	packets = 1;
 
 	ast_mutex_unlock(&monlock);
 	return 0;
@@ -927,9 +931,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
-	ast_cli(a->fd, "Monitor thread: 0x%x\n", (unsigned int) monitor_thread);
-	ast_cli(a->fd, "Event thread  : 0x%x\n", (unsigned int) event_thread);
-	ast_cli(a->fd, "Packet thread : 0x%x\n", (unsigned int) packet_thread);
+	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
+	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
+	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 
 	ast_cli(a->fd, "DTMF relay    : ");
 	switch (dtmf_relay) {
@@ -972,18 +976,37 @@ static int unload_module(void)
 		return -1;
 	}
 	if (!ast_mutex_lock(&monlock)) {
-		if (monitor_thread > AST_PTHREADT_NULL) {
+		ast_verbose("Stopping threads...\n");
+		if (monitor) {
 			monitor = 0;
 			while (pthread_kill(monitor_thread, SIGURG) == 0)
 				sched_yield();
 			pthread_join(monitor_thread, NULL);
 		}
 		monitor_thread = AST_PTHREADT_STOP;
+		
+		if (events) {
+			events = 0;
+			while (pthread_kill(event_thread, SIGURG) == 0)
+				sched_yield();
+			pthread_join(event_thread, NULL);
+		}
+		event_thread = AST_PTHREADT_STOP;
+		
+		if (packets) {
+			packets = 0;
+			while (pthread_kill(packet_thread, SIGURG) == 0)
+				sched_yield();
+			pthread_join(packet_thread, NULL);
+		}
+		packet_thread = AST_PTHREADT_STOP;
+
 		ast_mutex_unlock(&monlock);
 	} else {
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
+	ast_verbose("[%d, %d, %d]\n",monitor, events, packets);
 
 	if (!ast_mutex_lock(&iflock)) {
 		/* Destroy all the interfaces and free their memory */
@@ -1001,12 +1024,13 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
-	
+
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
+	ast_verbose("Deinitializing endpoint...\n");
 	endpt_deinit();
-		
+	ast_verbose("Endpoint deinited...\n");
 	return 0;
 }
 
@@ -1121,7 +1145,14 @@ static int load_module(void)
 
 int endpt_deinit(void)
 {
+	int i, rc;
+	/* Destroy Endpt */
+	for ( i = 0; i < num_fxs_endpoints; i++ ) {
+		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
+	}
+
 	vrgEndptDeinit();
+	vrgEndptDriverClose();
 
 	return 0;
 }
