@@ -118,7 +118,7 @@ AST_MUTEX_DEFINE_STATIC(monlock);
 static const struct ast_channel_tech brcm_tech = {
         .type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_ALAW,
+	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726,
 	.requester = brcm_request,
 	.call = brcm_call,
 	.hangup = brcm_hangup,
@@ -177,7 +177,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
-	ast_setstate(ast, AST_STATE_DOWN);
+	brcm_close_connection(p);
 	ast_mutex_unlock(&p->lock);
 
 	return 0;
@@ -541,14 +541,12 @@ static void *brcm_monitor_packets(void *data)
 			}
 
 			ast_mutex_lock(&p->lock);
-			if (p->owner) {
+			if (p->owner && (p->owner->_state == AST_STATE_UP)) {
 
 				/* try to lock channel and send frame */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
 					/* and enque frame if channel is up */
-					if(p->owner->_state == AST_STATE_UP) {
-						ast_queue_frame(p->owner, &fr);
-					}
+					ast_queue_frame(p->owner, &fr);
 					ast_channel_unlock(p->owner);
 				}
 			}
