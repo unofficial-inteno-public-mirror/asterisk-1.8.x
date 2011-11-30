@@ -526,8 +526,8 @@ static void *brcm_monitor_packets(void *data)
 					fr.frametype = AST_FRAME_VOICE;
 					fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
 					fr.offset = 0;
-					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+//					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+//					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 				}
 			} else if (rtp_packet_type == BRCM_DTMFBE) {
 				//				ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
@@ -537,10 +537,10 @@ static void *brcm_monitor_packets(void *data)
 				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
 				fr.subclass.integer = phone_2digit(pdata[12]);
 				if (fr.frametype == AST_FRAME_DTMF_END) {
-					fr.samples = (pdata[14] << 8 | pdata[15]);
-					fr.len = fr.samples / 8;
+//					fr.samples = (pdata[14] << 8 | pdata[15]);
+//					fr.len = fr.samples / 8;
 				}
-								ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 				fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
 				fr.subclass.integer = phone_2digit(pdata[12]);
@@ -826,18 +826,27 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	format_t oldformat;
 	struct brcm_pvt *p;
 	struct ast_channel *tmp = NULL;
+	int port_id = -1;
 
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return NULL;
 	}
-	ast_verbose("brcm_request\n");
+	
+	/* Get port id */
+	port_id = atoi((char*)data);
+	ast_verbose("brcm_request = %s, %d\n", (char*) data, port_id);
 
-	p = iflist;
+	/* Map id to the correct pvt */
+	p = brcm_get_cid_pvt(iflist, port_id);
+
+	/* If the id doesn't exist (p==NULL) use default */
+	if (!p)
+		p = iflist;
+
 	ast_mutex_lock(&p->lock);
 	if ((!p->owner) && (!p->connection_init)) {
-		ast_verbose("connection init\n");
 		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
 	} else {
 		*cause = AST_CAUSE_BUSY;
