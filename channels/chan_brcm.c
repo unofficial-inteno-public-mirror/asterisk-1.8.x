@@ -967,10 +967,38 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	return CLI_SUCCESS;
 }
 
+static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	int on_off = 0;
+
+	if (cmd == CLI_INIT) {
+		e->command = "brcm set {dtmf_short|echocancel} {on|off}";
+		e->usage =
+			"Usage: brcm set {dtmf_short|echocancel} {on|off}\n"
+			"       dtmf_short, dtmf sending mode.\n"
+			"       echocancel, echocancel mode.";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+	
+	if (!strcasecmp(a->argv[3], "on"))
+		on_off = 1;
+	else
+		on_off = 0;
+	
+	if (!strcasecmp(a->argv[2], "dtmf_short")) {
+		dtmf_short = on_off;
+	} else if (!strcasecmp(a->argv[2], "echocancel")) {
+		echocancel = on_off;
+	}
+	
+	return CLI_SUCCESS;
+}
 
 /*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
+	AST_CLI_DEFINE(brcm_set_parameters_on_off,  "Set chan_brcm parameters"),
 };
 
 
