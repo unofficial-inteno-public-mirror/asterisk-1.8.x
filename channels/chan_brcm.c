@@ -82,6 +82,7 @@ static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
+static int dtmf_short = 1;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -217,7 +218,7 @@ static int brcm_classify_rtp_packet(int id) {
 		case G723: return BRCM_AUDIO;
 		case PCMA: return BRCM_AUDIO;
 		case G729: return BRCM_AUDIO;
-		case DTMF: return BRCM_DTMF;
+		case DTMF: return dtmf_short ? BRCM_DTMF : BRCM_DTMFBE;
 		case RTCP: return BRCM_RTCP;
 		default:
 			ast_verbose("Unknown rtp packet id %d\n", id);
@@ -492,14 +493,15 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rtp_packet_type  = BRCM_UNKNOWN;
-	struct ast_frame fr;
 	RTPPACKET *rtp;
+	int current_dtmf_digit = -1;
 	
 	rtp = (RTPPACKET *)pdata;
-	fr.src = "brcm";
-	fr.mallocd=0;
 
 	while(packets) {
+		struct ast_frame fr  = {0};
+		fr.src = "BRCM";
+
 		epPacket.mediaType   = 0;
 		epPacket.packetp     = pdata;
 		tPacketParm.epPacket = &epPacket;
@@ -527,15 +529,31 @@ static void *brcm_monitor_packets(void *data)
 					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 				}
-			} else if (rtp_packet_type == BRCM_DTMF) {
+			} else if (rtp_packet_type == BRCM_DTMFBE) {
 				//				ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 
-				fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-				fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+				//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+				//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
 				fr.subclass.integer = phone_2digit(pdata[12]);
+				if (fr.frametype == AST_FRAME_DTMF_END) {
+					fr.samples = (pdata[14] << 8 | pdata[15]);
+					fr.len = fr.samples / 8;
+				}
+								ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+			} else if  (rtp_packet_type == BRCM_DTMF) {
+				fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
+				fr.subclass.integer = phone_2digit(pdata[12]);
 
-				//				ast_verbose("[%d] (%s)\n", fr.subclass.integer, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
+					current_dtmf_digit = -1;
+
+				if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
+					current_dtmf_digit = fr.subclass.integer;
+				else
+					fr.frametype = AST_FRAME_NULL;
+
+				ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
 			} else {
 				//ast_verbose("[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
@@ -544,7 +562,7 @@ static void *brcm_monitor_packets(void *data)
 			if (p->owner && (p->owner->_state == AST_STATE_UP)) {
 
 				/* try to lock channel and send frame */
-				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
+				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
 					/* and enque frame if channel is up */
 					ast_queue_frame(p->owner, &fr);
 					ast_channel_unlock(p->owner);
@@ -942,6 +960,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "SipInfo\n"); break;
 		default: ast_cli(a->fd, "Unknown\n");
 	}
+	ast_cli(a->fd, "DTMF short    : %d\n", (unsigned int) dtmf_short);
 
 	brcm_show_pvts(a);
 
@@ -1112,6 +1131,10 @@ static int load_module(void)
 				dtmf_relay = EPDTMFRFC2833_ENABLED;
 			} else
 				dtmf_relay = EPDTMFRFC2833_DISABLED;
+		} else if (!strcasecmp(v->name, "shortdtmf")) {
+			if (!strcasecmp(v->value, "off")) {
+				dtmf_short = 0;
+			}
 		}
 				
 		v = v->next;

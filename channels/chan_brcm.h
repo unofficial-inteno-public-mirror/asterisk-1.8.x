@@ -3686,6 +3686,7 @@ EPSTATUS vrgEndptSignal
 enum rtp_type {
 	BRCM_UNKNOWN,
 	BRCM_AUDIO,
+	BRCM_DTMFBE,
 	BRCM_DTMF,
 	BRCM_RTCP,
 };
