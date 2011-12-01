@@ -841,9 +841,11 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	/* Map id to the correct pvt */
 	p = brcm_get_cid_pvt(iflist, port_id);
 
-	/* If the id doesn't exist (p==NULL) use default */
-	if (!p)
+	/* If the id doesn't exist (p==NULL) use 0 as default */
+	if (!p) {
+		ast_log(LOG_ERROR, "Port id %s not found using default 0 instead.\n", (char*) data);
 		p = iflist;
+	}
 
 	ast_mutex_lock(&p->lock);
 	if ((!p->owner) && (!p->connection_init)) {
