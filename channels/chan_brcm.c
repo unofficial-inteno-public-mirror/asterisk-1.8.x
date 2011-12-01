@@ -148,6 +148,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		return -1;
 	}
 
+	p->channel_state = RINGING;
 	brcm_signal_ringing(p);
 
   	ast_setstate(ast, AST_STATE_RINGING);
@@ -910,6 +911,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
 		case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
 		case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
+		case RINGING:	ast_cli(a->fd, "RINGING\n"); break;
 		default:		ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
