@@ -785,6 +785,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 		tmp->time_stamp = 0;
 		tmp->sequence_number = 0;
 		tmp->ssrc = 0;
+		tmp->codec = -1;
 	}
 	return tmp;
 }
@@ -970,7 +971,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	switch (dtmf_relay) {
 		case EPDTMFRFC2833_DISABLED:  ast_cli(a->fd, "InBand\n");  break;
 		case EPDTMFRFC2833_ENABLED:   ast_cli(a->fd, "RFC2833\n");  break;
-		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "SipInfo\n"); break;
+		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "RFC2833_SUBTRACT\n"); break;
 		default: ast_cli(a->fd, "Unknown\n");
 	}
 	ast_cli(a->fd, "DTMF short    : %d\n", (unsigned int) dtmf_short);
@@ -1008,10 +1009,35 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	return CLI_SUCCESS;
 }
 
+
+static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	if (cmd == CLI_INIT) {
+		e->command = "brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract}";
+		e->usage =
+			"Usage: brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract}\n"
+			"       dtmf_relay, dtmf relay mode.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+
+	if        (!strcasecmp(a->argv[3], "inband")) {
+		dtmf_relay = EPDTMFRFC2833_DISABLED;
+	} else if (!strcasecmp(a->argv[3], "rfc2833")) {
+		dtmf_relay = EPDTMFRFC2833_ENABLED;
+	} else if (!strcasecmp(a->argv[3], "rfc2833_subtract")) {
+		dtmf_relay = EPDTMFRFC2833_SUBTRACT;
+	}
+
+	return CLI_SUCCESS;
+}
+
+
 /*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
 	AST_CLI_DEFINE(brcm_set_parameters_on_off,  "Set chan_brcm parameters"),
+	AST_CLI_DEFINE(brcm_set_dtmf_mode,  "Set chan_brcm dtmf_relay parameter"),
 };
 
 

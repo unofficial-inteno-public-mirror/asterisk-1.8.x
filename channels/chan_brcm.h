@@ -100,6 +100,7 @@ enum channel_state {
     INCALL,
     ANSWER,
 	CALLENDED,
+	RINGING,
 };
 
 enum endpoint_type {
@@ -142,6 +143,7 @@ static struct brcm_pvt {
 	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
 	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
 	unsigned int ssrc;				/* Endpoint RTP synchronization source */
+	int codec;						/* Used codec */
 } *iflist = NULL;
 
 
