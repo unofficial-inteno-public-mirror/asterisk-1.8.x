@@ -83,6 +83,9 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 static int dtmf_short = 1;
+static int codec_list[6] = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1};
+static int rtp_payload_list[6] = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1};
+static int codec_nr = 2;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -945,6 +948,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 
 static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
+	int i;
 
 	if (cmd == CLI_INIT) {
 		e->command = "brcm show status";
@@ -975,6 +979,18 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		default: ast_cli(a->fd, "Unknown\n");
 	}
 	ast_cli(a->fd, "DTMF short    : %d\n", (unsigned int) dtmf_short);
+	ast_cli(a->fd, "Codec list    : ");
+	for (i=0 ; i<codec_nr ; i++) {
+		switch (codec_list[i]) {
+			case CODEC_PCMA:	ast_cli(a->fd, "alaw, ");  break;
+			case CODEC_PCMU:	ast_cli(a->fd, "ulaw, ");  break;
+			case CODEC_G723x:	ast_cli(a->fd, "g723.1, "); break;
+			case CODEC_G726_32:	ast_cli(a->fd, "g726, "); break;
+			case CODEC_G729x:	ast_cli(a->fd, "g729, "); break;
+			default: ast_cli(a->fd, "[%d] config error, ", codec_list[codec_nr]);
+		}
+	}
+	ast_cli(a->fd, "\n");
 
 	brcm_show_pvts(a);
 
@@ -1127,6 +1143,7 @@ static int load_module(void)
 	struct ast_variable *v;
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
+	int config_codecs = 0;
 
 	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
@@ -1202,8 +1219,30 @@ static int load_module(void)
 			if (!strcasecmp(v->value, "off")) {
 				dtmf_short = 0;
 			}
+		} else if (!strcasecmp(v->name, "codec")) {
+			if        (!strcasecmp(v->value, "alaw")) {
+				codec_list[config_codecs] = CODEC_PCMA;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
+			} else if (!strcasecmp(v->value, "ulaw")) {
+				codec_list[config_codecs] = CODEC_PCMU;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
+			} else if (!strcasecmp(v->value, "g729")) {
+				codec_list[config_codecs] = CODEC_G729;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
+			} else if (!strcasecmp(v->value, "g723.1")) {
+				codec_list[config_codecs] = CODEC_G7231_63;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
+			} else if (!strcasecmp(v->value, "g726_24")) {
+				codec_list[config_codecs] = CODEC_G726_24;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
+			} else if (!strcasecmp(v->value, "g726_32")) {
+				codec_list[config_codecs] = CODEC_G726_32;
+				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
+			}
 		}
-				
+		if (config_codecs > 0)
+			codec_nr = config_codecs;
+
 		v = v->next;
 	}
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
