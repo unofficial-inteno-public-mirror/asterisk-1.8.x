@@ -984,9 +984,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		switch (codec_list[i]) {
 			case CODEC_PCMA:	ast_cli(a->fd, "alaw, ");  break;
 			case CODEC_PCMU:	ast_cli(a->fd, "ulaw, ");  break;
-			case CODEC_G723x:	ast_cli(a->fd, "g723.1, "); break;
+			case CODEC_G7231_63:	ast_cli(a->fd, "g723.1, "); break;
 			case CODEC_G726_32:	ast_cli(a->fd, "g726, "); break;
-			case CODEC_G729x:	ast_cli(a->fd, "g729, "); break;
+			case CODEC_G729:	ast_cli(a->fd, "g729, "); break;
 			default: ast_cli(a->fd, "[%d] config error, ", codec_list[codec_nr]);
 		}
 	}
