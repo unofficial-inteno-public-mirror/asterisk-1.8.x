@@ -122,7 +122,7 @@ AST_MUTEX_DEFINE_STATIC(monlock);
 static const struct ast_channel_tech brcm_tech = {
         .type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726,
+	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1,
 	.requester = brcm_request,
 	.call = brcm_call,
 	.hangup = brcm_hangup,
