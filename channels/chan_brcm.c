@@ -1654,13 +1654,19 @@ static int brcm_create_connection(struct brcm_pvt *p) {
     //		CODECLIST  codecListRemote = {0};
 
     /* Enable sending a receving G711 */
-    epCnxParms.cnxParmList.recv.numCodecs = 3;
+    epCnxParms.cnxParmList.recv.numCodecs = 6;
     epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
     epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
     epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
     epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
     epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
     epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
+    epCnxParms.cnxParmList.recv.codecs[3].type = CODEC_G726_24;
+    epCnxParms.cnxParmList.recv.codecs[3].rtpPayloadType = RTP_PAYLOAD_G726_32;
+    epCnxParms.cnxParmList.recv.codecs[4].type = CODEC_G7231_63;
+    epCnxParms.cnxParmList.recv.codecs[4].rtpPayloadType = RTP_PAYLOAD_G723;
+    epCnxParms.cnxParmList.recv.codecs[5].type = CODEC_G729;
+    epCnxParms.cnxParmList.recv.codecs[5].rtpPayloadType = RTP_PAYLOAD_G729;
 
     epCnxParms.cnxParmList.send.numCodecs = 3;
     epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
