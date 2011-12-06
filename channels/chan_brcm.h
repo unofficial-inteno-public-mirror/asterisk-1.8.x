@@ -59,13 +59,12 @@
 
 
 /* Change this value when needed */
-#define CHANNEL_VERSION "1.0"
+#define CHANNEL_VERSION "1.1"
 
 #define DEFAULT_CALLER_ID "Unknown"
 #define PHONE_MAX_BUF 480
 #define DEFAULT_GAIN 0x100
 
-#define LOUD
 #define TIMEMSEC 1000
 #define TIMEOUTMSEC 4000
 
