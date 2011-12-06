@@ -81,6 +81,7 @@ static int endpoint_fd = NOT_INITIALIZED;
 static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int ringsignal = 1;
+static int silence = 0;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 static int dtmf_short = 1;
@@ -93,7 +94,6 @@ static char context[AST_MAX_EXTENSION] = "default";
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
-static int silencesupression = 0;
 static format_t prefformat = AST_FORMAT_ALAW;
 
 
@@ -763,10 +763,6 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 	
 	tmp = ast_calloc(1, sizeof(*tmp));
 	if (tmp) {
-		if (silencesupression) 
-			tmp->silencesupression = 1;
-		else
-			tmp->silencesupression = 0;
 		tmp->owner = NULL;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
@@ -968,6 +964,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
 	ast_cli(a->fd, "Ringsignal    : %d\n", ringsignal);	
+	ast_cli(a->fd, "Silence surpr.: %d\n", silence);	
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
@@ -1004,12 +1001,13 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	int on_off = 0;
 
 	if (cmd == CLI_INIT) {
-		e->command = "brcm set {dtmf_short|echocancel|ringsignal} {on|off}";
+		e->command = "brcm set {dtmf_short|echocancel|ringsignal|silence} {on|off}";
 		e->usage =
-			"Usage: brcm set {dtmf_short|echocancel|ringsignal} {on|off}\n"
+			"Usage: brcm set {dtmf_short|echocancel|ringsignal|silence} {on|off}\n"
 			"       dtmf_short, dtmf sending mode.\n"
 			"       echocancel, echocancel mode.\n"
-			"       ringsignal, ring signal mode.";
+			"       ringsignal, ring signal mode.\n";
+			"       silence, silence surpression.";
 		return NULL;
 	} else if (cmd == CLI_GENERATE)
 		return NULL;
@@ -1025,6 +1023,8 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 		echocancel = on_off;
 	} else if (!strcasecmp(a->argv[2], "ringsignal")) {
 		ringsignal = on_off;
+	} else if (!strcasecmp(a->argv[2], "silence")) {
+		silence= on_off;
 	} 
 	
 	return CLI_SUCCESS;
@@ -1173,8 +1173,8 @@ static int load_module(void)
 
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
-		if (!strcasecmp(v->name, "silencesupression")) {
-			silencesupression = ast_true(v->value);
+		if (!strcasecmp(v->name, "silence")) {
+			silence = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
 			// FIXME use a table for this
@@ -1680,7 +1680,7 @@ static int brcm_create_connection(struct brcm_pvt *p) {
     //         epCnxParms.cnxParmList.send = codecListRemote;
     //         epCnxParms.period = 20;
     epCnxParms.echocancel = echocancel;
-    epCnxParms.silence = 0;
+    epCnxParms.silence = silence;
 	epCnxParms.digitRelayType = dtmf_relay;
     //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
 
