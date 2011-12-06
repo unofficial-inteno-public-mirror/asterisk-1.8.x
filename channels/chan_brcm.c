@@ -930,7 +930,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
 		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
 		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
-		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);		
+		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
 		
 		i++;
 		p = brcm_get_next_pvt(p);
@@ -962,9 +962,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
-	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
-	ast_cli(a->fd, "Ringsignal    : %d\n", ringsignal);	
-	ast_cli(a->fd, "Silence surpr.: %d\n", silence);	
+	ast_cli(a->fd, "Echocancel    : %s\n", echocancel ? "on" : "off");
+	ast_cli(a->fd, "Ringsignal    : %s\n", ringsignal ? "on" : "off");	
+	ast_cli(a->fd, "Silence surpr.: %s\n", silence ? "on" : "off");	
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
@@ -977,7 +977,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "RFC2833_SUBTRACT\n"); break;
 		default: ast_cli(a->fd, "Unknown\n");
 	}
-	ast_cli(a->fd, "DTMF short    : %d\n", (unsigned int) dtmf_short);
+	ast_cli(a->fd, "DTMF short    : %s\n", dtmf_short ? "on" : "off");
 	ast_cli(a->fd, "Codec list    : ");
 	for (i=0 ; i<codec_nr ; i++) {
 		switch (codec_list[i]) {
