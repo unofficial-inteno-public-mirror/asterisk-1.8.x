@@ -841,7 +841,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	
 	/* Get port id */
 	port_id = atoi((char*)data);
-	ast_verbose("brcm_request = %s, %d\n", (char*) data, port_id);
+	ast_verbose("brcm_request = %s, %d, format %x\n", (char*) data, port_id, format);
 
 	/* Map id to the correct pvt */
 	p = brcm_get_cid_pvt(iflist, port_id);
