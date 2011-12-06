@@ -1188,15 +1188,6 @@ static int load_module(void)
 			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(context, v->value, sizeof(context));
-		} else if (!strcasecmp(v->name, "format")) {
-			if (!strcasecmp(v->value, "g729")) {
-				prefformat = AST_FORMAT_G729A;
-                        } else if (!strcasecmp(v->value, "g723.1")) {
-				prefformat = AST_FORMAT_G723_1;
-			} else if (!strcasecmp(v->value, "ulaw")) {
-				prefformat = AST_FORMAT_ULAW;
-			} else
-				ast_log(LOG_WARNING, "Unknown format '%s'\n", v->value);
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			if (!strcasecmp(v->value, "off")) {
 				echocancel = 0;
