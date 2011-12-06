@@ -80,6 +80,7 @@ static int num_dect_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
+static int ringsignal = 1;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 static int dtmf_short = 1;
@@ -966,6 +967,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %d\n", echocancel);
+	ast_cli(a->fd, "Ringsignal    : %d\n", ringsignal);	
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
@@ -1002,11 +1004,12 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	int on_off = 0;
 
 	if (cmd == CLI_INIT) {
-		e->command = "brcm set {dtmf_short|echocancel} {on|off}";
+		e->command = "brcm set {dtmf_short|echocancel|ringsignal} {on|off}";
 		e->usage =
-			"Usage: brcm set {dtmf_short|echocancel} {on|off}\n"
+			"Usage: brcm set {dtmf_short|echocancel|ringsignal} {on|off}\n"
 			"       dtmf_short, dtmf sending mode.\n"
-			"       echocancel, echocancel mode.";
+			"       echocancel, echocancel mode.\n"
+			"       ringsignal, ring signal mode.";
 		return NULL;
 	} else if (cmd == CLI_GENERATE)
 		return NULL;
@@ -1020,7 +1023,9 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 		dtmf_short = on_off;
 	} else if (!strcasecmp(a->argv[2], "echocancel")) {
 		echocancel = on_off;
-	}
+	} else if (!strcasecmp(a->argv[2], "ringsignal")) {
+		ringsignal = on_off;
+	} 
 	
 	return CLI_SUCCESS;
 }
@@ -1230,6 +1235,10 @@ static int load_module(void)
 				codec_list[config_codecs] = CODEC_G726_32;
 				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
 			}
+		} else if (!strcasecmp(v->name, "ringsignal")) {
+			if        (!strcasecmp(v->value, "off")) {
+				ringsignal = 0;
+			}
 		}
 		if (config_codecs > 0)
 			codec_nr = config_codecs;
@@ -1347,22 +1356,19 @@ int endpt_init(void)
 
 int brcm_signal_ringing(struct brcm_pvt *p)
 {
-#ifdef LOUD
 
-	/* Check whether value is on or off */
-	vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
-#endif
+	if (ringsignal)
+		vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+
 	return 0;
 }
 
 
 int brcm_stop_ringing(struct brcm_pvt *p)
 {
-#ifdef LOUD
 
-	/* Check whether value is on or off */
-	vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
-#endif
+	if (ringsignal)
+		vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 
 	return 0;
 }
