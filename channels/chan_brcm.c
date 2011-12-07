@@ -1370,22 +1370,6 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 }
 
 
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptDriverOpen
-**
-** PURPOSE:    Opens the Linux kernel endpoint driver.
-**             This function should be the very first call used by the
-**             application before isssuing any other endpoint APIs because
-**             the ioctls for the endpoint APIs won't reach the kernel
-**             if the driver is not successfully opened.
-**
-** PARAMETERS:
-**
-** RETURNS:    EPSTATUS
-**
-*****************************************************************************
-*/
 EPSTATUS vrgEndptDriverOpen(void)
 {
 	/* Open and initialize Endpoint driver */
@@ -1402,20 +1386,6 @@ EPSTATUS vrgEndptDriverOpen(void)
 	return ( EPSTATUS_SUCCESS );
 }
 
-
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptDriverClose
-**
-** PURPOSE:    Close endpoint driver
-**
-** PARAMETERS: None
-**
-** RETURNS:    EPSTATUS
-**
-** NOTE:
-*****************************************************************************
-*/
 EPSTATUS vrgEndptDriverClose(void)
 {
 	if ( close( endpoint_fd ) == -1 )
@@ -1430,35 +1400,6 @@ EPSTATUS vrgEndptDriverClose(void)
 }
 
 
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptInit
-**
-** PURPOSE:    Module initialization for the VRG endpoint. The endpoint
-**             module is responsible for controlling a set of endpoints.
-**             Individual endpoints are initialized using the vrgEndptInit() API.
-**
-** PARAMETERS: country           - Country type
-**             notifyCallback    - Callback to use for event notification
-**             packetCallback           - Callback to use for endpt packets
-**             getProvisionCallback     - Callback to get provisioned values.
-**                                        May be set to NULL.
-**             setProvisionCallback     - Callback to get provisioned values.
-**                                        May be set to NULL.
-**             packetReleaseCallback    - Callback to release ownership of
-**                                        endpt packet back to caller
-**             taskShutdownCallback     - Callback invoked to indicate endpt
-**                                        task shutdown
-**
-** RETURNS:    EPSTATUS
-**
-** NOTE:       getProvisionCallback, setProvisionCallback,
-**             packetReleaseCallback, and taskShutdownCallback are currently not used within
-**             the DSL framework and should be set to NULL when
-**             invoking this function.
-**
-*****************************************************************************
-*/
 EPSTATUS vrgEndptInit
 (
  VRG_ENDPT_INIT_CFG        *endptInitCfg,
@@ -1485,33 +1426,6 @@ EPSTATUS vrgEndptInit
 }
 
 
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptDeinit
-**
-** PURPOSE:    VRG endpoint module shutdown - call once during system shutdown.
-**             This will shutdown all endpoints and free all resources used by
-**             the VRG endpt manager. (i.e. this function should free all resources
-**             allocated in vrgEndptInit() and vrgEndptCreate()).
-**
-** PARAMETERS: none
-**
-** RETURNS:    EPSTATUS
-**             This function should only return an error under catastrophic
-**             circumstances. i.e. Something that cannot be fixed by re-invoking
-**             the module initialization function.
-**
-** NOTE:       It is assumed that this function is only called after all endpoint
-**             tasks have been notified of a pending application reset, and each
-**             one has acknowledged the notification. This implies that each endpoint
-**             task is currently blocked, waiting to be resumed so that they may
-**             complete the shutdown procedure.
-**
-**             It is also assumed that no task is currently blocked on any OS
-**             resource that was created in the module initialization functions.
-**
-*****************************************************************************
-*/
 EPSTATUS vrgEndptDeinit( void )
 {
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DEINIT, NULL ) != IOCTL_STATUS_SUCCESS )
@@ -1522,23 +1436,6 @@ EPSTATUS vrgEndptDeinit( void )
 }
 
 
-/*****************************************************************************
- *  FUNCTION:   vrgEndptSignal
- *
- *  PURPOSE:    Generate a signal on the endpoint (or connection)
- *
- *  PARAMETERS: endptState  - state of the endpt object
- *              cnxId       - connection identifier (-1 if not applicable)
- *              signal      - signal type code (see EPSIG)
- *              value       - signal value
- *                          BR signal types - 1
- *                          OO signal types - 0 == off, 1 == on
- *                          TO signal types - 0 = stop/off, 1= start/on
- *                          String types - (char *) cast to NULL-term string value
- *
- *  RETURNS:    EPSTATUS
- *
- *****************************************************************************/
 EPSTATUS vrgEndptSignal
 (
  ENDPT_STATE   *endptState,
@@ -1572,21 +1469,6 @@ EPSTATUS vrgEndptSignal
 }
 
 
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptCreate
-**
-** PURPOSE:    This function is used to create an VRG endpoint object.
-**
-** PARAMETERS: physId      (in)  Physical interface.
-**             lineId      (in)  Endpoint line identifier.
-**             endptState  (out) Created endpt object.
-**
-** RETURNS:    EPSTATUS
-**
-** NOTE:
-*****************************************************************************
-*/
 EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 {
 	ENDPOINTDRV_CREATE_PARM tInitParm;
@@ -1607,20 +1489,6 @@ EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 }
 
 
-/*
-*****************************************************************************
-** FUNCTION:   vrgEndptDestroy
-**
-** PURPOSE:    This function is used to destroy VRG endpoint object
-**             (previously created with vrgEndptCreate)
-**
-** PARAMETERS: endptState (in) Endpt object to be destroyed.
-**
-** RETURNS:    EPSTATUS
-**
-** NOTE:
-*****************************************************************************
-*/
 EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 {
 	ENDPOINTDRV_DESTROY_PARM tInitParm;
@@ -1661,13 +1529,9 @@ static int brcm_create_connection(struct brcm_pvt *p) {
     epCnxParms.cnxParmList.recv.codecs[5].type = CODEC_G729;
     epCnxParms.cnxParmList.recv.codecs[5].rtpPayloadType = RTP_PAYLOAD_G729;
 
-    epCnxParms.cnxParmList.send.numCodecs = 3;
+    epCnxParms.cnxParmList.send.numCodecs = 1;
     epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
     epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-    epCnxParms.cnxParmList.send.codecs[1].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.send.codecs[2].type = CODEC_G726_32;
-    epCnxParms.cnxParmList.send.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
 
     // Set 20ms packetization period
     epCnxParms.cnxParmList.send.period[0] = 20;
