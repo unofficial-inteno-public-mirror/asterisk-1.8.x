@@ -90,7 +90,7 @@ static char context[AST_MAX_EXTENSION] = "default";
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
-static format_t prefformat = AST_FORMAT_ALAW;
+static format_t prefformat = AST_FORMAT_ALAW | AST_FORMAT_ULAW;
 
 
 /* Boolean value whether the monitoring thread shall continue. */
@@ -112,6 +112,7 @@ AST_MUTEX_DEFINE_STATIC(iflock);
 /* Protect the monitoring thread, so only one process can kill or start it, and not
    when it's doing something critical. */
 AST_MUTEX_DEFINE_STATIC(monlock);
+AST_MUTEX_DEFINE_STATIC(ioctl_lock);
 
 
 
@@ -161,7 +162,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	struct brcm_pvt *p;
 	p = ast->tech_pvt;
 
-	ast_debug(1, "brcm_hangup(%s)\n", ast->name);
+	ast_verbose("brcm_hangup(%s)\n", ast->name);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
@@ -316,17 +317,25 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
 {
 	struct ast_channel *tmp;
+	int fmt;
 
-	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "Brcm/%s", "bcmendpoint0");
+	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "BRCM/%d", i->connection_id);
 
 	if (tmp) {
 		tmp->tech = cur_tech;
 		/* ast_channel_set_fd(tmp, 0, i->fd); */
 
 		/* set codecs */
-		tmp->nativeformats  = AST_FORMAT_ALAW;
-		tmp->rawreadformat  = AST_FORMAT_ALAW;
-		tmp->rawwriteformat = AST_FORMAT_ALAW;
+		//tmp->nativeformats  = prefformat;
+		tmp->rawreadformat  = prefformat;
+		tmp->rawwriteformat = prefformat;
+		tmp->nativeformats  = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1;
+		//fmt = ast_best_codec(tmp->nativeformats);
+		fmt = AST_FORMAT_ALAW;
+		tmp->writeformat = fmt;
+		tmp->rawwriteformat = fmt;
+		tmp->readformat = fmt;
+		tmp->rawreadformat = fmt;
 
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -413,10 +422,10 @@ static void *brcm_event_handler(void *data)
 				}
 			}
 
-			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
-				ast_verbose("ts - last_dtmf_ts > 2000\n");
-				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
-			}
+//			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
+//				ast_verbose("ts - last_dtmf_ts > 2000\n");
+//				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
+//			}
 
 			/* Check if the dtmf string matches anything in the dialplan */
 			if ((p->channel_state == DIALING) &&
@@ -447,7 +456,7 @@ static void *brcm_event_handler(void *data)
 			ast_mutex_unlock(&p->lock);
 			p = brcm_get_next_pvt(p);
 		}
-		usleep(10*TIMEMSEC);
+		usleep(5*TIMEMSEC);
 	}
 
 	ast_verbose("Events thread ended\n");
@@ -665,6 +674,9 @@ static void *brcm_monitor_events(void *data)
 					case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
 					case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
 					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
+					case EPEVT_EARLY_OFFHOOK: ast_verbose("EPEVT_EARLY_OFFHOOK\n"); break;
+					case EPEVT_EARLY_ONHOOK: ast_verbose("EPEVT_EARLY_ONHOOK\n"); break;
+					case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
 					default:
 						ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
 						break;
@@ -1275,9 +1287,15 @@ int endpt_deinit(void)
 	for ( i = 0; i < num_fxs_endpoints; i++ ) {
 		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
 	}
-
-	vrgEndptDeinit();
-	vrgEndptDriverClose();
+	if (!ast_mutex_lock(&ioctl_lock)) {
+		ast_verbose("Endpoint deinit...\n");
+		vrgEndptDeinit();
+		vrgEndptDriverClose();
+		ast_mutex_unlock(&ioctl_lock);
+	} else {
+		ast_log(LOG_WARNING, "Unable to lock the ioctl_lock\n");
+		return -1;
+	}
 
 	return 0;
 }
