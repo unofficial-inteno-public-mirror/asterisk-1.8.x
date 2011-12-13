@@ -139,10 +139,12 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
 
-	ast_log(LOG_WARNING, "BRCM brcm_call\n");
+	p = ast->tech_pvt;
+	
+	
+	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", p->connection_id);
 	ast_localtime(&UtcTime, &tm, NULL);
 
-	p = ast->tech_pvt;
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
@@ -162,7 +164,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	struct brcm_pvt *p;
 	p = ast->tech_pvt;
 
-	ast_verbose("brcm_hangup(%s)\n", ast->name);
+	ast_verbose("brcm_hangup(%s) id =%d\n", ast->name, p->connection_id);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
@@ -244,8 +246,9 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
 	if (ast->_state != AST_STATE_UP) {
-		ast_verbose("error: channel not up\n");
-		return -1;
+		/* Silently ignore packets until channel is up */
+		ast_debug(5, "error: channel not up\n");
+		return 0;
 	}
 
 	if(frame->frametype == AST_FRAME_VOICE) {
@@ -846,7 +849,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	
 	/* Get port id */
 	port_id = atoi((char*)data);
-	ast_verbose("brcm_request = %s, %d, format %x\n", (char*) data, port_id, format);
+	ast_verbose("brcm_request = %s, port_id=%d, format %x\n", (char*) data, port_id, format);
 
 	/* Map id to the correct pvt */
 	p = brcm_get_cid_pvt(iflist, port_id);
