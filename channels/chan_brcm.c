@@ -1205,12 +1205,7 @@ static int load_module(void)
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(context, v->value, sizeof(context));
 		} else if (!strcasecmp(v->name, "echocancel")) {
-			if (!strcasecmp(v->value, "off")) {
-				echocancel = 0;
-			} else if (!strcasecmp(v->value, "on")) {
-				echocancel = 1;
-			} else
-				ast_log(LOG_WARNING, "Unknown echo cancellation '%s'\n", v->value);
+			echocancel = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "txgain")) {
 			txgain = parse_gain_value(v->name, v->value);
 		} else if (!strcasecmp(v->name, "rxgain")) {
@@ -1223,9 +1218,7 @@ static int load_module(void)
 			} else
 				dtmf_relay = EPDTMFRFC2833_DISABLED;
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
-			if (!strcasecmp(v->value, "off")) {
-				dtmf_short = 0;
-			}
+			dtmf_short = ast_true(v->value);
 		} else if (!strcasecmp(v->name, "codec")) {
 			if        (!strcasecmp(v->value, "alaw")) {
 				codec_list[config_codecs] = CODEC_PCMA;
@@ -1247,9 +1240,7 @@ static int load_module(void)
 				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
 			}
 		} else if (!strcasecmp(v->name, "ringsignal")) {
-			if        (!strcasecmp(v->value, "off")) {
-				ringsignal = 0;
-			}
+			ringsignal = ast_true(v->value);
 		}
 		if (config_codecs > 0)
 			codec_nr = config_codecs;
