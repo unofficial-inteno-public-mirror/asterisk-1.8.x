@@ -286,15 +286,14 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-	static int dt_counter = 0;
 
 	/* send rtp packet to the endpoint */
 	epPacket_send.mediaType   = 0;
 
 	/* copy frame data to local buffer */
-	memcpy(&packet_buffer[12], &DialTone[dt_counter], 160);
-	dt_counter += 160;
-	if (dt_counter >=2400) dt_counter = 0;
+	memcpy(&packet_buffer[12], &DialTone[p->dt_counter], 160);
+	p->dt_counter += 160;
+	if (p->dt_counter >=2400) p->dt_counter = 0;
 
 	/* add buffer to outgoing packet */
 	epPacket_send.packetp = packet_buffer;
@@ -459,7 +458,7 @@ static void *brcm_event_handler(void *data)
 			ast_mutex_unlock(&p->lock);
 			p = brcm_get_next_pvt(p);
 		}
-		usleep(5*TIMEMSEC);
+		sched_yield();
 	}
 
 	ast_verbose("Events thread ended\n");
@@ -797,6 +796,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 		tmp->sequence_number = 0;
 		tmp->ssrc = 0;
 		tmp->codec = -1;
+		tmp->dt_counter = 0;
 	}
 	return tmp;
 }
@@ -942,6 +942,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
 		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
 		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
+		ast_cli(a->fd, "Dialtone counter    : %d\n", p->dt_counter);
 		
 		i++;
 		p = brcm_get_next_pvt(p);

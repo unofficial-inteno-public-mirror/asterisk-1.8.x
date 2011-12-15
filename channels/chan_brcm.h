@@ -143,6 +143,7 @@ static struct brcm_pvt {
 	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
 	unsigned int ssrc;				/* Endpoint RTP synchronization source */
 	int codec;						/* Used codec */
+	unsigned int dt_counter;		/* dialtone counter */
 } *iflist = NULL;
 
 
