@@ -66,7 +66,6 @@
 #define DEFAULT_GAIN 0x100
 
 #define TIMEMSEC 1000
-#define TIMEOUTMSEC 4000
 
 #define PCMU 0
 #define G726 2

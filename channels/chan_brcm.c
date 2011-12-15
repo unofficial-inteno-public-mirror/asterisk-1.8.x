@@ -78,6 +78,7 @@ static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int ringsignal = 1;
 static int silence = 0;
+static int timeoutmsec = 4000;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 static int dtmf_short = 1;
@@ -431,7 +432,7 @@ static void *brcm_event_handler(void *data)
 
 			/* Check if the dtmf string matches anything in the dialplan */
 			if ((p->channel_state == DIALING) &&
-			    (ts - p->last_dtmf_ts > TIMEOUTMSEC) &&
+			    (ts - p->last_dtmf_ts > timeoutmsec) &&
 			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
 			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
 			    ) {
@@ -929,12 +930,12 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int) p->next);
 		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int) p->owner);		
-		ast_cli(a->fd, "Endpoint type       : ");
+		ast_cli(a->fd, "Endpoint type       : ", timeoutmsec);
 		switch (p->endpoint_type) {
-		case FXS:  ast_cli(a->fd, "FXS\n");  break;
-		case FXO:  ast_cli(a->fd, "FXO\n");  break;
-		case DECT: ast_cli(a->fd, "DECT\n"); break;
-		default: ast_cli(a->fd, "Unknown\n");
+			case FXS:  ast_cli(a->fd, "FXS\n");  break;
+			case FXO:  ast_cli(a->fd, "FXO\n");  break;
+			case DECT: ast_cli(a->fd, "DECT\n"); break;
+			default: ast_cli(a->fd, "Unknown\n");
 		}
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
@@ -981,6 +982,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
+	ast_cli(a->fd, "Dialout msecs : %d\n", timeoutmsec);
 
 	ast_cli(a->fd, "DTMF relay    : ");
 	switch (dtmf_relay) {
@@ -1065,12 +1067,31 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
 	return CLI_SUCCESS;
 }
 
+static char *brcm_set_parameters_value(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	if (cmd == CLI_INIT) {
+		e->command = "brcm set dialout_msecs";
+		e->usage =
+			"Usage: brcm set dialout_msecs 4000\n"
+			"       dialout_msecs, dialout delay in msecs.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+
+	if (a->argc <= 3)
+		return CLI_SHOWUSAGE;
+	else
+		timeoutmsec = atoi(a->argv[3]);
+
+	return CLI_SUCCESS;
+}
 
 /*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
 	AST_CLI_DEFINE(brcm_set_parameters_on_off,  "Set chan_brcm parameters"),
 	AST_CLI_DEFINE(brcm_set_dtmf_mode,  "Set chan_brcm dtmf_relay parameter"),
+	AST_CLI_DEFINE(brcm_set_parameters_value,  "Set chan_brcm dialout msecs"),
 };
 
 
@@ -1186,7 +1207,7 @@ static int load_module(void)
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
 		if (!strcasecmp(v->name, "silence")) {
-			silence = ast_true(v->value);
+			silence = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(language, v->value, sizeof(language));
 			// FIXME use a table for this
@@ -1206,7 +1227,7 @@ static int load_module(void)
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(context, v->value, sizeof(context));
 		} else if (!strcasecmp(v->name, "echocancel")) {
-			echocancel = ast_true(v->value);
+			echocancel = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "txgain")) {
 			txgain = parse_gain_value(v->name, v->value);
 		} else if (!strcasecmp(v->name, "rxgain")) {
@@ -1219,7 +1240,7 @@ static int load_module(void)
 			} else
 				dtmf_relay = EPDTMFRFC2833_DISABLED;
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
-			dtmf_short = ast_true(v->value);
+			dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "codec")) {
 			if        (!strcasecmp(v->value, "alaw")) {
 				codec_list[config_codecs] = CODEC_PCMA;
@@ -1241,7 +1262,9 @@ static int load_module(void)
 				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
 			}
 		} else if (!strcasecmp(v->name, "ringsignal")) {
-			ringsignal = ast_true(v->value);
+			ringsignal = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "dialoutmsec")) {
+			timeoutmsec = atoi(v->value);
 		}
 		if (config_codecs > 0)
 			codec_nr = config_codecs;
