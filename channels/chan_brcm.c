@@ -99,7 +99,7 @@ static int autodial_nr = 0;
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
-static format_t prefformat = AST_FORMAT_ALAW | AST_FORMAT_ULAW;
+static format_t prefformat = AST_FORMAT_ALAW;
 
 
 /* Boolean value whether the monitoring thread shall continue. */
