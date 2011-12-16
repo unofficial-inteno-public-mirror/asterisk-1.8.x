@@ -59,7 +59,7 @@
 
 
 /* Change this value when needed */
-#define CHANNEL_VERSION "1.1"
+#define CHANNEL_VERSION "1.2"
 
 #define DEFAULT_CALLER_ID "Unknown"
 #define PHONE_MAX_BUF 480
@@ -75,10 +75,6 @@
 #define DTMF 128
 #define RTCP 200
 
-
-
-
-
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
@@ -87,8 +83,6 @@
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
-
-
 
 
 enum channel_state {
@@ -106,8 +100,6 @@ enum endpoint_type {
 	FXO,
 	DECT,
 };
-
-
 
 
 static struct brcm_pvt {
@@ -143,6 +135,7 @@ static struct brcm_pvt {
 	unsigned int ssrc;				/* Endpoint RTP synchronization source */
 	int codec;						/* Used codec */
 	unsigned int dt_counter;		/* dialtone counter */
+	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 } *iflist = NULL;
 
 

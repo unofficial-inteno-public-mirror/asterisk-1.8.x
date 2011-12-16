@@ -61,7 +61,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
-
 /* Global brcm channel parameters */
 
 static const char tdesc[] = "Brcm SLIC Driver";
@@ -88,6 +87,15 @@ static int codec_nr = 2;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
+
+typedef struct {
+	int		id;
+	char	extension[AST_MAX_EXTENSION];
+} autodial;
+
+static autodial autodial_ext[4] = {{0}};
+static int autodial_nr = 0;
+
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
@@ -410,6 +418,7 @@ static void *brcm_event_handler(void *data)
 
 		/* loop over all pvt's */
 		while(p) {
+			int autodial = 0;
 			/* If off hook send dialtone every 20 ms*/
 			ast_mutex_lock(&p->lock);
 			if (p->channel_state == OFFHOOK) {
@@ -429,10 +438,15 @@ static void *brcm_event_handler(void *data)
 //				ast_verbose("ts - last_dtmf_ts > 2000\n");
 //				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
 //			}
+			/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
+			if ((strlen(p->autodial) > 0) && ((p->channel_state == DIALING) || (p->channel_state == OFFHOOK))) {
+				autodial = 1;
+				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
+			}
 
 			/* Check if the dtmf string matches anything in the dialplan */
-			if ((p->channel_state == DIALING) &&
-			    (ts - p->last_dtmf_ts > timeoutmsec) &&
+			if ((((p->channel_state == DIALING) &&
+			    (ts - p->last_dtmf_ts > timeoutmsec)) || autodial) &&
 			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
 			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
 			    ) {
@@ -766,6 +780,14 @@ static int start_threads(void)
 	return 0;
 }
 
+static void brcm_fill_autodial(struct brcm_pvt *p) {
+	int i;
+
+	for (i=0 ; i<autodial_nr ; i++) {
+		if (p->connection_id == autodial_ext[i].id)
+			ast_copy_string(p->autodial, autodial_ext[i].extension, sizeof(p->autodial));
+	}
+}
 
 static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, int txgain, int rxgain)
 {
@@ -830,6 +852,7 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 	/* Assign connection_id's */
 	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
 		tmp->connection_id = endptObjState[i].lineId;
+		brcm_fill_autodial(tmp);
 		tmp = tmp->next;
 	}
 }
@@ -944,6 +967,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
 		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
 		ast_cli(a->fd, "Dialtone counter    : %d\n", p->dt_counter);
+		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
 		
 		i++;
 		p = brcm_get_next_pvt(p);
@@ -1020,7 +1044,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 			"Usage: brcm set {dtmf_short|echocancel|ringsignal|silence} {on|off}\n"
 			"       dtmf_short, dtmf sending mode.\n"
 			"       echocancel, echocancel mode.\n"
-			"       ringsignal, ring signal mode.\n";
+			"       ringsignal, ring signal mode.\n"
 			"       silence, silence surpression.";
 		return NULL;
 	} else if (cmd == CLI_GENERATE)
@@ -1086,12 +1110,44 @@ static char *brcm_set_parameters_value(struct ast_cli_entry *e, int cmd, struct 
 	return CLI_SUCCESS;
 }
 
+static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	struct brcm_pvt *p;
+
+	if (cmd == CLI_INIT) {
+		e->command = "brcm set autodial";
+		e->usage =
+			"Usage: brcm set autodial 0 1234\n"
+			"       brcm set autodial 0 \"\"\n"
+			"       autodial, extension to autodial on of hook.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+
+	if (a->argc <= 4)
+		return CLI_SHOWUSAGE;
+
+//	ast_verbose("%d %s",(a->argv[3][0] -'0'), a->argv[4]);
+	
+	p = iflist;
+	while(p) {
+		if (p->connection_id == (a->argv[3][0]-'0'))
+			ast_copy_string(p->autodial, a->argv[4], sizeof(p->autodial));
+		p = brcm_get_next_pvt(p);
+	}
+	
+	
+	return CLI_SUCCESS;
+}
+
+
 /*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
 	AST_CLI_DEFINE(brcm_set_parameters_on_off,  "Set chan_brcm parameters"),
 	AST_CLI_DEFINE(brcm_set_dtmf_mode,  "Set chan_brcm dtmf_relay parameter"),
 	AST_CLI_DEFINE(brcm_set_parameters_value,  "Set chan_brcm dialout msecs"),
+	AST_CLI_DEFINE(brcm_set_autodial_extension,  "Set chan_brcm autodial extension"),
 };
 
 
@@ -1226,6 +1282,12 @@ static int load_module(void)
 			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(context, v->value, sizeof(context));
+		} else if (!strcasecmp(v->name, "autodial")) {
+			if (autodial_nr < 4) {
+				autodial_ext[autodial_nr].id = v->value[0] - '0';
+				ast_copy_string(autodial_ext[autodial_nr].extension, &v->value[2], sizeof(autodial));
+				autodial_nr++;
+			}
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			echocancel = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "txgain")) {
