@@ -99,7 +99,7 @@ static int autodial_nr = 0;
 
 /* Default language */
 static char language[MAX_LANGUAGE] = "";
-static format_t prefformat = AST_FORMAT_ALAW;
+static format_t prefformat = AST_FORMAT_ALAW | AST_FORMAT_ULAW;
 
 
 /* Boolean value whether the monitoring thread shall continue. */
@@ -206,7 +206,17 @@ static int brcm_answer(struct ast_channel *ast)
 	return 0;
 }
 
-
+static char* brcm_get_codec_string(int id) {
+	switch (id) {
+			case PCMA:		return "alaw"; break;
+			case PCMU:		return "ulaw"; break;
+			case G723:		return "g723.1"; break;
+			case G726:		return "g726"; break;
+			case G729:		return "g729"; break;
+			case -1:		return "none set"; break;
+			default: 		return "unknown id"; break;
+	}
+}
 
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
@@ -238,6 +248,23 @@ static int brcm_classify_rtp_packet(int id) {
 			return BRCM_UNKNOWN;
 	}
 }
+
+
+static int map_ast_codec_id_to_rtp(int id) {
+	switch (id) {
+		case AST_FORMAT_ULAW: return PCMU;
+		case AST_FORMAT_G726: return G726;
+		case AST_FORMAT_G723_1: return G723;
+		case AST_FORMAT_ALAW: return PCMA;
+		case AST_FORMAT_G729A: return G729;
+		default:
+		{
+			ast_verbose("Unknown asterisk format/codec id [%d]\n", id);
+			return PCMA;
+		}
+	}
+}
+
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
@@ -272,7 +299,10 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		epPacket_send.packetp = packet_buffer;
 
 		/* generate the rtp header */
-		brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
+		brcm_generate_rtp_packet(p, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
+		
+		/* set rtp id sent to endpoint */
+		p->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
 		tPacketParm_send.cnxId       = p->connection_id;
 		tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
@@ -309,6 +339,9 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 
 	/* generate the rtp header */
 	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMU);
+
+	/* set rtp id sent to endpoint */
+	p->codec = PCMU;
 
 	tPacketParm_send.cnxId       = p->connection_id;
 	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
@@ -567,7 +600,7 @@ static void *brcm_monitor_packets(void *data)
 //					fr.samples = (pdata[14] << 8 | pdata[15]);
 //					fr.len = fr.samples / 8;
 				}
-				ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 				fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
 				fr.subclass.integer = phone_2digit(pdata[12]);
@@ -580,7 +613,7 @@ static void *brcm_monitor_packets(void *data)
 				else
 					fr.frametype = AST_FRAME_NULL;
 
-				ast_verbose("[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
+				ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
 			} else {
 				//ast_verbose("[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
@@ -626,7 +659,7 @@ static void *brcm_monitor_events(void *data)
 				if (p) {
 					switch (tEventParm.event) {
 					case EPEVT_OFFHOOK:
-						ast_verbose("EPEVT_OFFHOOK detected\n");
+						ast_debug(9, "EPEVT_OFFHOOK detected\n");
 						ast_mutex_lock(&p->lock);		  
 						ast_verbose("me: got mutex\n");
 						gettimeofday(&tim, NULL);
@@ -643,7 +676,7 @@ static void *brcm_monitor_events(void *data)
 						if(p->owner) {
 
 							if (!p->connection_init) {
-								ast_verbose("create_connection()\n");
+								ast_debug(9, "create_connection()\n");
 								brcm_create_connection(p);
 							}
 
@@ -651,16 +684,16 @@ static void *brcm_monitor_events(void *data)
 							p->channel_state = INCALL;
 						}
 						ast_mutex_unlock(&p->lock);
-						ast_verbose("me: unlocked mutex\n");
+						ast_debug(9, "me: unlocked mutex\n");
 
 						break;
 					case EPEVT_ONHOOK:
-						ast_verbose("EPEVT_ONHOOK detected\n");
+						ast_debug(9, "EPEVT_ONHOOK detected\n");
 						gettimeofday(&tim, NULL);
 						p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
 						ast_mutex_lock(&p->lock);
-						ast_verbose("me: got mutex\n");
+						ast_debug(9, "me: got mutex\n");
 						p->channel_state = ONHOOK;
 
 						/* Reset the dtmf buffer */
@@ -675,7 +708,7 @@ static void *brcm_monitor_events(void *data)
 							ast_queue_control(p->owner, AST_CONTROL_HANGUP);
 						}
 						ast_mutex_unlock(&p->lock);
-						ast_verbose("me: unlocked mutex\n");
+						ast_debug(9, "me: unlocked mutex\n");
 						break;
 
 					case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
@@ -953,7 +986,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int) p->next);
 		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int) p->owner);		
-		ast_cli(a->fd, "Endpoint type       : ", timeoutmsec);
+		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
 			case FXS:  ast_cli(a->fd, "FXS\n");  break;
 			case FXO:  ast_cli(a->fd, "FXO\n");  break;
@@ -968,6 +1001,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
 		ast_cli(a->fd, "Dialtone counter    : %d\n", p->dt_counter);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
+		ast_cli(a->fd, "Codec used          : %s\n", brcm_get_codec_string(p->codec));
 		
 		i++;
 		p = brcm_get_next_pvt(p);
@@ -1019,11 +1053,11 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Codec list    : ");
 	for (i=0 ; i<codec_nr ; i++) {
 		switch (codec_list[i]) {
-			case CODEC_PCMA:	ast_cli(a->fd, "alaw, ");  break;
-			case CODEC_PCMU:	ast_cli(a->fd, "ulaw, ");  break;
-			case CODEC_G7231_63:	ast_cli(a->fd, "g723.1, "); break;
-			case CODEC_G726_32:	ast_cli(a->fd, "g726, "); break;
-			case CODEC_G729:	ast_cli(a->fd, "g729, "); break;
+			case CODEC_PCMA:        ast_cli(a->fd, "alaw, ");  break;
+			case CODEC_PCMU:        ast_cli(a->fd, "ulaw, ");  break;
+			case CODEC_G7231_63:    ast_cli(a->fd, "g723.1, "); break;
+			case CODEC_G726_32:     ast_cli(a->fd, "g726, "); break;
+			case CODEC_G729:        ast_cli(a->fd, "g729, "); break;
 			default: ast_cli(a->fd, "[%d] config error, ", codec_list[codec_nr]);
 		}
 	}
@@ -1698,7 +1732,7 @@ static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int 
 	//Extension 0
 	//CSRC count 0
 	//Marker 0
-	packet_buf[1] = type; //Payload type PCMU = 0,  PCMA = 8, FIXME use table to lookup value
+	packet_buf[1] = type;
 	packet_buf16[1] = p->sequence_number++; //Add sequence number
 	if (p->sequence_number > 0xFFFF) p->sequence_number=0;
 	packet_buf32[1] = p->time_stamp;	//Add timestamp
