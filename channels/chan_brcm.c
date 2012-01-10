@@ -39,6 +39,7 @@
 
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
+#include <math.h>
 #include <ctype.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -58,8 +59,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/causes.h"
 #include "asterisk/stringfields.h"
 #include "asterisk/musiconhold.h"
+#include "asterisk/indications.h"
 
 #include "chan_brcm.h"
+
 
 /* Global brcm channel parameters */
 
@@ -78,6 +81,12 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int ringsignal = 1;
 static int silence = 0;
 static int timeoutmsec = 4000;
+
+/* Dialtone variables */
+struct ast_tone_zone_sound *tzs = NULL;
+struct ast_tone_zone_part tone_data_g = {0};
+static unsigned char dialtone_gen[2880] = {0};
+static int dialtone_period = 0;
 
 static int dtmf_relay = EPDTMFRFC2833_ENABLED;
 static int dtmf_short = 1;
@@ -330,15 +339,15 @@ static void brcm_send_dialtone(struct brcm_pvt *p) {
 	epPacket_send.mediaType   = 0;
 
 	/* copy frame data to local buffer */
-	memcpy(&packet_buffer[12], &DialTone[p->dt_counter], 160);
+	memcpy(&packet_buffer[12], &dialtone_gen[p->dt_counter], 160);
 	p->dt_counter += 160;
-	if (p->dt_counter >=2400) p->dt_counter = 0;
+	if (p->dt_counter >=dialtone_period) p->dt_counter = 0;
 
 	/* add buffer to outgoing packet */
 	epPacket_send.packetp = packet_buffer;
 
 	/* generate the rtp header */
-	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMU);
+	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
 
 	/* set rtp id sent to endpoint */
 	p->codec = PCMU;
@@ -1041,6 +1050,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 	ast_cli(a->fd, "Dialout msecs : %d\n", timeoutmsec);
+	ast_cli(a->fd, "Dialtone per. : %d\n", dialtone_period);
 
 	ast_cli(a->fd, "DTMF relay    : ");
 	switch (dtmf_relay) {
@@ -1265,6 +1275,54 @@ static int unload_module(void)
 }
 
 
+#define         SIGN_BIT        (0x80)      /* Sign bit for a A-law byte. */
+#define         QUANT_MASK      (0xf)       /* Quantization field mask. */
+#define         NSEGS           (8)         /* Number of A-law segments. */
+#define         SEG_SHIFT       (4)         /* Left shift for segment number. */
+#define         SEG_MASK        (0x70)      /* Segment field mask. */
+#define         BIAS            (0x84)      /* Bias for linear code. */
+
+static int alaw2linear(unsigned char a_val)
+{
+        int t;
+        int seg;
+
+        a_val ^= 0x55;
+
+        t = a_val & QUANT_MASK;
+        seg = ((unsigned)a_val & SEG_MASK) >> SEG_SHIFT;
+        if(seg) t= (t + t + 1 + 32) << (seg + 2);
+        else    t= (t + t + 1     ) << 3;
+
+        return (a_val & SIGN_BIT) ? t : -t;
+}
+
+static uint8_t linear_to_alaw[16384];
+
+static void build_xlaw_table(uint8_t *linear_to_xlaw,
+                             int (*xlaw2linear)(unsigned char),
+                             int mask)
+{
+    int i, j, v, v1, v2;
+
+    j = 0;
+    for(i=0;i<128;i++) {
+        if (i != 127) {
+            v1 = xlaw2linear(i ^ mask);
+            v2 = xlaw2linear((i + 1) ^ mask);
+            v = (v1 + v2 + 4) >> 3;
+        } else {
+            v = 8192;
+        }
+        for(;j<v;j++) {
+            linear_to_xlaw[8192 + j] = (i ^ mask);
+            if (j > 0)
+                linear_to_xlaw[8192 - j] = (i ^ (mask ^ 0x80));
+        }
+    }
+    linear_to_xlaw[0] = linear_to_xlaw[1];
+}
+
 static int load_module(void)
 {
 	struct ast_config *cfg;
@@ -1272,6 +1330,7 @@ static int load_module(void)
 	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
 	int config_codecs = 0;
+	struct ast_tone_zone *zone = NULL;
 
 	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
@@ -1380,6 +1439,39 @@ static int load_module(void)
 		unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
+
+	ast_verbose("ast_get_indication_tone\n");
+	ast_tone_zone_ref(zone);
+
+	if ((tzs = ast_get_indication_tone(zone, "dial"))) {
+		int i, best_period_value = INT_MAX;
+		int best_period_index = 160;
+		ast_verbose("ast_get_indication_tone: %x, %s\n", (void*)tzs, tzs->name);
+		ast_verbose("Tone string: %s\n", tzs->data);
+		ast_tone_zone_part_parse(tzs->data, &tone_data_g);
+		ast_verbose("Tone data: freq1 = %d, freq2 = %d\n", tone_data_g.freq1, tone_data_g.freq2);
+
+		/* Generate 2400 16bit samples of the dialtone, not totally correct but good enough, 7219 ~ -8dB
+		 * Only support for signle and dual tone dialtones, no modulation or other funky stuff
+		 **/
+		build_xlaw_table(linear_to_alaw, alaw2linear, 0xd5);
+		for (i=0 ; i<2880 ; i++) {
+			dialtone_gen[i] = linear_to_alaw[ ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))+ 32768) >> 2];
+			/*if (!(i % 160)) ast_verbose("dialtone_gen[%d] = %d, %d\n",i,dialtone_gen[i],(short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i)))); */
+		}
+		
+		/* Find a suitable period, we do this by checking that the signal has a linear phase (>0 check) */
+		for (i=160 ; i<2720 ; i+=160) {
+			if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*(i+1)) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*(i+1))))) > 0)
+				if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))) <= best_period_value) {
+					best_period_value = ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i))));
+					best_period_index = i;
+				}
+		}
+		dialtone_period = best_period_index;
+		ast_verbose("dialtone_period: %d\n", dialtone_period);
+	}
+	zone = ast_tone_zone_unref(zone);
 
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
