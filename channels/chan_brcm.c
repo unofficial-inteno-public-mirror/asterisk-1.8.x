@@ -60,6 +60,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/stringfields.h"
 #include "asterisk/musiconhold.h"
 #include "asterisk/indications.h"
+#include "asterisk/manager.h"
 
 #include "chan_brcm.h"
 
@@ -680,7 +681,8 @@ static void *brcm_monitor_events(void *data)
 						p->dtmf_first        = -1;
 						p->dtmfbuf[p->dtmf_len] = '\0';
 						p->channel_state = OFFHOOK;
-
+						ast_verbose("Sending manager event\n");
+						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->connection_id);
 
 						if(p->owner) {
 
@@ -704,6 +706,8 @@ static void *brcm_monitor_events(void *data)
 						ast_mutex_lock(&p->lock);
 						ast_debug(9, "me: got mutex\n");
 						p->channel_state = ONHOOK;
+						ast_verbose("Sending manager event\n");
+						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->connection_id);
 
 						/* Reset the dtmf buffer */
 						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
