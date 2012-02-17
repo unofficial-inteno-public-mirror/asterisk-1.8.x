@@ -33,6 +33,7 @@
  * Enable T38 support
  * Enable V18 support
  * Ingress/egress gain
+ * CID support
  */
 
 #include "asterisk.h"
