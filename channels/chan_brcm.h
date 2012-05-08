@@ -203,6 +203,10 @@ typedef unsigned long   ULONG;
 typedef void            VOID;
 typedef unsigned char   BOOL;
 
+typedef unsigned char   BOS_UINT8;     /** platform may not support 8-bit physical representation */
+
+#define BOS_CFG_BIG_ENDIAN 1
+
 // These are also defined in typedefs.h in the application area, so I need to
 // protect against re-definition.
 #ifndef TYPEDEFS_H
@@ -746,6 +750,54 @@ COUNTRY_ARCHIVE_MAKE_NAME( UNITED_ARAB_EMIRATES      )
 } VRG_COUNTRY;
 
 
+/*
+** These events are the event types that are sent to the client app through
+** the supplied callback.
+*/
+typedef enum CAS_CTL_EVENT_TYPE
+{
+   /* A detection event has occured. */
+   CAS_CTL_DETECT_EVENT,
+
+   /* A state machine control event has occured. */
+   CAS_CTL_STATECTL_EVENT,
+
+   /* A Pulse Digit was detected. */
+   CAS_CTL_PULSEDIAL_EVENT,
+
+   /* A brief ring completion event has occurred. */
+   CAS_CTL_BRIEF_RING_COMPLETE_EVENT
+
+} CAS_CTL_EVENT_TYPE;
+
+
+/*
+** These events are sent to the client app through the supplied callback.
+*/
+typedef enum
+{
+   CAS_CTL_EVENT_NONE = 0,       /* No event */
+   CAS_CTL_EVENT_ONHOOK,         /* On-hook */
+   CAS_CTL_EVENT_OFFHOOK,        /* Off-hook */
+   CAS_CTL_EVENT_WINK,           /* Wink */
+   CAS_CTL_EVENT_FLASH,          /* Flash */
+   CAS_CTL_EVENT_RINGON,         /* Ring On (rising edge of ring envelope) */
+   CAS_CTL_EVENT_RINGOFF,        /* Ring Off (fall edge of ring envelope) */
+   CAS_CTL_EVENT_FIRST_RINGOFF,  /* First Ring Off (fall edge of ring envelope) */
+   CAS_CTL_EVENT_LCF,            /* Loop current feed */
+   CAS_CTL_EVENT_RLCF,           /* Reverse loop current feed */
+   CAS_CTL_EVENT_LCFO,           /* Loop current off (open-open) */
+   CAS_CTL_EVENT_EARLY_OFFHOOK,  /* Early Off-hook */
+   CAS_CTL_EVENT_EARLY_ONHOOK,   /* Early On-hook */
+   CAS_CTL_EVENT_DELAY_OFFHOOK,  /* Delayed Off-hook */
+   CAS_CTL_EVENT_DELAY_ONHOOK,   /* Delayed On-hook */
+   CAS_CTL_EVENT_PULSECOMPLETE,  /* Pulse dialstring completed */
+   CAS_CTL_EVENT_OSI_END,        /* Open switch interval has ended */
+   CAS_CTL_EVENT_TIMER_EXPIRE,   /* Timer expiry */
+   CAS_CTL_EVENT_BRIEF_RING,      /* Brief ring completed */
+   CAS_CTL_EVENT_RINGEND,        /* Ring ended */
+
+} CAS_CTL_EVENT;
 
 
 
