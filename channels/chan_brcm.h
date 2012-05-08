@@ -568,7 +568,7 @@ typedef  int   VRG_BOOL;               /** VRG_TRUE or VRG_FALSE */
 #endif
 
 #ifndef VRG_COUNTRY_CFG_POLAND
-#define VRG_COUNTRY_CFG_POLAND         0
+#define VRG_COUNTRY_CFG_POLAND         1
 #endif
 
 #ifndef VRG_COUNTRY_CFG_ROMANIA
@@ -609,6 +609,10 @@ typedef  int   VRG_BOOL;               /** VRG_TRUE or VRG_FALSE */
 
 #ifndef VRG_COUNTRY_CFG_TAIWAN
 #define VRG_COUNTRY_CFG_TAIWAN             1
+#endif
+
+#ifndef VRG_COUNTRY_CFG_UNITED_ARAB_EMIRATES
+#define VRG_COUNTRY_CFG_UNITED_ARAB_EMIRATES             1
 #endif
 
 #endif  /* if !VRG_COUNTRY_CFG_ALL_PROFILES */
