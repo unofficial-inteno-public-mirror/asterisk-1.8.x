@@ -528,6 +528,7 @@ static void *brcm_event_handler(void *data)
 
 #define DTMF_CHECK(dtmf_button, event_string)				\
 	{								\
+		ast_verbose("%s event detected\n", event_string);	\
 		gettimeofday(&tim, NULL);				\
 		if (p->dtmf_first < 0) {				\
 			p->dtmf_first = dtmf_button;			\
@@ -568,6 +569,8 @@ static void *brcm_monitor_packets(void *data)
 	int current_dtmf_digit = -1;
 	
 	rtp = (RTPPACKET *)pdata;
+	
+	ast_verbose("Packets thread starting\n");
 
 	while(packets) {
 		struct ast_frame fr  = {0};
@@ -626,7 +629,7 @@ static void *brcm_monitor_packets(void *data)
 
 				ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
 			} else {
-				//ast_verbose("[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
+				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
 			ast_mutex_lock(&p->lock);
@@ -662,10 +665,12 @@ static void *brcm_monitor_events(void *data)
 		tEventParm.length = 0;
 		p = iflist;
 
+		ast_verbose("Waiting for event\n");
 		/* Get the event from the endpoint driver. */
 		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
 		if( rc == IOCTL_STATUS_SUCCESS )
 			{
+				ast_debug(9, "Event %d detected\n", tEventParm.event);
 				p = brcm_get_cid_pvt(iflist, tEventParm.lineId);
 				if (p) {
 					switch (tEventParm.event) {
@@ -1786,7 +1791,7 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 			ast_verbose("%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_verbose("\n\nConnection %d created\n\n",p->connection_id);
+			ast_verbose("Connection %d created\n",p->connection_id);
 			p->connection_init = 1;
 		}
 	}
@@ -1811,7 +1816,7 @@ static int brcm_close_connection(struct brcm_pvt *p) {
 			return -1;
 		} else {
 			p->connection_init = 0;
-			ast_verbose("\n\nConnection %d closed\n\n",p->connection_id);
+			ast_verbose("Connection %d closed\n",p->connection_id);
 		}
 	}
 	return 0;
