@@ -517,7 +517,8 @@ static void *brcm_event_handler(void *data)
 			ast_mutex_unlock(&p->lock);
 			p = brcm_get_next_pvt(p);
 		}
-		sched_yield();
+		usleep(100);
+//		sched_yield();
 	}
 
 	ast_verbose("Events thread ended\n");
@@ -644,7 +645,8 @@ static void *brcm_monitor_packets(void *data)
 			}
 			ast_mutex_unlock(&p->lock);
 		}
-		sched_yield();
+		//sched_yield();
+		usleep(100);
 	} /* while */
 
 	ast_verbose("Packets thread ended\n");
