@@ -2618,19 +2618,9 @@ typedef struct ENDPT_FUNCS
 #endif /* NTR_SUPPORT */
 
 
-
 #define  VRG_CLASS_DATE_SIZE         8
 #define  VRG_CLASS_MAX_NUMBER_SIZE   20
 #define  VRG_CLASS_MAX_NAME_SIZE     16
-
-
-#define  VRG_DECT__MAX_HANDSET       6
-#define  VRG_DECT__ACCESS_CODE       4    /* 2 bytes = 4 nibbles = 4 characters in string */
-#define  VRG_DECT__FW_LINK_DATE      10   /* 5 bytes = 10 nibbles = 10 characters in string */ 
-#define  VRG_DECT__BASE_ID           10   /* 5 bytes = 10 nibbles = 10 characters in string */ 
-#define  VRG_DECT__IPUI              5    /* Stored as raw bytes */
-#define  VRG_DECT__HANDSET_STATUS    32
-
 
 
 typedef struct
@@ -2659,6 +2649,7 @@ typedef struct
    /* Must be first elements of this struct. */
    const ENDPT_FUNCS   *endptFuncs;
    int                  lineId;
+   EPTYPE               endptType;
 
    /* VRG specific endpt state below. */
 
@@ -2804,6 +2795,21 @@ int vrgEndptGetNumEndpoints( void );
 
 /*
 *****************************************************************************
+** FUNCTION:   vrgEndptGetNumFxsEndpoints
+**
+** PURPOSE:    Retrieve the number of FXS endpoints in a collection
+**
+** PARAMETERS: None
+**
+** RETURNS:    Number of FXO endpoints
+**
+*****************************************************************************
+*/
+int vrgEndptGetNumFxsEndpoints( void );
+
+
+/*
+*****************************************************************************
 ** FUNCTION:   vrgEndptGetNumFxoEndpoints
 **
 ** PURPOSE:    Retrieve the number of FXO endpoints in a collection
@@ -2831,6 +2837,21 @@ int vrgEndptGetNumFxoEndpoints( void );
 */
 int vrgEndptGetNumDectEndpoints( void );
 
+#ifdef PSTN_LIFE_LINE_SUPPORT
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptIsPstnLifeLineSupported
+**
+** PURPOSE:    Determines whether pstn life line is supported
+**
+** PARAMETERS: None
+**
+** RETURNS:    true if supported; false otherwise
+**
+*****************************************************************************
+*/
+VRG_BOOL vrgEndptIsPstnLifeLineSupported( void );
+#endif 
 
 /*****************************************************************************
 *  FUNCTION:   vrgEndptVerifyCountry
@@ -2895,7 +2916,6 @@ void vrgCodecTableRetrieveRow( int index, VRG_CODEC_TABLE_ROW *pNumOfCodecs );
 *****************************************************************************
 */
 EPSTATUS vrgEndptGetEndptOperStatus( int lineId );
-
 
 
 
