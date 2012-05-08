@@ -746,66 +746,49 @@ COUNTRY_ARCHIVE_MAKE_NAME( SLOVENIA      )
 /* Voice codec types */
 typedef enum
 {
-   CODEC_NULL           = (0),        /* NULL */
-   CODEC_PCMU,   /* G.711 ulaw */
-   CODEC_PCMA,   /* G.711 alaw */
-   CODEC_G726_16,   /* G.726 - 16 kbps */
-   CODEC_G726_24,   /* G.726 - 24 kbps */
-   CODEC_G726_32,   /* G.726 - 32 kbps */
-   CODEC_G726_40,   /* G.726 - 40 kbps */
-   CODEC_G7231_53,   /* G.723.1 - 5.3 kbps */
-   CODEC_G7231_63,   /* G.723.1 - 6.3 kbps */
-   CODEC_G7231A_53,   /* G.723.1A - 5.3 kbps */
-   CODEC_G7231A_63,   /* G.723.1A - 6.3 kbps */
-   CODEC_G729A,  /* G.729A */
-   CODEC_G729B,  /* G.729B */
-   CODEC_G711_LINEAR,  /* Linear media queue data */
-   CODEC_G728,  /* G.728 */
-   CODEC_G729,  /* G.729 */
-   CODEC_G729E,  /* G.729E */
-   CODEC_BV16,  /* BRCM Broadvoice - 16 kbps */
-   CODEC_BV32,  /* BRCM Broadvoice - 32 kbps */
-   CODEC_NTE,  /* Named telephone events */
-   CODEC_ILBC_20,  /* iLBC speech coder - 20 ms frame / 15.2 kbps */
-   CODEC_ILBC_30,  /* iLBC speech coder - 30 ms frame / 13.3 kbps */
-   CODEC_G7231_53_VAR, /* G723.1 variable rates (preferred=5.3) */
-   CODEC_G7231_63_VAR, /* G723.1 variable rates (preferred=6.3) */
-   CODEC_G7231_VAR, /* G723.1 variable rates */
-   CODEC_T38,  /* T.38 fax relay */
-   CODEC_T38_MUTE,  /* Mute before switching to T.38 fax relay */
-   CODEC_RED,  /* Redundancy - RFC 2198 */
-   CODEC_G722_MODE_1,  /* G.722 Mode 1 64 kbps */
-   CODEC_LINPCM128,  /* Narrowband linear PCM @ 128 Kbps */
-   CODEC_LINPCM256,  /* Wideband linear PCM @ 256 Kbps */
+   CODEC_NULL,           /* NULL */
+   CODEC_PCMU,           /* G.711 ulaw */
+   CODEC_PCMA,           /* G.711 alaw */
+   CODEC_G726_16,        /* G.726 - 16 kbps */
+   CODEC_G726_24,        /* G.726 - 24 kbps */
+   CODEC_G726_32,        /* G.726 - 32 kbps */
+   CODEC_G726_40,        /* G.726 - 40 kbps */
+   CODEC_G7231_53,       /* G.723.1 - 5.3 kbps */
+   CODEC_G7231_63,       /* G.723.1 - 6.3 kbps */
+   CODEC_G7231A_53,      /* G.723.1A - 5.3 kbps */
+   CODEC_G7231A_63,      /* G.723.1A - 6.3 kbps */
+   CODEC_G729A,          /* G.729A */
+   CODEC_G729B,          /* G.729B */
+   CODEC_G711_LINEAR,    /* Linear media queue data */
+   CODEC_G728,           /* G.728 */
+   CODEC_G729,           /* G.729 */
+   CODEC_G729E,          /* G.729E */
+   CODEC_BV16,           /* BRCM Broadvoice - 16 kbps */
+   CODEC_BV32,           /* BRCM Broadvoice - 32 kbps */
+   CODEC_NTE,            /* Named telephone events */
+   CODEC_ILBC_20,        /* iLBC speech coder - 20 ms frame / 15.2 kbps */
+   CODEC_ILBC_30,        /* iLBC speech coder - 30 ms frame / 13.3 kbps */
+   CODEC_G7231_53_VAR,   /* G723.1 variable rates (preferred=5.3) */
+   CODEC_G7231_63_VAR,   /* G723.1 variable rates (preferred=6.3) */
+   CODEC_G7231_VAR,      /* G723.1 variable rates */
+   CODEC_T38,            /* T.38 fax relay */
+   CODEC_T38_MUTE,       /* Mute before switching to T.38 fax relay */
+   CODEC_RED,            /* Redundancy - RFC 2198 */
+   CODEC_G722_MODE_1,    /* G.722 Mode 1 64 kbps */
+   CODEC_LINPCM128,      /* Narrowband linear PCM @ 128 Kbps */
+   CODEC_LINPCM256,      /* Wideband linear PCM @ 256 Kbps */
 
-   CODEC_GSMAMR_12K,  /* GSM AMR codec @ 12.2 kbps */
-   CODEC_GSMAMR_10K,  /* GSM AMR codec @ 10.2 kbps */
-   CODEC_GSMAMR_795,  /* GSM AMR codec @ 7.95 kbps */
-   CODEC_GSMAMR_740,  /* GSM AMR codec @ 7.4 kbps */
-   CODEC_GSMAMR_670,  /* GSM AMR codec @ 6.7 kbps */
-   CODEC_GSMAMR_590,  /* GSM AMR codec @ 5.9 kbps */
-   CODEC_GSMAMR_515,  /* GSM AMR codec @ 5.15 kbps */
-   CODEC_GSMAMR_475,  /* GSM AMR codec @ 4.75 kbps */
-
-   CODEC_AMRWB_66,    /* AMR WB codec @ 6.6 kbps */
-   CODEC_AMRWB_885,   /* AMR WB codec @ 8.85 kbps */
-   CODEC_AMRWB_1265,  /* AMR WB codec @ 12.65 kbps */
-   CODEC_AMRWB_1425,  /* AMR WB codec @ 14.25 kbps */
-   CODEC_AMRWB_1585,  /* AMR WB codec @ 15.85 kbps */
-   CODEC_AMRWB_1825,  /* AMR WB codec @ 18.25 kbps */
-   CODEC_AMRWB_1985,  /* AMR WB codec @ 19.85 kbps */
-   CODEC_AMRWB_2305,  /* AMR WB codec @ 23.05 kbps */
-   CODEC_AMRWB_2385,  /* AMR WB codec @ 23.85 kbps */
-   
-   /* Maximum number of codec types. */
+   /* Maximum number of codec types.  Must be last defined codec, always. */
    CODEC_MAX_TYPES,
 
    /* Place-holder for dynamic codec types that haven't been mapped yet */
-   CODEC_DYNAMIC        = (0xffff),
+   CODEC_DYNAMIC = (0xffff),
 
    /* Place-holder for unknown codec types that should be ignored/removed from list */
-   CODEC_UNKNOWN        = (0xfffe)
+   CODEC_UNKNOWN = (0xfffe)
+
 } CODEC_TYPE;
+
 
 /* Voice codec class for checking. */
 typedef enum
@@ -824,11 +807,13 @@ typedef enum
 
 } CODEC_CLASS;
 
+
 enum
 {
    CODEC_UNSUPPORTED = 0,
    CODEC_SUPPORTED   = 1
 };
+
 
 /* Bit-flags for named telephone event types (RFC 2833) */
 enum
@@ -896,6 +881,21 @@ typedef enum
    CODEC_PTIME_ANY   = 0xFFFF    /* ptime = '-' */
 } CODEC_PKT_PERIOD;
 
+
+enum
+{
+   /* Mask for codecs that support all packetization periods */
+   CODEC_SUPPORT_ALL_PTIME =  CODEC_PCMU  | \
+                              CODEC_PCMA  | \
+                              CODEC_G726x | \
+                              CODEC_G728  | \
+                              CODEC_BV16  | \
+                              CODEC_BV32  | \
+                              CODEC_NTE   | \
+                              CODEC_RED
+};
+
+
 /* RTP payload types */
 typedef enum
 {
@@ -947,12 +947,12 @@ typedef struct CODECOPT
 {
    CODEC_TYPE  rfc2198Type;                  /* If codec type is CODEC_RED, then this is the
                                                 redundant codec type. */
-   VRG_UINT8   opt1;                         /* Optional data 1 for this codec
+   BOS_UINT8   opt1;                         /* Optional data 1 for this codec
                                                    If codec type is CODEC_RED, this is the
                                                       redundancy level.
                                                    If codec type supports VBD (V.152), this is
                                                       the flag for its support. */
-   VRG_UINT8   opt2;                         /* Optional data 2 for this codec
+   BOS_UINT8   opt2;                         /* Optional data 2 for this codec
                                                    If codec type is CODEC_RED, this is the
                                                       payload type for the redundant codec. */
 } CODECOPT;
@@ -961,7 +961,7 @@ typedef struct CODECOPT
 typedef struct CODECDESC
 {
    CODEC_TYPE  type;                         /* codec type */
-   VRG_UINT8   rtpPayloadType;               /* RTP payload type that corresponds to 'type' */
+   BOS_UINT8   rtpPayloadType;               /* RTP payload type that corresponds to 'type' */
    CODECOPT    options;                      /* Supplementary codec options. */
 } CODECDESC;
 
@@ -1040,6 +1040,7 @@ unsigned int codecGetBasePayloadSize( CODEC_TYPE codec );
 *****************************************************************************
 */
 unsigned int codecGetPayloadSize( CODEC_TYPE codec, unsigned int ptime );
+
 
 /*
 *****************************************************************************
