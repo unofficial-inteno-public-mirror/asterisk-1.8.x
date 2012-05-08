@@ -1059,7 +1059,6 @@ unsigned int codecGetPayloadSize( CODEC_TYPE codec, unsigned int ptime );
 unsigned int codecCheckClass( CODEC_TYPE codec, CODEC_CLASS cclass );
 
 
-
 /* ---- Constants and Types ---------------------------------------------- */
 
 /* MIB value for Tone Detection */
@@ -1131,9 +1130,6 @@ typedef enum
    EPEVT_RINGEND,                 /* Ring signal end detected */
    EPEVT_ENCODER_SWITCH,          /* Encoder switch event */
    EPEVT_DECODER_SWITCH,          /* Decoder switch event */
-   EPEVT_DECT_BASE_INFO,          /* New DECT base information */
-   EPEVT_DECT_HS_INFO,            /* New DECT handset information */
-   EPEVT_DECT_NVS,
    EPEVT_DIALTONE,                /* Dial Tone Detection event */
    EPEVT_DIALTONE_END,            /* Dial Tone End event */
    EPEVT_DTMF_LEVEL,              /* Dial Tone Level event */
@@ -1238,6 +1234,7 @@ typedef enum
    EPSIG_SB_DISCONNECT,           /* Disconnect switchboard */
    EPSIG_INGRESS_DTMF,            /* Generate ingress DTMF tone */
    EPSIG_LINE_MODE_CONTROL,       /* Set to 1 so that subsequent mode controls apply to line VHD, 0 otherwise */
+   EPSIG_FILL_INFO,               /* Filler Information tone for UAE */
 /*
 ** E-line package-specific defines
 */
@@ -1288,6 +1285,17 @@ typedef enum
    EPSIG_LAST
 
 }EPSIG;
+
+/* Signal Direction */
+typedef enum
+{
+   EPSIG_DIRECTION_EGRESS_OFF,
+   EPSIG_DIRECTION_EGRESS_ON,
+   EPSIG_DIRECTION_INGRESS_OFF,
+   EPSIG_DIRECTION_INGRESS_ON,
+   EPSIG_DIRECTION_BOTH_OFF,
+   EPSIG_DIRECTION_BOTH_ON
+} EPSIG_DIRECTION;
 
 /*
 ** Provisioned values
@@ -1469,6 +1477,9 @@ typedef enum
    /*Item to store the locale seen at the last voice start*/
    EPPROV_LastLocale,
 
+   /* egress dtmf detection */
+   EPPROV_EgressDtmfDetection,
+
    EPPROV_LastItem, /* Must be the last item */
 
 } EPPROV;
@@ -1597,19 +1608,8 @@ typedef enum
    EPCMD_CONNECTSB,
    EPCMD_INGRESSGAIN_SET,
    EPCMD_EGRESSGAIN_SET,
-   EPCMD_DECT_REG_START,
-   EPCMD_DECT_REG_STOP,
-   EPCMD_DECT_SET_ACCESS_CODE,
-   EPCMD_DECT_GET_ACCESS_CODE,
-   EPCMD_DECT_DEL_HANDSET,
-   EPCMD_DECT_GET_HANDSET_COUNT,
-   EPCMD_DECT_PING_HANDSET,
-   EPCMD_DECT_GET_EEPROM,
-   EPCMD_DECT_SET_EEPROM,
-   EPCMD_DECT_SET_MODE,
-   EPCMD_DECT_GET_MODE,
    EPCMD_DECT_START_BUFF_PROC,
-   EPCMD_DECT_SET_HOOK_STATUS,
+   EPCMD_DECT_STOP_BUFF_PROC,
    EPCMD_PBDT_START,
    EPCMD_PBDT_STOP,
    EPCMD_PBDT_POWER,
@@ -1619,6 +1619,10 @@ typedef enum
    EPCMD_RESET_PROVTABLE,        /* Reset the provision table to defaults */
    EPCMD_DECTTEST,
    EPCMD_HOSTASSERT,
+   EPCMD_HALCAP_SETUP,
+   EPCMD_HALCAP_START,
+   EPCMD_HALCAP_STOP,
+   EPCMD_HALCAP_DEINIT,
    EPCMD_MAX
 } EPCONSOLECMD;
 
@@ -1755,9 +1759,15 @@ typedef enum
 {
    EPDTMFACT_TONEON = 0,
    EPDTMFACT_TONEOFF,
-
+   EPDTMFACT_EGRESS_TONEON,
+   EPDTMFACT_EGRESS_TONEOFF,
 } EPDTMFACT;
 
+typedef enum
+{
+   EPDTMFINJECT_INGOFF = 0,
+   EPDTMFINJECT_INGON,        /* Inject DTMF to the ingress direction */
+} EPDTMFINJECT;
 
 /* VBD parameters */
 typedef struct
@@ -1850,12 +1860,12 @@ typedef struct
    VRG_UINT16     rxRtcpXrPkts;     /* Number of egress RTCP XR packets */
    VRG_UINT16     overRuns;         /* Number of jitter buffer overruns */
    VRG_UINT16     underRuns;        /* Number of jitter buffer underruns */
-   VRG_UINT16     jitter;           /* Interarrival jitter estimate from RTP service (in ms) */
+   VRG_UINT32     jitter;           /* Interarrival jitter estimate from RTP service (in ms) */
    VRG_UINT16     peakJitter;       /* Peak jitter / holding time from voice PVE service (in ms)*/
    VRG_UINT16     jbMin;            /* Jitter buffer nominal delay */
    VRG_UINT16     jbAvg;            /* Jitter buffer average delay */
    VRG_UINT16     jbMax;            /* Jitter buffer absolute maximum delay */
-   VRG_UINT16     latency;          /* Avg tx delay (in ms) */
+   VRG_UINT32     latency;          /* Avg tx delay (in ms) */
    VRG_UINT16     peakLatency;      /* Peak tx delay (in ms) */
    VRG_UINT16     MOSLQ;            /* MOS-listening quality (value*10) */
    VRG_UINT16     MOSCQ;            /* MOS-conversational quality (value*10) */
@@ -1894,9 +1904,6 @@ typedef struct EPZCAP   /* Endpoint Capabilities */
 ** NOTE: The first six fields are bit-length specific.
 **       The RTP payload directly follows the RTP header.
 */
-
-#define BOS_CFG_BIG_ENDIAN 1
-
 typedef struct {
 
 #if BOS_CFG_BIG_ENDIAN
@@ -2358,6 +2365,28 @@ typedef EPSTATUS (*endptModifyConnection)
 */
 typedef EPSTATUS (*endptDeleteConnection)( ENDPT_STATE *endptState, int cnxId );
 
+
+/*****************************************************************************
+** FUNCTION:   endptLinkInternal
+**
+** PURPOSE:    Function to internally link two endpoints
+**
+** PARAMETERS:  endptState       - first endpt object.
+**              otherEndptState  - second endpt object.
+**              link             - whether or not to link or unlink.
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:
+*****************************************************************************
+*/
+typedef EPSTATUS (*endptLinkInternal)
+(
+   ENDPT_STATE *endptState,
+   ENDPT_STATE *otherEndptState,
+   VRG_BOOL link
+);
+
 /*
 *****************************************************************************
 ** FUNCTION:   endptPacket
@@ -2549,6 +2578,27 @@ typedef EPSTATUS ( *endptMuteConnection )
 );
 
 /*
+*****************************************************************************
+** FUNCTION:   endptSetCasState
+**
+** PURPOSE:    To set the CAS state of a given endpoint. Used by external CAS.
+**
+** PARAMETERS: endptState  - endpt object.
+**             lineId      - line number
+**             casState    - New CAS state to set to the given endpoint
+**
+** RETURNS:    EPSTATUS
+**
+*****************************************************************************
+*/
+typedef EPSTATUS ( *endptSendCasEvt )
+(
+   int                 lineId,
+   CAS_CTL_EVENT_TYPE  casEvtType,
+   CAS_CTL_EVENT       casCtlEvt 
+);
+
+/*
 ** Structure that contains all function pointers that define the endpt API.
 */
 typedef struct ENDPT_FUNCS
@@ -2558,6 +2608,7 @@ typedef struct ENDPT_FUNCS
    endptCreateConnection   createConnection;    /* Create connection to endpoint */
    endptModifyConnection   modifyConnection;    /* Modify existing connection */
    endptDeleteConnection   deleteConnection;    /* Delete connection */
+   endptLinkInternal       linkInternal;        /* Link or unlink two internal endpts */
    endptPacket             sendPacket;          /* Send endpt packet to connection */
    endptConsoleCmd         consoleCmd;          /* Display endpoint info to console */
    endptPowerSourceChanged powerSourceChanged;  /* Notify power source changed */
@@ -2565,6 +2616,7 @@ typedef struct ENDPT_FUNCS
    endptT38Statistics      t38Statistics;       /* T.38 statistics for the connection. */
    endptIsEnabled		   isEnabled;           /* Is the endpoint enabled*/
    endptMuteConnection     muteConnection;      /* Toggle mute status on a connection */
+   endptSendCasEvt         sendCasEvt;          /* Function used by external CAS to send CAS events to endpt */
 #if defined( NTR_SUPPORT )
    endptNtrCmd             ntrCmd;
 #endif /* NTR_SUPPORT */
@@ -2611,6 +2663,12 @@ typedef struct ENDPT_FUNCS
 
 #define endptMuteConnection( state, cxid, mute ) \
          ( (state)->endptFuncs ? (state)->endptFuncs->muteConnection( (state), (cxid), (mute) ) : EPSTATUS_ERROR )
+
+#define endptLinkInternal( state, otherState, link ) \
+         ( (state)->endptFuncs ? (state)->endptFuncs->linkInternal( (state), (otherState), (link) ) : EPSTATUS_ERROR )
+
+#define endptSendCasEvt( state, lineId, casEvtType, casCtlEvt ) \
+         ( (state)->endptFuncs ? (state)->endptFuncs->sendCasEvt( (lineId), (casEvtType), (casCtlEvt) ) : EPSTATUS_ERROR )
 
 #if defined( NTR_SUPPORT )
 #define endptNtrCmd( state, action, isEnbl, pcmStepsAdjust, localCount, ntrCount, ndivInt, ndivFrac ) \
