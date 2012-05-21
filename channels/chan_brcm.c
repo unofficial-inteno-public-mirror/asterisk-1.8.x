@@ -71,7 +71,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 static const char tdesc[] = "Brcm SLIC Driver";
 static const char config[] = "brcm.conf";
 
-ENDPTUSER_CTRLBLOCK endptUserCtrlBlock = {NULL, NULL, NULL, NOT_INITIALIZED, NOT_INITIALIZED};
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 
 static int num_fxs_endpoints = -1;
