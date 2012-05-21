@@ -114,5 +114,3 @@ static void brcm_create_fxs_endpoints(void);
 int brcm_signal_ringing(struct brcm_pvt *p);
 int brcm_stop_ringing(struct brcm_pvt *p);
 
-
-#endif // _ENDPOINTDRV_H_
