@@ -1589,7 +1589,7 @@ int brcm_signal_ringing(struct brcm_pvt *p)
 {
 
 	if (ringsignal)
-		vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 
 	return 0;
 }
@@ -1599,7 +1599,7 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 {
 
 	if (ringsignal)
-		vrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 
 	return 0;
 }
@@ -1671,7 +1671,7 @@ EPSTATUS vrgEndptDeinit( void )
 }
 
 
-EPSTATUS vrgEndptSignal
+EPSTATUS ovrgEndptSignal
 (
  ENDPT_STATE   *endptState,
  int            cnxId,
