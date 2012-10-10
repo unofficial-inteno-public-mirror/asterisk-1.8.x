@@ -95,6 +95,7 @@ enum rtp_type {
 EPSTATUS vrgEndptDriverOpen(void);
 EPSTATUS vrgEndptDriverClose(void);
 EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsigned int value, int duration, int period, int repetition);
+
 static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
 static int brcm_create_connection(struct brcm_pvt *p);
 static int brcm_close_connection(struct brcm_pvt *p);
@@ -113,4 +114,6 @@ static int brcm_get_endpoints_count(void);
 static void brcm_create_fxs_endpoints(void);
 int brcm_signal_ringing(struct brcm_pvt *p);
 int brcm_stop_ringing(struct brcm_pvt *p);
-
+int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p);
+int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p);
+int brcm_signal_callerid(struct brcm_pvt *p);

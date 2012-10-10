@@ -33,7 +33,6 @@
  * Enable T38 support
  * Enable V18 support
  * Ingress/egress gain
- * CID support
  */
 
 #include "asterisk.h"
@@ -82,6 +81,7 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int ringsignal = 1;
 static int silence = 0;
 static int timeoutmsec = 4000;
+static int clip = 1; // Caller ID presentation
 
 /* Dialtone variables */
 struct ast_tone_zone_sound *tzs = NULL;
@@ -94,6 +94,16 @@ static int dtmf_short = 1;
 static int codec_list[6] = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1};
 static int rtp_payload_list[6] = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1};
 static int codec_nr = 2;
+
+/* Caller ID */
+#define CLID_MAX_DATE	10
+#define CLID_MAX_NUMBER	16
+#define CLID_MAX_NAME	16
+typedef struct CLID_STRING
+{
+	char date[CLID_MAX_DATE];
+	char number_name[CLID_MAX_NUMBER + CLID_MAX_NAME + 4]; // 4 = comma, quotation marks and null terminator
+} CLID_STRING;
 
 /* Default context for dialtone mode */
 static char context[AST_MAX_EXTENSION] = "default";
@@ -159,11 +169,9 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	struct ast_tm tm;
 
 	p = ast->tech_pvt;
-	
-	
+
 	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", p->connection_id);
 	ast_localtime(&UtcTime, &tm, NULL);
-
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
@@ -171,7 +179,12 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 
 	p->channel_state = RINGING;
-	brcm_signal_ringing(p);
+	if (!clip) {
+		brcm_signal_ringing(p);
+	} else {
+		brcm_signal_ringing_callerid_pending(p);
+		brcm_signal_callerid(p);
+	}
 
   	ast_setstate(ast, AST_STATE_RINGING);
 	ast_queue_control(ast, AST_CONTROL_RINGING);
@@ -189,7 +202,11 @@ static int brcm_hangup(struct ast_channel *ast)
 		return 0;
 	}
 
-	brcm_stop_ringing(p);
+	if (!clip) {
+		brcm_stop_ringing(p);
+	} else {
+		brcm_stop_ringing_callerid_pending(p);
+	}
 	ast_mutex_lock(&p->lock);
 	ast_setstate(ast, AST_STATE_DOWN);
 
@@ -614,7 +631,7 @@ static void *brcm_monitor_packets(void *data)
 //					fr.samples = (pdata[14] << 8 | pdata[15]);
 //					fr.len = fr.samples / 8;
 				}
-				ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				ast_debug(9, "[%c, %ld] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 				fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
 				fr.subclass.integer = phone_2digit(pdata[12]);
@@ -627,7 +644,7 @@ static void *brcm_monitor_packets(void *data)
 				else
 					fr.frametype = AST_FRAME_NULL;
 
-				ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
+				ast_debug(9, "[%c, %ld] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
@@ -1055,6 +1072,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Echocancel    : %s\n", echocancel ? "on" : "off");
 	ast_cli(a->fd, "Ringsignal    : %s\n", ringsignal ? "on" : "off");	
+	ast_cli(a->fd, "Caller ID     : %s\n", clip ? "on" : "off");	
 	ast_cli(a->fd, "Silence surpr.: %s\n", silence ? "on" : "off");	
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
@@ -1358,11 +1376,6 @@ static int load_module(void)
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
-	
-	/* Initialize the endpoints */
-	endpt_init();
-	brcm_get_endpoints_count();
-	brcm_create_fxs_endpoints();
 
 	v = ast_variable_browse(cfg, "interfaces");
 	while(v) {
@@ -1382,6 +1395,8 @@ static int load_module(void)
 				endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 			else
 				ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
+		} else if (!strcasecmp(v->name, "clip")) {
+			clip = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "callerid")) {
 			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
@@ -1437,6 +1452,12 @@ static int load_module(void)
 
 		v = v->next;
 	}
+	
+	/* Initialize the endpoints */
+	endpt_init();
+	brcm_get_endpoints_count();
+	brcm_create_fxs_endpoints();
+
 	brcm_create_pvts(iflist, 0, txgain, rxgain);
 	brcm_assign_connection_id(iflist);
 	ast_mutex_unlock(&iflock);
@@ -1554,9 +1575,9 @@ static void brcm_create_fxs_endpoints(void)
 
 	/* Creating Endpt */
 	for ( i = 0; i < num_fxs_endpoints; i++ )
-		{
-			rc = vrgEndptCreate( i, i,(VRG_ENDPT_STATE *)&endptObjState[i] );
-		}
+	{
+		rc = vrgEndptCreate(i, i,(VRG_ENDPT_STATE *)&endptObjState[i]);
+	}
 }
 
 
@@ -1604,6 +1625,94 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 	return 0;
 }
 
+/* Prepare endpoint for ringing. Caller ID signal pending. */
+int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
+{
+	if (ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 1, -1, -1 , -1);
+	}
+
+	return 0;
+}
+
+int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
+{
+	if (ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 0, -1, -1 , -1);
+	}
+
+	return 0;
+}
+
+/*
+ * Send caller id message to endpoint.
+ * MMDDHHMM, number, name
+ * 'O' in number or name => not available
+ * 'P' in number or name => presentation not allowed
+ */
+int brcm_signal_callerid(struct brcm_pvt *p)
+{
+	if (ringsignal) {
+		CLID_STRING clid_string;
+		struct timeval utc_time;
+		struct ast_tm local_time;
+		char number[CLID_MAX_NUMBER];
+		char name[CLID_MAX_NAME];
+
+		/* Add datetime to caller id string, format: MMDDHHMM */
+		utc_time = ast_tvnow();
+		ast_localtime(&utc_time, &local_time, NULL);
+		sprintf(clid_string.date,
+			"%02d%02d%02d%02d, ",
+			local_time.tm_mon + 1,
+			local_time.tm_mday,
+			local_time.tm_hour,
+			local_time.tm_min);
+
+		/* Get connected line identity if valid and presentation is allowed */
+		if (p->owner) {
+			if ((ast_party_id_presentation(&p->owner->connected.id) & AST_PRES_RESTRICTION) == AST_PRES_ALLOWED) {
+				if (p->owner->connected.id.number.valid) {
+					strncpy(number, p->owner->connected.id.number.str, CLID_MAX_NAME);
+					number[CLID_MAX_NUMBER - 1] = '\0';
+				} else {
+					strcpy(number, "O\0");
+				}
+
+				if (p->owner->connected.id.name.valid) {
+					strncpy(name, p->owner->connected.id.name.str, CLID_MAX_NAME);
+					name[CLID_MAX_NAME - 1] = '\0';
+				} else {
+					strcpy(name, "O\0");
+				}
+			} else {
+				/* Number and/or name available but presentation is not allowed */
+				strcpy(number, "P\0");
+				strcpy(name, "P\0");
+			}
+		} else {
+			/* Name and number not available. Will probably not be reached */
+			strcpy(number, "0\0");
+			strcpy(name, "0\0");
+		}
+
+		/* Add number and name to caller id string, format: number,"name" */
+		int str_length = 0;
+		strncpy(&clid_string.number_name[str_length], number, CLID_MAX_NUMBER);
+		str_length = strlen(number);
+		clid_string.number_name[str_length++] = ',';
+		clid_string.number_name[str_length++] = '"';
+		strncpy(&clid_string.number_name[str_length], name, CLID_MAX_NAME);
+		str_length = strlen(clid_string.number_name);
+		clid_string.number_name[str_length++] = '"';
+		clid_string.number_name[str_length++] = '\0';
+
+		ast_log(LOG_DEBUG, "CLID string: %s\n", (char *) &clid_string);
+		return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID, (int)&clid_string, -1, -1 , -1);
+	}
+
+	return( EPSTATUS_SUCCESS );
+}
 
 EPSTATUS vrgEndptDriverOpen(void)
 {
@@ -1652,7 +1761,6 @@ EPSTATUS vrgEndptInit
 	tStartupParam.epStatus     = EPSTATUS_DRIVER_ERROR;
 	tStartupParam.size         = sizeof(ENDPOINTDRV_INIT_PARAM);
 
-
 	/* Check if kernel driver is opened */
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_INIT, &tStartupParam ) != IOCTL_STATUS_SUCCESS )
 		return ( tStartupParam.epStatus );
@@ -1669,7 +1777,7 @@ EPSTATUS vrgEndptDeinit( void )
 
 	return( EPSTATUS_SUCCESS );
 }
-
+ 
 
 EPSTATUS ovrgEndptSignal
 (
