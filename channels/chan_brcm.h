@@ -70,13 +70,11 @@ static struct brcm_pvt {
 	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int channel_state;		/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
-	unsigned int last_dialtone_ts;	/* Timestamp to send a continious dialtone */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
 	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
 	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
 	unsigned int ssrc;				/* Endpoint RTP synchronization source */
 	int codec;						/* Used codec */
-	unsigned int dt_counter;		/* dialtone counter */
 	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 } *iflist = NULL;
 
@@ -112,6 +110,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
 static int brcm_send_text(struct ast_channel *ast, const char *text);
 static int brcm_get_endpoints_count(void);
 static void brcm_create_fxs_endpoints(void);
+int brcm_signal_dialtone(struct brcm_pvt *p);
+int brcm_stop_dialtone(struct brcm_pvt *p);
 int brcm_signal_ringing(struct brcm_pvt *p);
 int brcm_stop_ringing(struct brcm_pvt *p);
 int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p);
