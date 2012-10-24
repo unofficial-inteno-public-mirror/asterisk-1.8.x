@@ -754,7 +754,7 @@ static void *brcm_monitor_events(void *data)
 						}
 
 						if (p->channel_state == OFFHOOK) {
-							ast_log(LOG_DEBUG, "Went off hook. Apply dialtone.\n");
+							/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
 							brcm_signal_dialtone(p);
 						}
 
@@ -771,7 +771,7 @@ static void *brcm_monitor_events(void *data)
 						ast_debug(9, "me: got mutex\n");
 
 						if (p->channel_state == OFFHOOK) {
-							ast_log(LOG_DEBUG, "Went on hook. Stop dialtone.\n");
+							/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
 							brcm_stop_dialtone(p);
 						}
 
