@@ -76,18 +76,14 @@ static int num_fxs_endpoints = -1;
 static int num_fxo_endpoints = -1;
 static int num_dect_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
-static int echocancel = 1;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
-static int ringsignal = 1;
-static int silence = 0;
-static int timeoutmsec = 4000;
 static int clip = 1; // Caller ID presentation
 
-static int dtmf_relay = EPDTMFRFC2833_ENABLED;
-static int dtmf_short = 1;
-static int codec_list[6] = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1};
-static int rtp_payload_list[6] = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1};
-static int codec_nr = 2;
+/* Dialtone variables */
+struct ast_tone_zone_sound *tzs = NULL;
+struct ast_tone_zone_part tone_data_g = {0};
+static unsigned char dialtone_gen[2880] = {0};
+static int dialtone_period = 0;
 
 /* Caller ID */
 #define CLID_MAX_DATE	10
@@ -99,85 +95,35 @@ typedef struct CLID_STRING
 	char number_name[CLID_MAX_NUMBER + CLID_MAX_NAME + 4]; // 4 = comma, quotation marks and null terminator
 } CLID_STRING;
 
-/* Mapping of DTMF to char/name */
-typedef struct DTMF_CHARNAME_MAP
-{
-	EPEVT	event;
-	char	name[12];
-	char	c;
-} DTMF_CHARNAME_MAP;
-
-static const DTMF_CHARNAME_MAP dtmf_to_charname[] =
-{
-	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
-	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
-	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
-	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
-	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
-	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
-	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
-	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
-	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
-	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
-	{EPEVT_DTMFH, "EPEVT_DTMFH", 'h'},
-	{EPEVT_DTMFS, "EPEVT_DTMFS", 's'},
-	{EPEVT_LAST,  "EPEVT_LAST", '-'}
-};
-
-/* List of supported country name, ISO 3166-1 alpha-3 codes */
-typedef struct COUNTRY_TABLE
-{
-	VRG_COUNTRY	vrgCountry;
-	char		isoCode[3];
-} COUNTRY_MAP;
-
-static const COUNTRY_MAP country_map[] =
-{
-	{VRG_COUNTRY_AUSTRALIA,			"AUS"},
-	{VRG_COUNTRY_BELGIUM,			"BEL"},
-	{VRG_COUNTRY_BRAZIL,			"BRA"},
-	{VRG_COUNTRY_CHILE,			"CHL"},
-	{VRG_COUNTRY_CHINA,	 		"CHN"},
-	{VRG_COUNTRY_CZECH, 			"CZE"},
-	{VRG_COUNTRY_DENMARK, 			"DNK"},
-	{VRG_COUNTRY_ETSI, 			"ETS"}, //Not really an iso code
-	{VRG_COUNTRY_FINLAND, 			"FIN"},
-	{VRG_COUNTRY_FRANCE, 			"FRA"},
-	{VRG_COUNTRY_GERMANY, 			"DEU"},
-	{VRG_COUNTRY_HUNGARY,			"HUN"},
-	{VRG_COUNTRY_INDIA,			"IND"},
-	{VRG_COUNTRY_ITALY, 			"ITA"},
-	{VRG_COUNTRY_JAPAN,	 		"JPN"},
-	{VRG_COUNTRY_NETHERLANDS, 		"NLD"},
-	{VRG_COUNTRY_NEW_ZEALAND, 		"NZL"},
-	{VRG_COUNTRY_NORTH_AMERICA, 		"USA"},
-	{VRG_COUNTRY_SPAIN, 			"ESP"},
-	{VRG_COUNTRY_SWEDEN,			"SWE"},
-	{VRG_COUNTRY_SWITZERLAND, 		"CHE"},
-	{VRG_COUNTRY_NORWAY, 			"NOR"},
-	{VRG_COUNTRY_TAIWAN,	 		"TWN"},
-	{VRG_COUNTRY_UK,		 	"GBR"},
-	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
-	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
-	{VRG_COUNTRY_MAX, 			"-"}
-};
-
-/* Default context for dialtone mode */
-static char context[AST_MAX_EXTENSION] = "default";
-
 typedef struct {
 	int		id;
 	char	extension[AST_MAX_EXTENSION];
 } autodial;
 
-static autodial autodial_ext[4] = {{0}};
-static int autodial_nr = 0;
+/* Struct for individual endpoint settings */
+typedef struct {
+	int silence;
+	char language[MAX_LANGUAGE];
+	char cid_num[AST_MAX_EXTENSION];
+	char cid_name[AST_MAX_EXTENSION];
+	char context[AST_MAX_EXTENSION]; //Default context for dialtone mode
+	autodial autodial_ext[4];
+	int autodial_nr;
+	int echocancel;
+	int txgain;
+	int rxgain;
+	int dtmf_relay;
+	int dtmf_short;
+	int codec_list[6];
+	int codec_nr;
+	int rtp_payload_list[6];
+	int ringsignal;
+	int timeoutmsec;
+	CODEC_PKT_PERIOD period;
+	int comfort_noise;
+} fxs_settings;
 
-
-/* Default language */
-static char language[MAX_LANGUAGE] = "";
-static format_t prefformat = AST_FORMAT_ALAW | AST_FORMAT_ULAW;
-
+static fxs_settings fxs_config[MAX_NUM_LINEID];
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
@@ -187,8 +133,6 @@ static unsigned int packets;
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
 static pthread_t packet_thread = AST_PTHREADT_NULL;
-static char cid_num[AST_MAX_EXTENSION];
-static char cid_name[AST_MAX_EXTENSION];
 
 static struct ast_channel_tech *cur_tech;
 
@@ -199,8 +143,6 @@ AST_MUTEX_DEFINE_STATIC(iflock);
    when it's doing something critical. */
 AST_MUTEX_DEFINE_STATIC(monlock);
 AST_MUTEX_DEFINE_STATIC(ioctl_lock);
-
-
 
 /* exported capabilities */
 static const struct ast_channel_tech brcm_tech = {
@@ -214,9 +156,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,
 	.write = brcm_write,
 };
-
-
-
 
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
@@ -290,6 +229,9 @@ static int brcm_answer(struct ast_channel *ast)
 	return 0;
 }
 
+/*
+* Map RTP data header value to a codec name
+*/
 static char* brcm_get_codec_string(int id) {
 	switch (id) {
 			case PCMA:		return "alaw"; break;
@@ -302,6 +244,9 @@ static char* brcm_get_codec_string(int id) {
 	}
 }
 
+/*
+* Map rtp packet header value to corresponding asterisk codec
+*/
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
 		case PCMU: return AST_FORMAT_ULAW;
@@ -317,7 +262,6 @@ static int map_rtp_to_ast_codec_id(int id) {
 	}
 }
 
-
 static int brcm_classify_rtp_packet(int id) {
 	switch (id) {
 		case PCMU: return BRCM_AUDIO;
@@ -325,14 +269,13 @@ static int brcm_classify_rtp_packet(int id) {
 		case G723: return BRCM_AUDIO;
 		case PCMA: return BRCM_AUDIO;
 		case G729: return BRCM_AUDIO;
-		case DTMF: return dtmf_short ? BRCM_DTMF : BRCM_DTMFBE;
+		case DTMF: return BRCM_DTMF;
 		case RTCP: return BRCM_RTCP;
 		default:
 			ast_verbose("Unknown rtp packet id %d\n", id);
 			return BRCM_UNKNOWN;
 	}
 }
-
 
 static int map_ast_codec_id_to_rtp(int id) {
 	switch (id) {
@@ -349,14 +292,100 @@ static int map_ast_codec_id_to_rtp(int id) {
 	}
 }
 
+/*
+* Map brcm codec enum to asterisk codec enum
+*/
+static int map_codec_brcm_to_ast(int id) {
+	switch (id) {
+		case CODEC_PCMU:		return AST_FORMAT_ULAW;
+		case CODEC_PCMA:		return AST_FORMAT_ALAW;
+		case CODEC_G7231_53:	return AST_FORMAT_G723_1;
+		case CODEC_G7231_63:	return AST_FORMAT_G723_1;
+		case CODEC_G726_32:		return AST_FORMAT_G726;
+		case CODEC_G729A:		return AST_FORMAT_G729A;
+		default:				return -1;
+	}
+}
+
+static int map_codec_ast_to_brcm(int id) {
+	switch (id) {
+		case AST_FORMAT_ULAW:	return CODEC_PCMU;
+		case AST_FORMAT_ALAW:	return CODEC_PCMA;
+		case AST_FORMAT_G723_1:	return CODEC_G7231_63; //Asterisk does not indicate which bitrate to use
+		case AST_FORMAT_G726:	return CODEC_G726_32; //32 is the only supported bitrate in asterisk
+		case AST_FORMAT_G729A:	return CODEC_G729A;
+		default:				return -1;
+	}
+}
 
 static struct ast_frame  *brcm_read(struct ast_channel *ast)
 {
 	return &ast_null_frame;
 }
 
+static int map_codec_ast_to_brcm_rtp(int id) {
+	switch (id) {
+		case AST_FORMAT_ULAW:	return RTP_PAYLOAD_PCMU;
+		case AST_FORMAT_ALAW:	return RTP_PAYLOAD_PCMA;
+		case AST_FORMAT_G723_1:	return RTP_PAYLOAD_G723;
+		case AST_FORMAT_G726:	return RTP_PAYLOAD_G726_32; //32 is the only supported bitrate in asterisk
+		case AST_FORMAT_G729A:	return RTP_PAYLOAD_G729;
+		default:				return -1;
+	}
+}
 
+static char* brcm_codec_to_string(int id) {
+	switch (id) {
+		case CODEC_NULL: return "NULL";
+		case CODEC_PCMU: return "G.711 ulaw";
+		case CODEC_PCMA: return "G.711 alaw";
+		case CODEC_G726_16: return "G.726 - 16 kbps";
+		case CODEC_G726_24: return "G.726 - 24 kbps";
+		case CODEC_G726_32: return "G.726 - 32 kbps";
+		case CODEC_G726_40: return "G.726 - 40 kbps";
+		case CODEC_G7231_53: return "G.723.1 - 5.3 kbps";
+		case CODEC_G7231_63: return "G.723.1 - 6.3 kbps";
+		case CODEC_G7231A_53: return "G.723.1A - 5.3 kbps";
+		case CODEC_G7231A_63: return "G.723.1A - 6.3 kbps";
+		case CODEC_G729A: return "G.729A";
+		case CODEC_G729B: return "G.729B";
+		case CODEC_G711_LINEAR: return "Linear media queue data";
+		case CODEC_G728: return "G.728";
+		case CODEC_G729: return "G.729";
+		case CODEC_G729E: return "G.729E";
+		case CODEC_BV16: return "BRCM Broadvoice - 16 kbps";
+		case CODEC_BV32: return "BRCM Broadvoice - 32 kbps";
+		case CODEC_NTE: return "Named telephone events";
+		case CODEC_ILBC_20: return "iLBC speech coder - 20 ms frame / 15.2 kbps";
+		case CODEC_ILBC_30: return "iLBC speech coder - 30 ms frame / 13.3 kbps";
+		case CODEC_G7231_53_VAR: return "G723.1 variable rates (preferred=5.3)";
+		case CODEC_G7231_63_VAR: return "G723.1 variable rates (preferred=6.3)";
+		case CODEC_G7231_VAR: return "G723.1 variable rates";
+		case CODEC_T38: return "T.38 fax relay";
+		case CODEC_T38_MUTE: return "Mute before switching to T.38 fax relay";
+		case CODEC_RED: return "Redundancy - RFC 2198";
+		case CODEC_G722_MODE_1: return "G.722 Mode 1 64 kbps";
+		case CODEC_LINPCM128: return "Narrowband linear PCM @ 128 Kbps";
+		case CODEC_LINPCM256: return "Wideband linear PCM @ 256 Kbps";
+		case CODEC_DYNAMIC: return "Dynamic";
+		default: return "Unknown";
+	}
+}
 
+static char* brcm_rtppayload_to_string(int id) {
+	switch (id) {
+		case RTP_PAYLOAD_PCMU: return "G.711 mu-law 64 kbps";
+		case RTP_PAYLOAD_G726_32: return "G.726-32";
+		case RTP_PAYLOAD_G723: return "G.723";
+		case RTP_PAYLOAD_PCMA: return "G.711 A-law 64 kbps";
+		case RTP_PAYLOAD_CNA: return "Comfort noise";
+		case RTP_PAYLOAD_G728: return "G.728";
+		case RTP_PAYLOAD_G729: return "G.729";
+		case RTP_PAYLOAD_CN: return "Comfort noise";
+		case RTP_PAYLOAD_INVALID: return "Invalid payload";
+		default: return "Unknown payload";
+	}
+}
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
@@ -404,19 +433,47 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	return 0;
 }
 
-/* Tell endpoint to play country specific dialtone. */
-int brcm_signal_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 1, -1, -1 , -1);
+
+static void brcm_send_dialtone(struct brcm_pvt *p) {
+	EPPACKET epPacket_send;
+	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
+	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+
+	/* send rtp packet to the endpoint */
+	epPacket_send.mediaType   = 0;
+
+	/* copy frame data to local buffer */
+	memcpy(&packet_buffer[12], &dialtone_gen[p->dt_counter], 160);
+	p->dt_counter += 160;
+	if (p->dt_counter >=dialtone_period) p->dt_counter = 0;
+
+	/* add buffer to outgoing packet */
+	epPacket_send.packetp = packet_buffer;
+
+	/* generate the rtp header */
+	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
+
+	/* set rtp id sent to endpoint */
+	p->codec = PCMU;
+
+	tPacketParm_send.cnxId       = p->connection_id;
+	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tPacketParm_send.length      = 12 + 160;
+	tPacketParm_send.bufDesc     = (int)&epPacket_send;
+	tPacketParm_send.epPacket    = &epPacket_send;
+	tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
+	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+
+	if (p->connection_init) {
+		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+			ast_verbose("%s: error during ioctl", __FUNCTION__);
+	}
 }
 
-int brcm_stop_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 0, -1, -1 , -1);
-}
 
-static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid)
+static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid, format_t format)
 {
 	struct ast_channel *tmp;
-	int fmt;
 
 	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "BRCM/%d", i->connection_id);
 
@@ -424,17 +481,23 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		tmp->tech = cur_tech;
 		/* ast_channel_set_fd(tmp, 0, i->fd); */
 
+		/* find out which codec to use */
+		format_t fmt = format;
+		if (fmt == 0) {
+			//We got free hands to choose codec, so take the first one from our list
+			//This is exactly what is done in create_connection if no owner is speced
+			fxs_settings *s = &fxs_config[i->connection_id];
+			fmt = map_codec_brcm_to_ast(s->codec_list[0]);
+		}
+
 		/* set codecs */
-		//tmp->nativeformats  = prefformat;
-		tmp->rawreadformat  = prefformat;
-		tmp->rawwriteformat = prefformat;
-		tmp->nativeformats  = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1;
-		//fmt = ast_best_codec(tmp->nativeformats);
-		fmt = AST_FORMAT_ALAW;
 		tmp->writeformat = fmt;
 		tmp->rawwriteformat = fmt;
 		tmp->readformat = fmt;
 		tmp->rawreadformat = fmt;
+		
+		//TODO: should we set nativeformats according to conf? but the tech_pvt contains a hardcoded list...
+		tmp->nativeformats  = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1;
 
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -445,6 +508,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 			ast_copy_string(tmp->exten, i->ext, sizeof(tmp->exten));
 		else
 			strcpy(tmp->exten, "s");
+
 		if (!ast_strlen_zero(i->language))
 			ast_string_field_set(tmp, language, i->language);
 
@@ -507,8 +571,20 @@ static void *brcm_event_handler(void *data)
 		/* loop over all pvt's */
 		while(p) {
 			int autodial = 0;
-
+			/* If off hook send dialtone every 20 ms*/
 			ast_mutex_lock(&p->lock);
+			if (p->channel_state == OFFHOOK) {
+
+				if (!p->last_dialtone_ts) p->last_dialtone_ts = ts;
+
+				if (ts > p->last_dialtone_ts + 20) {
+					if (!p->connection_init)
+						brcm_create_connection(p);
+
+					brcm_send_dialtone(p);
+					p->last_dialtone_ts = p->last_dialtone_ts + 20;
+				}
+			}
 
 //			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 //				ast_verbose("ts - last_dtmf_ts > 2000\n");
@@ -522,7 +598,7 @@ static void *brcm_event_handler(void *data)
 
 			/* Check if the dtmf string matches anything in the dialplan */
 			if ((((p->channel_state == DIALING) &&
-			    (ts - p->last_dtmf_ts > timeoutmsec)) || autodial) &&
+			    (ts - p->last_dtmf_ts > (fxs_config[p->connection_id].timeoutmsec))) || autodial) &&
 			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
 			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
 			    ) {
@@ -541,7 +617,7 @@ static void *brcm_event_handler(void *data)
 				if (!p->connection_init)
 					brcm_create_connection(p);
 
-				brcm_new(p, AST_STATE_UP, p->context, NULL);
+				brcm_new(p, AST_STATE_UP, p->context, NULL, 0);
 
 			}
 
@@ -578,24 +654,6 @@ static void *brcm_event_handler(void *data)
 		}							\
 	}
 
-static void handle_dtmf(EPEVT event, struct brcm_pvt *p)
-{
-	const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
-	struct timeval tim;
-
-	/* Lookup event to find coresponding DTMF */
-	while (dtmfMap->event != event) {
-		dtmfMap++;
-		if (dtmfMap->event == EPEVT_LAST) {
-			/* DTMF not found. Should not be reached. */
-			ast_log(LOG_WARNING, "Failed to handle DTMF. Event not found.\n");
-			return;
-		}
-	}
-
-	ast_log(LOG_DEBUG, "Handle DTMF %s\n", dtmfMap->name);
-	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
-}
 
 static char phone_2digit(char c)
 {
@@ -637,48 +695,80 @@ static void *brcm_monitor_packets(void *data)
 
 			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
 			
+			if (tPacketParm.length <= 2) {
+				ast_log(LOG_WARNING, "Ignoring RTP package - too short\n");
+				continue;
+			}
+
 			/* Classify the rtp packet */
-			if (tPacketParm.length > 2)
-				rtp_packet_type = brcm_classify_rtp_packet(pdata[1]);
+			rtp_packet_type = brcm_classify_rtp_packet(pdata[1]);
 
 			/* Handle rtp packet accoarding to classification */
-			if ((rtp_packet_type == BRCM_AUDIO) && (tPacketParm.length == 172) && p) {
-				//RTP id marker
+			if ((rtp_packet_type == BRCM_AUDIO) && p) {
 				if (pdata[0] == 0x80) {
-					fr.data.ptr =  (pdata + 12);
-					fr.samples = 160;
-					fr.datalen = tPacketParm.length - 12;
 					fr.frametype = AST_FRAME_VOICE;
-					fr.subclass.codec = map_rtp_to_ast_codec_id(pdata[1]);
 					fr.offset = 0;
-//					fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-//					fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-				}
-			} else if (rtp_packet_type == BRCM_DTMFBE) {
-				//				ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					fr.data.ptr =  (pdata + 12);
+					fr.datalen = tPacketParm.length - 12;
+					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
-				//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-				//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-				fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
-				fr.subclass.integer = phone_2digit(pdata[12]);
-				if (fr.frametype == AST_FRAME_DTMF_END) {
-//					fr.samples = (pdata[14] << 8 | pdata[15]);
-//					fr.len = fr.samples / 8;
+					switch (pdata[1]) {
+						case PCMU:
+							fr.subclass.codec = AST_FORMAT_ULAW;
+							fr.samples = 160;
+							break;
+						case PCMA:
+							fr.subclass.codec = AST_FORMAT_ALAW;
+							fr.samples = 160;
+							break;
+						case G726:
+							fr.subclass.codec = AST_FORMAT_G726;
+							fr.samples = 80; //for 10 ms frame size
+							break;
+						case G723:
+							fr.subclass.codec = AST_FORMAT_G723_1;
+							fr.samples = 240;
+							break;
+						case G729:
+							fr.subclass.codec = AST_FORMAT_G729A;
+							fr.samples = 80; //for 10 ms frame size
+							break;
+						default:
+							ast_log(LOG_WARNING, "Unknown rtp codec id [%d]\n", pdata[1]);
+							break;
+					}
 				}
-				ast_debug(9, "[%c, %ld] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			} else if  (rtp_packet_type == BRCM_DTMF) {
-				fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
-				fr.subclass.integer = phone_2digit(pdata[12]);
+				int dtmf_short = fxs_config[p->connection_id].dtmf_short;
 
-				if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
-					current_dtmf_digit = -1;
+				if (dtmf_short) {
+					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
+					fr.subclass.integer = phone_2digit(pdata[12]);
 
-				if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
-					current_dtmf_digit = fr.subclass.integer;
-				else
-					fr.frametype = AST_FRAME_NULL;
+					if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
+						current_dtmf_digit = -1;
 
-				ast_debug(9, "[%c, %ld] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
+					if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
+						current_dtmf_digit = fr.subclass.integer;
+					else
+						fr.frametype = AST_FRAME_NULL;
+
+					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
+				}
+				else {
+					/* Use DTMFBE instead */
+					//ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+					fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
+					fr.subclass.integer = phone_2digit(pdata[12]);
+					if (fr.frametype == AST_FRAME_DTMF_END) {
+						//fr.samples = (pdata[14] << 8 | pdata[15]);
+						//fr.len = fr.samples / 8;
+					}
+					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				}
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
@@ -752,12 +842,6 @@ static void *brcm_monitor_events(void *data)
 							ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 							p->channel_state = INCALL;
 						}
-
-						if (p->channel_state == OFFHOOK) {
-							/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
-							brcm_signal_dialtone(p);
-						}
-
 						ast_mutex_unlock(&p->lock);
 						ast_debug(9, "me: unlocked mutex\n");
 
@@ -769,12 +853,6 @@ static void *brcm_monitor_events(void *data)
 
 						ast_mutex_lock(&p->lock);
 						ast_debug(9, "me: got mutex\n");
-
-						if (p->channel_state == OFFHOOK) {
-							/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
-							brcm_stop_dialtone(p);
-						}
-
 						p->channel_state = ONHOOK;
 						ast_verbose("Sending manager event\n");
 						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->connection_id);
@@ -784,6 +862,7 @@ static void *brcm_monitor_events(void *data)
 						p->dtmf_len          = 0;
 						p->dtmf_first        = -1;
 						p->dtmfbuf[p->dtmf_len] = '\0';
+						p->last_dialtone_ts = 0;
 						brcm_close_connection(p);
 
 						if(p->owner) {
@@ -793,28 +872,18 @@ static void *brcm_monitor_events(void *data)
 						ast_debug(9, "me: unlocked mutex\n");
 						break;
 
-					case EPEVT_DTMF0:
-					case EPEVT_DTMF1:
-					case EPEVT_DTMF2:
-					case EPEVT_DTMF3:
-					case EPEVT_DTMF4:
-					case EPEVT_DTMF5:
-					case EPEVT_DTMF6:
-					case EPEVT_DTMF7:
-					case EPEVT_DTMF8:
-					case EPEVT_DTMF9:
-					case EPEVT_DTMFS:
-					case EPEVT_DTMFH:
-					{
-						unsigned int old_state = p->channel_state;
-						handle_dtmf(tEventParm.event, p);
-						if (p->channel_state == DIALING && old_state != p->channel_state) {
-							/* DTMF event took channel state to DIALING. Stop dial tone. */
-							ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-							brcm_stop_dialtone(p); 
-						}
-						break;
-					}
+					case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
+					case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
+					case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
+					case EPEVT_DTMF3: DTMF_CHECK('3', "EPEVT_DTMF3"); break;
+					case EPEVT_DTMF4: DTMF_CHECK('4', "EPEVT_DTMF4"); break;
+					case EPEVT_DTMF5: DTMF_CHECK('5', "EPEVT_DTMF5"); break;
+					case EPEVT_DTMF6: DTMF_CHECK('6', "EPEVT_DTMF6"); break;
+					case EPEVT_DTMF7: DTMF_CHECK('7', "EPEVT_DTMF7"); break;
+					case EPEVT_DTMF8: DTMF_CHECK('8', "EPEVT_DTMF8"); break;
+					case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
+					case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
+					case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
 					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
 					case EPEVT_EARLY_OFFHOOK: ast_verbose("EPEVT_EARLY_OFFHOOK\n"); break;
 					case EPEVT_EARLY_ONHOOK: ast_verbose("EPEVT_EARLY_ONHOOK\n"); break;
@@ -905,16 +974,31 @@ static int start_threads(void)
 	return 0;
 }
 
+/* Load settings for each fxs line */
+static void brcm_initialize_pvt(struct brcm_pvt *p)
+{
+	fxs_settings *s = &fxs_config[p->connection_id];
+
+	ast_copy_string(p->language, s->language, sizeof(p->language));
+	ast_copy_string(p->context, s->context, sizeof(p->context));
+	ast_copy_string(p->cid_num, s->cid_num, sizeof(p->cid_num));
+	ast_copy_string(p->cid_name, s->cid_name, sizeof(p->cid_name));
+	p->txgain = s->txgain;
+	p->rxgain = s->rxgain;
+}
+
 static void brcm_fill_autodial(struct brcm_pvt *p) {
 	int i;
+	fxs_settings *s = &fxs_config[p->connection_id];
 
-	for (i=0 ; i<autodial_nr ; i++) {
-		if (p->connection_id == autodial_ext[i].id)
-			ast_copy_string(p->autodial, autodial_ext[i].extension, sizeof(p->autodial));
+	for (i=0 ; i<s->autodial_nr ; i++) {
+		if (p->connection_id == s->autodial_ext[i].id)
+			ast_copy_string(p->autodial, s->autodial_ext[i].extension, sizeof(p->autodial));
 	}
 }
 
-static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, int txgain, int rxgain)
+
+static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 {
 	/* Make a brcm_pvt structure for this interface */
 	struct brcm_pvt *tmp;
@@ -928,33 +1012,29 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type, 
 		tmp->lastformat = -1;
 		tmp->lastinput = -1;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
-		ast_copy_string(tmp->language, language, sizeof(tmp->language));
-		ast_copy_string(tmp->context, context, sizeof(tmp->context));
 		tmp->next = NULL;
-		ast_copy_string(tmp->cid_num, cid_num, sizeof(tmp->cid_num));
-		ast_copy_string(tmp->cid_name, cid_name, sizeof(tmp->cid_name));
-		tmp->txgain = txgain;
-		tmp->rxgain = rxgain;
 		tmp->last_dtmf_ts = 0;
 		tmp->channel_state = ONHOOK;
 		tmp->connection_init = 0;
+		tmp->last_dialtone_ts = 0;
 		tmp->endpoint_type = endpoint_type;
 		tmp->time_stamp = 0;
 		tmp->sequence_number = 0;
 		tmp->ssrc = 0;
 		tmp->codec = -1;
+		tmp->dt_counter = 0;
 	}
 	return tmp;
 }
 
 
-static void brcm_create_pvts(struct brcm_pvt *p, int mode, int txgain, int rxgain) {
+static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 	int i;
 	struct brcm_pvt *tmp = iflist;
 	struct brcm_pvt *tmp_next;
 
 	for (i=0 ; i<num_fxs_endpoints ; i++) {
-		tmp_next = brcm_allocate_pvt("", FXS, txgain, rxgain);
+		tmp_next = brcm_allocate_pvt("", FXS);
 		if (tmp != NULL) {
 			tmp->next = tmp_next;
 			tmp_next->next = NULL;
@@ -976,6 +1056,7 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
 		tmp->connection_id = endptObjState[i].lineId;
 		brcm_fill_autodial(tmp);
+		brcm_initialize_pvt(tmp);
 		tmp = tmp->next;
 	}
 }
@@ -1009,7 +1090,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 
 	ast_mutex_lock(&p->lock);
 	if ((!p->owner) && (!p->connection_init)) {
-		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL);
+		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL, format);
 	} else {
 		*cause = AST_CAUSE_BUSY;
 	}
@@ -1089,9 +1170,58 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
 		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
 		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
+		ast_cli(a->fd, "Dialtone counter    : %d\n", p->dt_counter);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
 		ast_cli(a->fd, "Codec used          : %s\n", brcm_get_codec_string(p->codec));
-		
+
+		fxs_settings* s = &fxs_config[p->connection_id];
+
+		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
+		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
+		ast_cli(a->fd, "DTMF short          : %s\n", s->dtmf_short ? "on" : "off");
+		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
+
+		ast_cli(a->fd, "DTMF relay          : ");
+		switch (s->dtmf_relay) {
+			case EPDTMFRFC2833_DISABLED:  ast_cli(a->fd, "InBand\n");  break;
+			case EPDTMFRFC2833_ENABLED:   ast_cli(a->fd, "RFC2833\n");  break;
+			case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "RFC2833_SUBTRACT\n"); break;
+			default: ast_cli(a->fd, "Unknown\n");
+		}
+
+		ast_cli(a->fd, "Silence supr.       : ");
+		switch (s->silence) {
+			case 0: ast_cli(a->fd, "off\n"); break;
+			case 1: ast_cli(a->fd, "transparent\n"); break;
+			case 2: ast_cli(a->fd, "conservative\n"); break;
+			case 3: ast_cli(a->fd, "aggressive\n"); break;
+			default: ast_cli(a->fd, "unknown\n"); break;
+		}
+
+		ast_cli(a->fd, "Comfort Noise       : ");
+		switch (s->comfort_noise) {
+		    case 0: ast_cli(a->fd, "off\n"); break;
+            case 1: ast_cli(a->fd, "white\n"); break;
+            case 2: ast_cli(a->fd, "hot\n"); break;
+            case 3: ast_cli(a->fd, "estimate\n"); break;
+            default: ast_cli(a->fd, "unknown\n"); break;
+		}
+
+		int j;
+		ast_cli(a->fd, "Codec list          : ");
+		for (j = 0 ; j < s->codec_nr ; j++) {
+			switch (s->codec_list[j]) {
+				case CODEC_PCMA:        ast_cli(a->fd, "alaw, ");  break;
+				case CODEC_PCMU:        ast_cli(a->fd, "ulaw, ");  break;
+				case CODEC_G7231_63:    ast_cli(a->fd, "g723.1, "); break;
+				case CODEC_G726_24:     ast_cli(a->fd, "g726_24, "); break;
+				case CODEC_G726_32:     ast_cli(a->fd, "g726_32, "); break;
+				case CODEC_G729A:        ast_cli(a->fd, "g729A, "); break;
+				default: ast_cli(a->fd, "[%d] config error, ", s->codec_list[j]);
+			}
+		}
+		ast_cli(a->fd, "\n");
+
 		i++;
 		p = brcm_get_next_pvt(p);
 	}
@@ -1105,8 +1235,6 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 
 static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	int i;
-
 	if (cmd == CLI_INIT) {
 		e->command = "brcm show status";
 		e->usage =
@@ -1122,37 +1250,13 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
-	ast_cli(a->fd, "Echocancel    : %s\n", echocancel ? "on" : "off");
-	ast_cli(a->fd, "Ringsignal    : %s\n", ringsignal ? "on" : "off");	
-	ast_cli(a->fd, "Caller ID     : %s\n", clip ? "on" : "off");	
-	ast_cli(a->fd, "Silence surpr.: %s\n", silence ? "on" : "off");	
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
-	ast_cli(a->fd, "Dialout msecs : %d\n", timeoutmsec);
+	ast_cli(a->fd, "Dialtone per. : %d\n", dialtone_period);
 
-	ast_cli(a->fd, "DTMF relay    : ");
-	switch (dtmf_relay) {
-		case EPDTMFRFC2833_DISABLED:  ast_cli(a->fd, "InBand\n");  break;
-		case EPDTMFRFC2833_ENABLED:   ast_cli(a->fd, "RFC2833\n");  break;
-		case EPDTMFRFC2833_SUBTRACT:  ast_cli(a->fd, "RFC2833_SUBTRACT\n"); break;
-		default: ast_cli(a->fd, "Unknown\n");
-	}
-	ast_cli(a->fd, "DTMF short    : %s\n", dtmf_short ? "on" : "off");
-	ast_cli(a->fd, "Codec list    : ");
-	for (i=0 ; i<codec_nr ; i++) {
-		switch (codec_list[i]) {
-			case CODEC_PCMA:        ast_cli(a->fd, "alaw, ");  break;
-			case CODEC_PCMU:        ast_cli(a->fd, "ulaw, ");  break;
-			case CODEC_G7231_63:    ast_cli(a->fd, "g723.1, "); break;
-			case CODEC_G726_32:     ast_cli(a->fd, "g726, "); break;
-			case CODEC_G729:        ast_cli(a->fd, "g729, "); break;
-			default: ast_cli(a->fd, "[%d] config error, ", codec_list[codec_nr]);
-		}
-	}
-	ast_cli(a->fd, "\n");
-
+	/* print status for individual pvts */
 	brcm_show_pvts(a);
 
 	return CLI_SUCCESS;
@@ -1163,53 +1267,150 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	int on_off = 0;
 
 	if (cmd == CLI_INIT) {
-		e->command = "brcm set {dtmf_short|echocancel|ringsignal|silence} {on|off}";
+		e->command = "brcm set {dtmf_short|echocancel|ringsignal} {on|off}";
 		e->usage =
-			"Usage: brcm set {dtmf_short|echocancel|ringsignal|silence} {on|off}\n"
+			"Usage: brcm set {dtmf_short|echocancel|ringsignal} {on|off} PvtNr\n"
 			"       dtmf_short, dtmf sending mode.\n"
 			"       echocancel, echocancel mode.\n"
 			"       ringsignal, ring signal mode.\n"
-			"       silence, silence surpression.";
+			"       PvtNr, the Pvt to modify.\n";
 		return NULL;
-	} else if (cmd == CLI_GENERATE)
+	} else if (cmd == CLI_GENERATE) {
 		return NULL;
+	}
+
+	if (a->argc <= 4) {
+		return CLI_SHOWUSAGE; //Too few arguments
+	}
 	
-	if (!strcasecmp(a->argv[3], "on"))
+	int pvt_id = atoi(a->argv[4]);
+	if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+		return CLI_SHOWUSAGE;
+	}
+	fxs_settings *s = &fxs_config[pvt_id];
+
+	if (!strcasecmp(a->argv[3], "on")) {
 		on_off = 1;
-	else
+	} else {
 		on_off = 0;
-	
+	}
+
 	if (!strcasecmp(a->argv[2], "dtmf_short")) {
-		dtmf_short = on_off;
+		s->dtmf_short = on_off;
 	} else if (!strcasecmp(a->argv[2], "echocancel")) {
-		echocancel = on_off;
+		s->echocancel = on_off;
 	} else if (!strcasecmp(a->argv[2], "ringsignal")) {
-		ringsignal = on_off;
-	} else if (!strcasecmp(a->argv[2], "silence")) {
-		silence= on_off;
-	} 
-	
+		s->ringsignal = on_off;
+	}	
 	return CLI_SUCCESS;
 }
 
+/*
+ * Set Voice Activity Detection (a.k.a silence suppression) from CLI
+ */
+static char *brcm_set_vad(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	if (cmd == CLI_INIT) {
+		e->command = "brcm set silence {off|transparent|conservative|aggressive}";
+		e->usage =
+			"Usage: brcm set silence {off|transparent|conservative|aggressive} PvtNr\n"
+			"       control Voice Activity Detection.\n"
+			"       PvtNr, the Pvt to modify.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE) {
+		return NULL;
+	}
+	
+	if (a->argc <= 4) {
+		return CLI_SHOWUSAGE;
+	}
+
+    int pvt_id = atoi(a->argv[4]);
+    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+        return CLI_SHOWUSAGE;
+    }
+    fxs_settings *s = &fxs_config[pvt_id];
+
+	if (!strcasecmp(a->argv[3], "off")) {
+		s->silence = 0;
+	} else if (!strcasecmp(a->argv[3], "transparent")) {
+		s->silence = 1;
+	} else if (!strcasecmp(a->argv[3], "conservative")) {
+		s->silence = 2;
+	} else if (!strcasecmp(a->argv[3], "aggressive")) {
+		s->silence = 3;
+	}
+
+	return CLI_SUCCESS;
+}
+
+/*
+ * Set Comfort Noise Generation from CLI
+ */
+static char *brcm_set_cng(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+    if (cmd == CLI_INIT) {
+        e->command = "brcm set comfortnoise {off|white|hot|estimate}";
+        e->usage =
+            "Usage: brcm set comfortnoise {off|white|hot|estimate} PvtNr\n"
+            "       control Comfort Noise Generation.\n"
+            "       PvtNr, the Pvt to modify.\n";
+        return NULL;
+    } else if (cmd == CLI_GENERATE) {
+        return NULL;
+    }
+
+    if (a->argc <= 4) {
+        return CLI_SHOWUSAGE;
+    }
+
+    int pvt_id = atoi(a->argv[4]);
+    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+        return CLI_SHOWUSAGE;
+    }
+    fxs_settings *s = &fxs_config[pvt_id];
+
+    if (!strcasecmp(a->argv[3], "off")) {
+        s->comfort_noise = 0;
+    } else if (!strcasecmp(a->argv[3], "white")) {
+        s->comfort_noise = 1;
+    } else if (!strcasecmp(a->argv[3], "hot")) {
+        s->comfort_noise = 2;
+    } else if (!strcasecmp(a->argv[3], "estimate")) {
+        s->comfort_noise = 3;
+    }
+
+    return CLI_SUCCESS;
+}
 
 static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	if (cmd == CLI_INIT) {
 		e->command = "brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract}";
 		e->usage =
-			"Usage: brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract}\n"
-			"       dtmf_relay, dtmf relay mode.\n";
+			"Usage: brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract} PvtNr\n"
+			"       dtmf_relay, dtmf relay mode.\n"
+			"       PvtNr, the Pvt to modify.\n";
 		return NULL;
 	} else if (cmd == CLI_GENERATE)
 		return NULL;
 
+    if (a->argc <= 4) {
+        return CLI_SHOWUSAGE;
+    }
+
+    int pvt_id = atoi(a->argv[4]);
+    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+        return CLI_SHOWUSAGE;
+    }
+    fxs_settings *s = &fxs_config[pvt_id];
+
 	if        (!strcasecmp(a->argv[3], "inband")) {
-		dtmf_relay = EPDTMFRFC2833_DISABLED;
+		s->dtmf_relay = EPDTMFRFC2833_DISABLED;
 	} else if (!strcasecmp(a->argv[3], "rfc2833")) {
-		dtmf_relay = EPDTMFRFC2833_ENABLED;
+		s->dtmf_relay = EPDTMFRFC2833_ENABLED;
 	} else if (!strcasecmp(a->argv[3], "rfc2833_subtract")) {
-		dtmf_relay = EPDTMFRFC2833_SUBTRACT;
+		s->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 	}
 
 	return CLI_SUCCESS;
@@ -1220,16 +1421,23 @@ static char *brcm_set_parameters_value(struct ast_cli_entry *e, int cmd, struct 
 	if (cmd == CLI_INIT) {
 		e->command = "brcm set dialout_msecs";
 		e->usage =
-			"Usage: brcm set dialout_msecs 4000\n"
-			"       dialout_msecs, dialout delay in msecs.\n";
+			"Usage: brcm set dialout_msecs 4000 PvtNr\n"
+			"       dialout_msecs, dialout delay in msecs.\n"
+			"       PvtNr, the Pvt to modify.\n";
 		return NULL;
 	} else if (cmd == CLI_GENERATE)
 		return NULL;
 
-	if (a->argc <= 3)
+	if (a->argc <= 4)
 		return CLI_SHOWUSAGE;
-	else
-		timeoutmsec = atoi(a->argv[3]);
+
+	int pvt_id = atoi(a->argv[4]);
+    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+        return CLI_SHOWUSAGE;
+    }
+    fxs_settings *s = &fxs_config[pvt_id];
+
+	s->timeoutmsec = atoi(a->argv[3]);
 
 	return CLI_SUCCESS;
 }
@@ -1272,6 +1480,8 @@ static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_set_dtmf_mode,  "Set chan_brcm dtmf_relay parameter"),
 	AST_CLI_DEFINE(brcm_set_parameters_value,  "Set chan_brcm dialout msecs"),
 	AST_CLI_DEFINE(brcm_set_autodial_extension,  "Set chan_brcm autodial extension"),
+	AST_CLI_DEFINE(brcm_set_vad, "Set chan_brcm Voice Activity Detection"),
+	AST_CLI_DEFINE(brcm_set_cng, "Set chan_brcm Comfort Noice Generation"),
 };
 
 
@@ -1403,13 +1613,190 @@ static void build_xlaw_table(uint8_t *linear_to_xlaw,
     linear_to_xlaw[0] = linear_to_xlaw[1];
 }
 
+/*
+ * Create a EPZCNXPARAM, which is used to specify configuration
+ * parameters for a media connection. The parameters are taken
+ * from the configuration for the specific fxs port. This is 
+ * useful when configuring a connection in preparation for an
+ * outgoing call.
+ */
+static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_pvt *p)
+{
+	EPZCNXPARAM epCnxParms = {0};
+	fxs_settings *s = &fxs_config[p->connection_id];
+
+	epCnxParms.mode = EPCNXMODE_SNDRX;
+
+	if (p->owner) {
+		//p is owned by a ast_channel, so we need to configure endpoint with the settings from there
+		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(p->owner->readformat);
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(p->owner->readformat);
+		epCnxParms.cnxParmList.send.numCodecs = 1;
+		epCnxParms.cnxParmList.send.period[0] = CODEC_PTIME_20; //TODO: how do we determine packetization period?
+		epCnxParms.cnxParmList.send.numPeriods = 1;
+	}
+	else {
+		//we can configure then endpoint based on our preferences, so we will send using the first configured codec
+		epCnxParms.cnxParmList.send.codecs[0].type              = s->codec_list[0];
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = s->rtp_payload_list[0];
+		epCnxParms.cnxParmList.send.numCodecs					= 1;
+		epCnxParms.cnxParmList.send.period[0]					= s->period; //Use same packetization period for all codecs TODO: bad idea?
+	}
+
+	/* Configure endpoint receiving, should be able to receive any of our supported formats */
+	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr;
+	int i;
+	for (i = 0; i < s->codec_nr; i++) {
+		epCnxParms.cnxParmList.recv.codecs[i].type = s->codec_list[i]; //Locally supported codecs
+		epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = s->rtp_payload_list[i];
+		epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
+	}
+
+	epCnxParms.echocancel = s->echocancel;
+	epCnxParms.silence = s->silence; //Value 0 - 3
+	epCnxParms.comfortNoise = s->comfort_noise; //Value 0-3
+	//epCnxParms.preserveFaxMode
+	//epCnxParms.secHdrSize
+	//epCnxParms.dataMode
+	//epCnxParms.autoEncoder
+	//epCnxParms.t38param
+	//epCnxParms.rtcpXRMode
+	//epCnxParms.vbdparam
+	epCnxParms.digitRelayType = s->dtmf_relay;
+	//epCnxParms.localSsrc
+	return epCnxParms;
+}
+
+/*
+ * Create a fxs_settings struct with default values.
+ */
+static fxs_settings fxs_settings_create(void)
+{
+	fxs_settings fxs_conf = (fxs_settings){
+		.language = "",
+		.cid_num = "",
+		.cid_name = "",
+		.context = "default",
+		.silence = 0,
+		.autodial_ext = {{0}},
+		.autodial_nr = 0,
+		.echocancel = 1,
+		.txgain = DEFAULT_GAIN,
+		.rxgain = DEFAULT_GAIN,
+		.dtmf_relay = EPDTMFRFC2833_ENABLED,
+		.dtmf_short = 1,
+		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
+		.codec_nr = 2,
+		.rtp_payload_list = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1},
+		.ringsignal = 1,
+		.timeoutmsec = 4000,
+		.period = CODEC_PTIME_20,
+		.comfort_noise = 0,
+	};
+	return fxs_conf;
+}
+
+/*
+ * Load config file settings into the specified fxs_settings struct.
+ * Can be called multiple times in order to load from multiple ast_variables.
+ */
+static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
+{
+	int config_codecs = 0;
+
+	while(v) {
+		if (!strcasecmp(v->name, "silence")) {
+			fxs_config->silence = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "language")) {
+			ast_copy_string(fxs_config->language, v->value, sizeof(fxs_config->language));
+		// FIXME use a table for country mapping
+		} else if (!strcasecmp(v->name, "callerid")) {
+			ast_callerid_split(v->value, fxs_config->cid_name, sizeof(fxs_config->cid_name), fxs_config->cid_num, sizeof(fxs_config->cid_num));
+		} else if (!strcasecmp(v->name, "context")) {
+			ast_copy_string(fxs_config->context, v->value, sizeof(fxs_config->context));
+		} else if (!strcasecmp(v->name, "autodial")) {
+			if (fxs_config->autodial_nr < 4) {
+				fxs_config->autodial_ext[fxs_config->autodial_nr].id = v->value[0] - '0';
+				autodial* ad = &(fxs_config->autodial_ext[fxs_config->autodial_nr]);
+				ast_copy_string(ad->extension, &v->value[2], sizeof(autodial));
+				fxs_config->autodial_nr++;
+			}
+		} else if (!strcasecmp(v->name, "echocancel")) {
+			fxs_config->echocancel = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "txgain")) {
+			fxs_config->txgain = parse_gain_value(v->name, v->value);
+		} else if (!strcasecmp(v->name, "rxgain")) {
+			fxs_config->rxgain = parse_gain_value(v->name, v->value);
+		} else if (!strcasecmp(v->name, "dtmfrelay")) {
+			if (!strcasecmp(v->value, "sipinfo")) {
+				fxs_config->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
+			} else if (!strcasecmp(v->value, "rfc2833")) {
+				fxs_config->dtmf_relay = EPDTMFRFC2833_ENABLED;
+			} else {
+				fxs_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
+			}
+		} else if (!strcasecmp(v->name, "shortdtmf")) {
+			fxs_config->dtmf_short = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "codec")) {
+			if (!strcasecmp(v->value, "alaw")) {
+				fxs_config->codec_list[config_codecs] = CODEC_PCMA;
+				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
+			} else if (!strcasecmp(v->value, "ulaw")) {
+				fxs_config->codec_list[config_codecs] = CODEC_PCMU;
+				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
+			} else if (!strcasecmp(v->value, "g729")) {
+				fxs_config->codec_list[config_codecs] = CODEC_G729A;
+				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
+			} else if (!strcasecmp(v->value, "g723")) {
+				fxs_config->codec_list[config_codecs] = CODEC_G7231_63;
+				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
+			} else if (!strcasecmp(v->value, "g726")) {
+				fxs_config->codec_list[config_codecs] = CODEC_G726_32;
+				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
+			} else {
+				ast_log(LOG_WARNING, "Unknown codec: %s\n", v->value);
+			}
+		} else if (!strcasecmp(v->name, "ringsignal")) {
+			fxs_config->ringsignal = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "dialoutmsec")) {
+			fxs_config->timeoutmsec = atoi(v->value);
+		} else if (!strcasecmp(v->name, "period")) {
+			switch(atoi(v->value)) {
+				case 5:
+					fxs_config->period = CODEC_PTIME_5;
+					break;
+				case 10:
+					fxs_config->period = CODEC_PTIME_10;
+					break;
+				case 20:
+					fxs_config->period = CODEC_PTIME_20;
+					break;
+				case 30:
+					fxs_config->period = CODEC_PTIME_30;
+					break;
+				case 40:
+					fxs_config->period = CODEC_PTIME_40;
+					break;
+				default:
+					fxs_config->period = CODEC_PTIME_20;
+					break;
+			}
+		} else if (!strcasecmp(v->name, "comfortnoice")) {
+			fxs_config->comfort_noise = atoi(v->value);
+		}
+
+		if (config_codecs > 0)
+			fxs_config->codec_nr = config_codecs;
+
+		v = v->next;
+	}
+}
+
 static int load_module(void)
 {
 	struct ast_config *cfg;
-	struct ast_variable *v;
-	int txgain = DEFAULT_GAIN, rxgain = DEFAULT_GAIN; /* default gain 1.0 */
 	struct ast_flags config_flags = { 0 };
-	int config_codecs = 0;
+	struct ast_tone_zone *zone = NULL;
 
 	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
@@ -1427,83 +1814,42 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	v = ast_variable_browse(cfg, "interfaces");
-	while(v) {
-		if (!strcasecmp(v->name, "silence")) {
-			silence = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "language")) {
-			ast_copy_string(language, v->value, sizeof(language));
-		} else if (!strcasecmp(v->name, "country")) {
-			const COUNTRY_MAP *countryMap = country_map;
-			for (;;) {
-				ast_log(LOG_DEBUG, "cmp: [%s] [%s]\n", v->value, countryMap->isoCode);
-				if (!strcmp(v->value, countryMap->isoCode)) {
-					ast_log(LOG_DEBUG, "Found country '%s'\n", v->value);
-					endpoint_country = countryMap->vrgCountry; 
-					break;
-				}
-
-				if (countryMap->vrgCountry == VRG_COUNTRY_MAX) {
-					ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
-					break;
-				}
-
-				countryMap++;
-			}
-		} else if (!strcasecmp(v->name, "clip")) {
-			clip = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "callerid")) {
-			ast_callerid_split(v->value, cid_name, sizeof(cid_name), cid_num, sizeof(cid_num));
-		} else if (!strcasecmp(v->name, "context")) {
-			ast_copy_string(context, v->value, sizeof(context));
-		} else if (!strcasecmp(v->name, "autodial")) {
-			if (autodial_nr < 4) {
-				autodial_ext[autodial_nr].id = v->value[0] - '0';
-				ast_copy_string(autodial_ext[autodial_nr].extension, &v->value[2], sizeof(autodial));
-				autodial_nr++;
-			}
-		} else if (!strcasecmp(v->name, "echocancel")) {
-			echocancel = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "txgain")) {
-			txgain = parse_gain_value(v->name, v->value);
-		} else if (!strcasecmp(v->name, "rxgain")) {
-			rxgain = parse_gain_value(v->name, v->value);
-		} else if (!strcasecmp(v->name, "dtmfrelay")) {
-			if (!strcasecmp(v->value, "sipinfo")) {
-				dtmf_relay = EPDTMFRFC2833_SUBTRACT;
-			} else if (!strcasecmp(v->value, "rfc2833")) {
-				dtmf_relay = EPDTMFRFC2833_ENABLED;
-			} else
-				dtmf_relay = EPDTMFRFC2833_DISABLED;
-		} else if (!strcasecmp(v->name, "shortdtmf")) {
-			dtmf_short = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "codec")) {
-			if        (!strcasecmp(v->value, "alaw")) {
-				codec_list[config_codecs] = CODEC_PCMA;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
-			} else if (!strcasecmp(v->value, "ulaw")) {
-				codec_list[config_codecs] = CODEC_PCMU;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
-			} else if (!strcasecmp(v->value, "g729")) {
-				codec_list[config_codecs] = CODEC_G729;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
-			} else if (!strcasecmp(v->value, "g723.1")) {
-				codec_list[config_codecs] = CODEC_G7231_63;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
-			} else if (!strcasecmp(v->value, "g726_24")) {
-				codec_list[config_codecs] = CODEC_G726_24;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
-			} else if (!strcasecmp(v->value, "g726_32")) {
-				codec_list[config_codecs] = CODEC_G726_32;
-				rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
-			}
-		} else if (!strcasecmp(v->name, "ringsignal")) {
-			ringsignal = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "dialoutmsec")) {
-			timeoutmsec = atoi(v->value);
+	/* Load fxs endpoint settings */
+	int i;
+	struct ast_variable *v;
+	for (i = 0; i < num_fxs_endpoints; i++) {
+		// Create and init a new settings struct
+		fxs_config[i] = fxs_settings_create();
+		// Load default settings
+		v = ast_variable_browse(cfg, "interfaces");
+		fxs_settings_load(&fxs_config[i], v);
+		// Load endpoint specific settings
+		char config_section[64];
+		snprintf(config_section, 64, "fxs_%d", i);
+		v = ast_variable_browse(cfg, config_section);
+		if (!v) {
+			ast_log(LOG_WARNING, "Unable to load endpoint specific config (missing config section?): %s\n", config_section);
 		}
-		if (config_codecs > 0)
-			codec_nr = config_codecs;
+		fxs_settings_load(&fxs_config[i], v);
+	}
+
+	/* Load global settings */
+	v = ast_variable_browse(cfg, "interfaces");
+
+	while(v) {
+		//TODO: use a table to lookup country
+		if (!strcasecmp(v->name, "country")) {
+			if      (!strcmp(v->value, "swe"))
+				endpoint_country = VRG_COUNTRY_SWEDEN;
+			else if (!strcmp(v->value, "fin"))
+				endpoint_country = VRG_COUNTRY_FINLAND;
+			else if (!strcmp(v->value, "dnk"))
+				endpoint_country = VRG_COUNTRY_DENMARK;
+			else if (!strcmp(v->value, "usa"))
+				endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
+			else
+				ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
+		}
 
 		v = v->next;
 	}
@@ -1513,7 +1859,7 @@ static int load_module(void)
 	brcm_get_endpoints_count();
 	brcm_create_fxs_endpoints();
 
-	brcm_create_pvts(iflist, 0, txgain, rxgain);
+	brcm_create_pvts(iflist, 0);
 	brcm_assign_connection_id(iflist);
 	ast_mutex_unlock(&iflock);
 	cur_tech = (struct ast_channel_tech *) &brcm_tech;
@@ -1526,6 +1872,39 @@ static int load_module(void)
 		unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
+
+	ast_verbose("ast_get_indication_tone\n");
+	ast_tone_zone_ref(zone);
+
+	if ((tzs = ast_get_indication_tone(zone, "dial"))) {
+		int i, best_period_value = INT_MAX;
+		int best_period_index = 160;
+		ast_verbose("ast_get_indication_tone: %x, %s\n", (void*)tzs, tzs->name);
+		ast_verbose("Tone string: %s\n", tzs->data);
+		ast_tone_zone_part_parse(tzs->data, &tone_data_g);
+		ast_verbose("Tone data: freq1 = %d, freq2 = %d\n", tone_data_g.freq1, tone_data_g.freq2);
+
+		/* Generate 2400 16bit samples of the dialtone, not totally correct but good enough, 7219 ~ -8dB
+		 * Only support for signle and dual tone dialtones, no modulation or other funky stuff
+		 **/
+		build_xlaw_table(linear_to_alaw, alaw2linear, 0xd5);
+		for (i=0 ; i<2880 ; i++) {
+			dialtone_gen[i] = linear_to_alaw[ ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))+ 32768) >> 2];
+			/*if (!(i % 160)) ast_verbose("dialtone_gen[%d] = %d, %d\n",i,dialtone_gen[i],(short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i)))); */
+		}
+		
+		/* Find a suitable period, we do this by checking that the signal has a linear phase (>0 check) */
+		for (i=160 ; i<2720 ; i+=160) {
+			if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*(i+1)) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*(i+1))))) > 0)
+				if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))) <= best_period_value) {
+					best_period_value = ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i))));
+					best_period_index = i;
+				}
+		}
+		dialtone_period = best_period_index;
+		ast_verbose("dialtone_period: %d\n", dialtone_period);
+	}
+	zone = ast_tone_zone_unref(zone);
 
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
@@ -1630,19 +2009,18 @@ int endpt_init(void)
 
 int brcm_signal_ringing(struct brcm_pvt *p)
 {
-
-	if (ringsignal)
+	if (fxs_config[p->connection_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
-
+	}
 	return 0;
 }
 
 
 int brcm_stop_ringing(struct brcm_pvt *p)
 {
-
-	if (ringsignal)
+	if (fxs_config[p->connection_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+	}
 
 	return 0;
 }
@@ -1650,7 +2028,7 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 /* Prepare endpoint for ringing. Caller ID signal pending. */
 int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (ringsignal) {
+	if (fxs_config[p->connection_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 1, -1, -1 , -1);
 	}
 
@@ -1659,7 +2037,7 @@ int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (ringsignal) {
+	if (fxs_config[p->connection_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 0, -1, -1 , -1);
 	}
 
@@ -1674,7 +2052,7 @@ int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
  */
 int brcm_signal_callerid(struct brcm_pvt *p)
 {
-	if (ringsignal) {
+	if (fxs_config[p->connection_id].ringsignal) {
 		CLID_STRING clid_string;
 		struct timeval utc_time;
 		struct ast_tm local_time;
@@ -1874,48 +2252,26 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 	/* generate random nr for rtp header */
 	p->ssrc = rand();
 
-    ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-    EPZCNXPARAM epCnxParms = {0};
-    //		CODECLIST  codecListLocal = {0};
-    //		CODECLIST  codecListRemote = {0};
+	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
+	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(p); //Create a parameter list for this pvt
 
-    /* Enable sending a receving G711 */
-    epCnxParms.cnxParmList.recv.numCodecs = 6;
-    epCnxParms.cnxParmList.recv.codecs[0].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.recv.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-    epCnxParms.cnxParmList.recv.codecs[1].type = CODEC_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[1].rtpPayloadType = RTP_PAYLOAD_PCMU;
-    epCnxParms.cnxParmList.recv.codecs[2].type = CODEC_G726_32;
-    epCnxParms.cnxParmList.recv.codecs[2].rtpPayloadType = RTP_PAYLOAD_G726_32;
-    epCnxParms.cnxParmList.recv.codecs[3].type = CODEC_G726_24;
-    epCnxParms.cnxParmList.recv.codecs[3].rtpPayloadType = RTP_PAYLOAD_G726_32;
-    epCnxParms.cnxParmList.recv.codecs[4].type = CODEC_G7231_63;
-    epCnxParms.cnxParmList.recv.codecs[4].rtpPayloadType = RTP_PAYLOAD_G723;
-    epCnxParms.cnxParmList.recv.codecs[5].type = CODEC_G729;
-    epCnxParms.cnxParmList.recv.codecs[5].rtpPayloadType = RTP_PAYLOAD_G729;
+	ast_verbose("Creating connection for pvt %i\n", p->connection_id);
+	if (p->owner) {
+		char buf[256];
+		ast_verbose("Owner channel raw read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawreadformat));
+		ast_verbose("Owner channel read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->readformat));
+		ast_verbose("Owner channel raw write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawwriteformat));
+		ast_verbose("Owner channel write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->writeformat));
+	}
+	
+	ast_verbose("Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
+	ast_verbose("Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
 
-    epCnxParms.cnxParmList.send.numCodecs = 1;
-    epCnxParms.cnxParmList.send.codecs[0].type = CODEC_PCMA;
-    epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType = RTP_PAYLOAD_PCMA;
-
-    // Set 20ms packetization period
-    epCnxParms.cnxParmList.send.period[0] = 20;
-    epCnxParms.mode  =   EPCNXMODE_SNDRX;
-    //         epCnxParms.cnxParmList.recv = codecListLocal;
-    //         epCnxParms.cnxParmList.send = codecListRemote;
-    //         epCnxParms.period = 20;
-    epCnxParms.echocancel = echocancel;
-    epCnxParms.silence = silence;
-	epCnxParms.digitRelayType = dtmf_relay;
-    //         epCnxParms.pktsize = CODEC_G711_PAYLOAD_BYTE;   /* Not used ??? */
-
-
-    tConnectionParm.cnxId      = p->connection_id;
-    tConnectionParm.cnxParam   = &epCnxParms;
-    tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
-    tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-    tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
-
+	tConnectionParm.cnxId      = p->connection_id;
+	tConnectionParm.cnxParam   = &epCnxParms;
+	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+	tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 	if (!p->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
