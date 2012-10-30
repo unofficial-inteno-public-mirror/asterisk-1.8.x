@@ -1089,24 +1089,22 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	}
 
 	ast_mutex_lock(&p->lock);
-	if ((!p->owner) && (!p->connection_init)) {
+
+	/* Check that the request has an allowed format */
+	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1);
+
+	if (!allowedformat) {
+		ast_log(LOG_NOTICE, "Asked to get a channel of unsupported format %s\n", ast_getformatname(format));
+		*cause = AST_CAUSE_BEARERCAPABILITY_NOTAVAIL;
+	} else if ((!p->owner) && (!p->connection_init)) {
 		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL, format);
 	} else {
 		*cause = AST_CAUSE_BUSY;
 	}
-	ast_mutex_unlock(&p->lock);
 
+	ast_mutex_unlock(&p->lock);
 	ast_mutex_unlock(&iflock);
 
-	if (tmp == NULL) {
-		oldformat = format;
-		format &= AST_FORMAT_ALAW;
-		if (!format) {
-			char buf[256];
-			ast_log(LOG_ERROR, "Asked to get a channel of unsupported format '%s'\n", ast_getformatname_multiple(buf, sizeof(buf), oldformat));
-			return NULL;
-		}
-	}
 	return tmp;
 }
 
