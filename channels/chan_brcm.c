@@ -1709,7 +1709,6 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 			fxs_config->silence = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(fxs_config->language, v->value, sizeof(fxs_config->language));
-		// FIXME use a table for country mapping
 		} else if (!strcasecmp(v->name, "callerid")) {
 			ast_callerid_split(v->value, fxs_config->cid_name, sizeof(fxs_config->cid_name), fxs_config->cid_num, sizeof(fxs_config->cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
@@ -1737,7 +1736,7 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 			}
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			fxs_config->dtmf_short = ast_true(v->value)?1:0;
-		} else if (!strcasecmp(v->name, "codec")) {
+		} else if (!strcasecmp(v->name, "allow")) {
 			if (!strcasecmp(v->value, "alaw")) {
 				fxs_config->codec_list[config_codecs] = CODEC_PCMA;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
@@ -1814,27 +1813,9 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	/* Load fxs endpoint settings */
-	int i;
-	struct ast_variable *v;
-	for (i = 0; i < num_fxs_endpoints; i++) {
-		// Create and init a new settings struct
-		fxs_config[i] = fxs_settings_create();
-		// Load default settings
-		v = ast_variable_browse(cfg, "interfaces");
-		fxs_settings_load(&fxs_config[i], v);
-		// Load endpoint specific settings
-		char config_section[64];
-		snprintf(config_section, 64, "fxs_%d", i);
-		v = ast_variable_browse(cfg, config_section);
-		if (!v) {
-			ast_log(LOG_WARNING, "Unable to load endpoint specific config (missing config section?): %s\n", config_section);
-		}
-		fxs_settings_load(&fxs_config[i], v);
-	}
-
 	/* Load global settings */
-	v = ast_variable_browse(cfg, "interfaces");
+	struct ast_variable *v;
+	v = ast_variable_browse(cfg, "default");
 
 	while(v) {
 		//TODO: use a table to lookup country
@@ -1858,6 +1839,24 @@ static int load_module(void)
 	endpt_init();
 	brcm_get_endpoints_count();
 	brcm_create_fxs_endpoints();
+
+	/* Load fxs endpoint settings */
+	int i;
+	for (i = 0; i < num_fxs_endpoints; i++) {
+		// Create and init a new settings struct
+		fxs_config[i] = fxs_settings_create();
+		// Load default settings
+		v = ast_variable_browse(cfg, "default");
+		fxs_settings_load(&fxs_config[i], v);
+		// Load endpoint specific settings
+		char config_section[64];
+		snprintf(config_section, 64, "fxs_%d", i);
+		v = ast_variable_browse(cfg, config_section);
+		if (!v) {
+			ast_log(LOG_WARNING, "Unable to load endpoint specific config (missing config section?): %s\n", config_section);
+		}
+		fxs_settings_load(&fxs_config[i], v);
+	}
 
 	brcm_create_pvts(iflist, 0);
 	brcm_assign_connection_id(iflist);
