@@ -78,12 +78,7 @@ static int num_dect_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
-
-/* Dialtone variables */
-struct ast_tone_zone_sound *tzs = NULL;
-struct ast_tone_zone_part tone_data_g = {0};
-static unsigned char dialtone_gen[2880] = {0};
-static int dialtone_period = 0;
+static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
 
 /* Caller ID */
 #define CLID_MAX_DATE	10
@@ -94,6 +89,69 @@ typedef struct CLID_STRING
 	char date[CLID_MAX_DATE];
 	char number_name[CLID_MAX_NUMBER + CLID_MAX_NAME + 4]; // 4 = comma, quotation marks and null terminator
 } CLID_STRING;
+
+/* Mapping of DTMF to char/name */
+typedef struct DTMF_CHARNAME_MAP
+{
+	EPEVT	event;
+	char	name[12];
+	char	c;
+} DTMF_CHARNAME_MAP;
+
+static const DTMF_CHARNAME_MAP dtmf_to_charname[] =
+{
+	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
+	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
+	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
+	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
+	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
+	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
+	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
+	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
+	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
+	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
+	{EPEVT_DTMFH, "EPEVT_DTMFH", 'h'},
+	{EPEVT_DTMFS, "EPEVT_DTMFS", 's'},
+	{EPEVT_LAST,  "EPEVT_LAST", '-'}
+};
+
+/* List of supported country name, ISO 3166-1 alpha-3 codes */
+typedef struct COUNTRY_TABLE
+{
+	VRG_COUNTRY	vrgCountry;
+	char		isoCode[3];
+} COUNTRY_MAP;
+
+static const COUNTRY_MAP country_map[] =
+{
+	{VRG_COUNTRY_AUSTRALIA,			"AUS"},
+	{VRG_COUNTRY_BELGIUM,			"BEL"},
+	{VRG_COUNTRY_BRAZIL,			"BRA"},
+	{VRG_COUNTRY_CHILE,			"CHL"},
+	{VRG_COUNTRY_CHINA,	 		"CHN"},
+	{VRG_COUNTRY_CZECH, 			"CZE"},
+	{VRG_COUNTRY_DENMARK, 			"DNK"},
+	{VRG_COUNTRY_ETSI, 			"ETS"}, //Not really an iso code
+	{VRG_COUNTRY_FINLAND, 			"FIN"},
+	{VRG_COUNTRY_FRANCE, 			"FRA"},
+	{VRG_COUNTRY_GERMANY, 			"DEU"},
+	{VRG_COUNTRY_HUNGARY,			"HUN"},
+	{VRG_COUNTRY_INDIA,			"IND"},
+	{VRG_COUNTRY_ITALY, 			"ITA"},
+	{VRG_COUNTRY_JAPAN,	 		"JPN"},
+	{VRG_COUNTRY_NETHERLANDS, 		"NLD"},
+	{VRG_COUNTRY_NEW_ZEALAND, 		"NZL"},
+	{VRG_COUNTRY_NORTH_AMERICA, 		"USA"},
+	{VRG_COUNTRY_SPAIN, 			"ESP"},
+	{VRG_COUNTRY_SWEDEN,			"SWE"},
+	{VRG_COUNTRY_SWITZERLAND, 		"CHE"},
+	{VRG_COUNTRY_NORWAY, 			"NOR"},
+	{VRG_COUNTRY_TAIWAN,	 		"TWN"},
+	{VRG_COUNTRY_UK,		 	"GBR"},
+	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
+	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
+	{VRG_COUNTRY_MAX, 			"-"}
+};
 
 typedef struct {
 	int		id;
@@ -116,6 +174,7 @@ typedef struct {
 	int dtmf_short;
 	int codec_list[6];
 	int codec_nr;
+	format_t capability;
 	int rtp_payload_list[6];
 	int ringsignal;
 	int timeoutmsec;
@@ -295,7 +354,7 @@ static int map_ast_codec_id_to_rtp(int id) {
 /*
 * Map brcm codec enum to asterisk codec enum
 */
-static int map_codec_brcm_to_ast(int id) {
+static format_t map_codec_brcm_to_ast(int id) {
 	switch (id) {
 		case CODEC_PCMU:		return AST_FORMAT_ULAW;
 		case CODEC_PCMA:		return AST_FORMAT_ALAW;
@@ -433,43 +492,14 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	return 0;
 }
 
-
-static void brcm_send_dialtone(struct brcm_pvt *p) {
-	EPPACKET epPacket_send;
-	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
-	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
-
-	/* send rtp packet to the endpoint */
-	epPacket_send.mediaType   = 0;
-
-	/* copy frame data to local buffer */
-	memcpy(&packet_buffer[12], &dialtone_gen[p->dt_counter], 160);
-	p->dt_counter += 160;
-	if (p->dt_counter >=dialtone_period) p->dt_counter = 0;
-
-	/* add buffer to outgoing packet */
-	epPacket_send.packetp = packet_buffer;
-
-	/* generate the rtp header */
-	brcm_generate_rtp_packet(p, epPacket_send.packetp, PCMA);
-
-	/* set rtp id sent to endpoint */
-	p->codec = PCMU;
-
-	tPacketParm_send.cnxId       = p->connection_id;
-	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
-	tPacketParm_send.length      = 12 + 160;
-	tPacketParm_send.bufDesc     = (int)&epPacket_send;
-	tPacketParm_send.epPacket    = &epPacket_send;
-	tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
-	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
-
-	if (p->connection_init) {
-		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
-	}
+/* Tell endpoint to play country specific dialtone. */
+int brcm_signal_dialtone(struct brcm_pvt *p) {
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 1, -1, -1 , -1);
 }
 
+int brcm_stop_dialtone(struct brcm_pvt *p) {
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 0, -1, -1 , -1);
+}
 
 static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid, format_t format)
 {
@@ -483,11 +513,14 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 
 		/* find out which codec to use */
 		format_t fmt = format;
+		fxs_settings *s = &fxs_config[i->connection_id];
+		tmp->nativeformats = s->capability;
 		if (fmt == 0) {
-			//We got free hands to choose codec, so take the first one from our list
-			//This is exactly what is done in create_connection if no owner is speced
-			fxs_settings *s = &fxs_config[i->connection_id];
-			fmt = map_codec_brcm_to_ast(s->codec_list[0]);
+			//Let asterisk decide which codec is the best
+			fmt = ast_best_codec(tmp->nativeformats);
+			ast_debug(1, "Selected codec: %s\n", ast_getformatname(fmt));
+		} else {
+			ast_debug(1, "Forced codec: %s\n", ast_getformatname(fmt));
 		}
 
 		/* set codecs */
@@ -495,9 +528,6 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 		tmp->rawwriteformat = fmt;
 		tmp->readformat = fmt;
 		tmp->rawreadformat = fmt;
-		
-		//TODO: should we set nativeformats according to conf? but the tech_pvt contains a hardcoded list...
-		tmp->nativeformats  = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1;
 
 		/* no need to call ast_setstate: the channel_alloc already did its job */
 		if (state == AST_STATE_RING)
@@ -571,20 +601,8 @@ static void *brcm_event_handler(void *data)
 		/* loop over all pvt's */
 		while(p) {
 			int autodial = 0;
-			/* If off hook send dialtone every 20 ms*/
+
 			ast_mutex_lock(&p->lock);
-			if (p->channel_state == OFFHOOK) {
-
-				if (!p->last_dialtone_ts) p->last_dialtone_ts = ts;
-
-				if (ts > p->last_dialtone_ts + 20) {
-					if (!p->connection_init)
-						brcm_create_connection(p);
-
-					brcm_send_dialtone(p);
-					p->last_dialtone_ts = p->last_dialtone_ts + 20;
-				}
-			}
 
 //			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 //				ast_verbose("ts - last_dtmf_ts > 2000\n");
@@ -654,6 +672,24 @@ static void *brcm_event_handler(void *data)
 		}							\
 	}
 
+static void handle_dtmf(EPEVT event, struct brcm_pvt *p)
+{
+	const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
+	struct timeval tim;
+
+	/* Lookup event to find coresponding DTMF */
+	while (dtmfMap->event != event) {
+		dtmfMap++;
+		if (dtmfMap->event == EPEVT_LAST) {
+			/* DTMF not found. Should not be reached. */
+			ast_log(LOG_WARNING, "Failed to handle DTMF. Event not found.\n");
+			return;
+		}
+	}
+
+	ast_log(LOG_DEBUG, "Handle DTMF %s\n", dtmfMap->name);
+	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
+}
 
 static char phone_2digit(char c)
 {
@@ -842,6 +878,12 @@ static void *brcm_monitor_events(void *data)
 							ast_queue_control(p->owner, AST_CONTROL_ANSWER);
 							p->channel_state = INCALL;
 						}
+
+						if (p->channel_state == OFFHOOK) {
+							/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
+							brcm_signal_dialtone(p);
+						}
+
 						ast_mutex_unlock(&p->lock);
 						ast_debug(9, "me: unlocked mutex\n");
 
@@ -853,6 +895,12 @@ static void *brcm_monitor_events(void *data)
 
 						ast_mutex_lock(&p->lock);
 						ast_debug(9, "me: got mutex\n");
+
+						if (p->channel_state == OFFHOOK) {
+							/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
+							brcm_stop_dialtone(p);
+						}
+
 						p->channel_state = ONHOOK;
 						ast_verbose("Sending manager event\n");
 						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->connection_id);
@@ -862,7 +910,6 @@ static void *brcm_monitor_events(void *data)
 						p->dtmf_len          = 0;
 						p->dtmf_first        = -1;
 						p->dtmfbuf[p->dtmf_len] = '\0';
-						p->last_dialtone_ts = 0;
 						brcm_close_connection(p);
 
 						if(p->owner) {
@@ -872,18 +919,28 @@ static void *brcm_monitor_events(void *data)
 						ast_debug(9, "me: unlocked mutex\n");
 						break;
 
-					case EPEVT_DTMF0: DTMF_CHECK('0', "EPEVT_DTMF0"); break;
-					case EPEVT_DTMF1: DTMF_CHECK('1', "EPEVT_DTMF1"); break;
-					case EPEVT_DTMF2: DTMF_CHECK('2', "EPEVT_DTMF2"); break;
-					case EPEVT_DTMF3: DTMF_CHECK('3', "EPEVT_DTMF3"); break;
-					case EPEVT_DTMF4: DTMF_CHECK('4', "EPEVT_DTMF4"); break;
-					case EPEVT_DTMF5: DTMF_CHECK('5', "EPEVT_DTMF5"); break;
-					case EPEVT_DTMF6: DTMF_CHECK('6', "EPEVT_DTMF6"); break;
-					case EPEVT_DTMF7: DTMF_CHECK('7', "EPEVT_DTMF7"); break;
-					case EPEVT_DTMF8: DTMF_CHECK('8', "EPEVT_DTMF8"); break;
-					case EPEVT_DTMF9: DTMF_CHECK('9', "EPEVT_DTMF9"); break;
-					case EPEVT_DTMFS: DTMF_CHECK('s', "EPEVT_DTMFS"); break;
-					case EPEVT_DTMFH: DTMF_CHECK('h', "EPEVT_DTMFH"); break;
+					case EPEVT_DTMF0:
+					case EPEVT_DTMF1:
+					case EPEVT_DTMF2:
+					case EPEVT_DTMF3:
+					case EPEVT_DTMF4:
+					case EPEVT_DTMF5:
+					case EPEVT_DTMF6:
+					case EPEVT_DTMF7:
+					case EPEVT_DTMF8:
+					case EPEVT_DTMF9:
+					case EPEVT_DTMFS:
+					case EPEVT_DTMFH:
+					{
+						unsigned int old_state = p->channel_state;
+						handle_dtmf(tEventParm.event, p);
+						if (p->channel_state == DIALING && old_state != p->channel_state) {
+							/* DTMF event took channel state to DIALING. Stop dial tone. */
+							ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+							brcm_stop_dialtone(p); 
+						}
+						break;
+					}
 					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
 					case EPEVT_EARLY_OFFHOOK: ast_verbose("EPEVT_EARLY_OFFHOOK\n"); break;
 					case EPEVT_EARLY_ONHOOK: ast_verbose("EPEVT_EARLY_ONHOOK\n"); break;
@@ -1016,13 +1073,11 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->last_dtmf_ts = 0;
 		tmp->channel_state = ONHOOK;
 		tmp->connection_init = 0;
-		tmp->last_dialtone_ts = 0;
 		tmp->endpoint_type = endpoint_type;
 		tmp->time_stamp = 0;
 		tmp->sequence_number = 0;
 		tmp->ssrc = 0;
 		tmp->codec = -1;
-		tmp->dt_counter = 0;
 	}
 	return tmp;
 }
@@ -1068,6 +1123,9 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	struct brcm_pvt *p;
 	struct ast_channel *tmp = NULL;
 	int port_id = -1;
+
+	char buf[256];
+	ast_debug(1, "Asked to create a BRCM channel with formats: %s\n", ast_getformatname_multiple(buf, sizeof(buf), format));
 
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
@@ -1168,7 +1226,6 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
 		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
 		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
-		ast_cli(a->fd, "Dialtone counter    : %d\n", p->dt_counter);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
 		ast_cli(a->fd, "Codec used          : %s\n", brcm_get_codec_string(p->codec));
 
@@ -1252,7 +1309,6 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
-	ast_cli(a->fd, "Dialtone per. : %d\n", dialtone_period);
 
 	/* print status for individual pvts */
 	brcm_show_pvts(a);
@@ -1634,9 +1690,16 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_pvt *p)
 		epCnxParms.cnxParmList.send.numPeriods = 1;
 	}
 	else {
-		//we can configure then endpoint based on our preferences, so we will send using the first configured codec
-		epCnxParms.cnxParmList.send.codecs[0].type              = s->codec_list[0];
-		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = s->rtp_payload_list[0];
+		//Let asterisk decide which codec to use. Trying to force a particular codec or order has proven to be difficult.
+		//Just go with the one asterisk thinks is best to avoid problems. This will let asterisk transcode
+		//if remote SIP peer doesn't support 'fmt' selected below, which is of course not optimal in the case where we actually
+		//support the selected codec.
+		//TODO: We could check the codec of incoming frames and switch to that codec on the fly, or use indicate-callback
+		//	and look for AST_CONTROL_SRCUPDATE. 
+		format_t fmt = ast_best_codec(s->capability);
+
+		epCnxParms.cnxParmList.send.codecs[0].type              = map_codec_ast_to_brcm(fmt);
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = map_codec_ast_to_brcm_rtp(fmt); 
 		epCnxParms.cnxParmList.send.numCodecs					= 1;
 		epCnxParms.cnxParmList.send.period[0]					= s->period; //Use same packetization period for all codecs TODO: bad idea?
 	}
@@ -1686,6 +1749,7 @@ static fxs_settings fxs_settings_create(void)
 		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
 		.codec_nr = 2,
 		.rtp_payload_list = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1},
+		.capability = default_capability,
 		.ringsignal = 1,
 		.timeoutmsec = 4000,
 		.period = CODEC_PTIME_20,
@@ -1701,6 +1765,7 @@ static fxs_settings fxs_settings_create(void)
 static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 {
 	int config_codecs = 0;
+	int capability_set = 0;
 
 	while(v) {
 		if (!strcasecmp(v->name, "silence")) {
@@ -1735,21 +1800,31 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			fxs_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "allow")) {
+			if (!capability_set) {
+				fxs_config->capability = 0; //Clear default capability
+				capability_set = 1;
+			}
+
 			if (!strcasecmp(v->value, "alaw")) {
 				fxs_config->codec_list[config_codecs] = CODEC_PCMA;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
+				fxs_config->capability = fxs_config->capability | AST_FORMAT_ALAW;
 			} else if (!strcasecmp(v->value, "ulaw")) {
 				fxs_config->codec_list[config_codecs] = CODEC_PCMU;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
+				fxs_config->capability = fxs_config->capability | AST_FORMAT_ULAW;
 			} else if (!strcasecmp(v->value, "g729")) {
 				fxs_config->codec_list[config_codecs] = CODEC_G729A;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
+				fxs_config->capability = fxs_config->capability | AST_FORMAT_G729A;
 			} else if (!strcasecmp(v->value, "g723")) {
 				fxs_config->codec_list[config_codecs] = CODEC_G7231_63;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
+				fxs_config->capability = fxs_config->capability | AST_FORMAT_G723_1;
 			} else if (!strcasecmp(v->value, "g726")) {
 				fxs_config->codec_list[config_codecs] = CODEC_G726_32;
 				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
+				fxs_config->capability = fxs_config->capability | AST_FORMAT_G726;
 			} else {
 				ast_log(LOG_WARNING, "Unknown codec: %s\n", v->value);
 			}
@@ -1793,7 +1868,6 @@ static int load_module(void)
 {
 	struct ast_config *cfg;
 	struct ast_flags config_flags = { 0 };
-	struct ast_tone_zone *zone = NULL;
 
 	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
@@ -1816,18 +1890,23 @@ static int load_module(void)
 	v = ast_variable_browse(cfg, "default");
 
 	while(v) {
-		//TODO: use a table to lookup country
 		if (!strcasecmp(v->name, "country")) {
-			if      (!strcmp(v->value, "swe"))
-				endpoint_country = VRG_COUNTRY_SWEDEN;
-			else if (!strcmp(v->value, "fin"))
-				endpoint_country = VRG_COUNTRY_FINLAND;
-			else if (!strcmp(v->value, "dnk"))
-				endpoint_country = VRG_COUNTRY_DENMARK;
-			else if (!strcmp(v->value, "usa"))
-				endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
-			else
-				ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
+			const COUNTRY_MAP *countryMap = country_map;
+			for (;;) {
+				ast_log(LOG_DEBUG, "cmp: [%s] [%s]\n", v->value, countryMap->isoCode);
+				if (!strcmp(v->value, countryMap->isoCode)) {
+					ast_log(LOG_DEBUG, "Found country '%s'\n", v->value);
+					endpoint_country = countryMap->vrgCountry; 
+					break;
+				}
+
+				if (countryMap->vrgCountry == VRG_COUNTRY_MAX) {
+					ast_log(LOG_WARNING, "Unknown country '%s'\n", v->value);
+					break;
+				}
+
+				countryMap++;
+			}
 		}
 
 		v = v->next;
@@ -1869,39 +1948,6 @@ static int load_module(void)
 		unload_module();
 		return AST_MODULE_LOAD_FAILURE;
 	}
-
-	ast_verbose("ast_get_indication_tone\n");
-	ast_tone_zone_ref(zone);
-
-	if ((tzs = ast_get_indication_tone(zone, "dial"))) {
-		int i, best_period_value = INT_MAX;
-		int best_period_index = 160;
-		ast_verbose("ast_get_indication_tone: %x, %s\n", (void*)tzs, tzs->name);
-		ast_verbose("Tone string: %s\n", tzs->data);
-		ast_tone_zone_part_parse(tzs->data, &tone_data_g);
-		ast_verbose("Tone data: freq1 = %d, freq2 = %d\n", tone_data_g.freq1, tone_data_g.freq2);
-
-		/* Generate 2400 16bit samples of the dialtone, not totally correct but good enough, 7219 ~ -8dB
-		 * Only support for signle and dual tone dialtones, no modulation or other funky stuff
-		 **/
-		build_xlaw_table(linear_to_alaw, alaw2linear, 0xd5);
-		for (i=0 ; i<2880 ; i++) {
-			dialtone_gen[i] = linear_to_alaw[ ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))+ 32768) >> 2];
-			/*if (!(i % 160)) ast_verbose("dialtone_gen[%d] = %d, %d\n",i,dialtone_gen[i],(short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i)))); */
-		}
-		
-		/* Find a suitable period, we do this by checking that the signal has a linear phase (>0 check) */
-		for (i=160 ; i<2720 ; i+=160) {
-			if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*(i+1)) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*(i+1))))) > 0)
-				if (((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i)))) <= best_period_value) {
-					best_period_value = ((short)(7219 * (sinf(2.0*M_PI*tone_data_g.freq1/8000.0*i) + sinf(2.0*M_PI*tone_data_g.freq2/8000.0*i))));
-					best_period_index = i;
-				}
-		}
-		dialtone_period = best_period_index;
-		ast_verbose("dialtone_period: %d\n", dialtone_period);
-	}
-	zone = ast_tone_zone_unref(zone);
 
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
