@@ -1686,7 +1686,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_pvt *p)
 		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(p->owner->readformat);
 		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(p->owner->readformat);
 		epCnxParms.cnxParmList.send.numCodecs = 1;
-		epCnxParms.cnxParmList.send.period[0] = CODEC_PTIME_20; //TODO: how do we determine packetization period?
+		epCnxParms.cnxParmList.send.period[0] = s->period;
 		epCnxParms.cnxParmList.send.numPeriods = 1;
 	}
 	else {
