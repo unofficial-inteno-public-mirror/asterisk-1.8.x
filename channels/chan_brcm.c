@@ -760,7 +760,7 @@ static void *brcm_monitor_packets(void *data)
 							break;
 						case G726:
 							fr.subclass.codec = AST_FORMAT_G726;
-							fr.samples = 80; //for 10 ms frame size
+							fr.samples = 160; //for 20 ms frame size
 							break;
 						case G723:
 							fr.subclass.codec = AST_FORMAT_G723_1;
