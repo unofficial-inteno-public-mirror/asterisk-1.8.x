@@ -28,8 +28,6 @@
 
 /* TODO:
  * Prefered codec order mulaw/alaw/g729/g723.1/g726_24/g726_32
- * Locale support AUS/BEL/BRA/CHL/CHN/CZK/DKN/ETS/FIN/FRA/DEU/HUN/IND/ITA/JPN/
- *                NLD/NZL/USA/ESP/SWE/NOR/CHE/T57/GBR/TWN/UAR
  * Enable T38 support
  * Enable V18 support
  * Ingress/egress gain
