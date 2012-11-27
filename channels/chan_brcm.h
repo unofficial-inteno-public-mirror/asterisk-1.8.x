@@ -68,6 +68,7 @@ static struct brcm_pvt {
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
 	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
+	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
 	unsigned int channel_state;		/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */

@@ -78,6 +78,8 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
 
+#define MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook
+
 /* Caller ID */
 #define CLID_MAX_DATE	10
 #define CLID_MAX_NUMBER	16
@@ -689,6 +691,12 @@ static void handle_dtmf(EPEVT event, struct brcm_pvt *p)
 	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
 }
 
+static void handle_hookflash(struct brcm_pvt *p)
+{
+	ast_log(LOG_DEBUG, "handle hf\n");
+	//TODO
+}
+
 static char phone_2digit(char c)
 {
 	if (c == 11)
@@ -940,8 +948,23 @@ static void *brcm_monitor_events(void *data)
 						break;
 					}
 					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
-					case EPEVT_EARLY_OFFHOOK: ast_verbose("EPEVT_EARLY_OFFHOOK\n"); break;
-					case EPEVT_EARLY_ONHOOK: ast_verbose("EPEVT_EARLY_ONHOOK\n"); break;
+					case EPEVT_FLASH:
+						//Ignore, handle via early off/on hook
+						break;
+					case EPEVT_EARLY_OFFHOOK:
+						ast_verbose("EPEVT_EARLY_OFFHOOK\n");
+						gettimeofday(&tim, NULL);
+						unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+						if (now - p->last_early_onhook_ts < MAX_HOOKFLASH_DELAY) {
+							p->last_early_onhook_ts = 0;
+							handle_hookflash(p);
+						}
+						break;
+					case EPEVT_EARLY_ONHOOK:
+						ast_verbose("EPEVT_EARLY_ONHOOK\n");
+						gettimeofday(&tim, NULL);
+						p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+						break;
 					case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
 					default:
 						ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
@@ -1069,6 +1092,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		tmp->next = NULL;
 		tmp->last_dtmf_ts = 0;
+		tmp->last_early_onhook_ts = 0;
 		tmp->channel_state = ONHOOK;
 		tmp->connection_init = 0;
 		tmp->endpoint_type = endpoint_type;
