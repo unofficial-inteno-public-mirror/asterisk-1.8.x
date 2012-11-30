@@ -25,6 +25,7 @@
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
+#define NUM_SUBCHANNELS 1
 
 
 enum channel_state {
@@ -43,19 +44,29 @@ enum endpoint_type {
 	DECT,
 };
 
+struct brcm_subchannel {
+	struct ast_channel *owner;	/* Channel we belong to, possibly NULL */
+	int connection_id;		/* Current connection id, may be -1 */
+	unsigned int channel_state;	/* Channel states */
+	unsigned int connection_init;	/* State for endpoint id connection initialization */
+	struct ast_frame fr;		/* Frame */
+	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
+	unsigned int time_stamp;	/* Endpoint RTP time stamp state */
+	unsigned int ssrc;		/* Endpoint RTP synchronization source */
+	int codec;			/* Used codec */
+	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
+};
 
 static struct brcm_pvt {
 	ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
-	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
-	int connection_id;				/* Id of the connection, used to map the correct port, lineid matching parameter */
+	int line_id;				/* Maps to the correct port */
 	char dtmfbuf[AST_MAX_EXTENSION];/* DTMF buffer per channel */
 	int dtmf_len;					/* Length of DTMF buffer */
 	int dtmf_first;					/* DTMF control state, button pushes generate 2 events, one on button down and one on button up */
 	format_t lastformat;            /* Last output format */
 	format_t lastinput;             /* Last input format */
 	struct brcm_pvt *next;			/* Next channel in list */
-	struct ast_frame fr;			/* Frame */
 	char offset[AST_FRIENDLY_OFFSET];
 	char buf[PHONE_MAX_BUF];					/* Static buffer for reading frames */
 	int txgain, rxgain;             /* gain control for playing, recording  */
@@ -69,16 +80,12 @@ static struct brcm_pvt {
 	char cid_name[AST_MAX_EXTENSION];
 	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
-	unsigned int channel_state;		/* Channel states */
-	unsigned int connection_init;	/* State for endpoint id connection initialization */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
-	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
-	unsigned int time_stamp;		/* Endpoint RTP time stamp state */
-	unsigned int ssrc;				/* Endpoint RTP synchronization source */
-	int codec;						/* Used codec */
 	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
-} *iflist = NULL;
 
+	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
+	struct brcm_subchannel *active_sub;		/* Currently active subchannel */
+} *iflist = NULL;
 
 enum rtp_type {
 	BRCM_UNKNOWN,
@@ -95,9 +102,9 @@ EPSTATUS vrgEndptDriverOpen(void);
 EPSTATUS vrgEndptDriverClose(void);
 EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsigned int value, int duration, int period, int repetition);
 
-static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
-static int brcm_create_connection(struct brcm_pvt *p);
-static int brcm_close_connection(struct brcm_pvt *p);
+static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
+static int brcm_create_connection(struct brcm_subchannel *p);
+static int brcm_close_connection(struct brcm_subchannel *p);
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
