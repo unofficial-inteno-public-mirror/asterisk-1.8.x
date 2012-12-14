@@ -28,8 +28,6 @@
 
 /* TODO:
  * Prefered codec order mulaw/alaw/g729/g723.1/g726_24/g726_32
- * Locale support AUS/BEL/BRA/CHL/CHN/CZK/DKN/ETS/FIN/FRA/DEU/HUN/IND/ITA/JPN/
- *                NLD/NZL/USA/ESP/SWE/NOR/CHE/T57/GBR/TWN/UAR
  * Enable T38 support
  * Enable V18 support
  * Ingress/egress gain
@@ -61,6 +59,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/musiconhold.h"
 #include "asterisk/indications.h"
 #include "asterisk/manager.h"
+#include "asterisk/sched.h"
 
 #include "chan_brcm.h"
 
@@ -72,13 +71,22 @@ static const char config[] = "brcm.conf";
 
 VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 
+static int current_connection_id = 0;
 static int num_fxs_endpoints = -1;
 static int num_fxo_endpoints = -1;
 static int num_dect_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
+static int cw = 1; // Call Waiting
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
+struct sched_context *sched; // Scheduling context
+
+/* Call waiting */
+#define DEFAULT_CALL_WAITING_TIMEOUT 24 // In seconds, Telia uses 24s
+static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
+static int cwtimeout_cb(const void *data);
+#define MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook
 
 /* Caller ID */
 #define CLID_MAX_DATE	10
@@ -110,8 +118,8 @@ static const DTMF_CHARNAME_MAP dtmf_to_charname[] =
 	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
 	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
 	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
-	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23}, //#
-	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A}, //*
+	{EPEVT_DTMFH, "EPEVT_DTMFH", 'h'},
+	{EPEVT_DTMFS, "EPEVT_DTMFS", 's'},
 	{EPEVT_LAST,  "EPEVT_LAST", '-'}
 };
 
@@ -219,13 +227,14 @@ static const struct ast_channel_tech brcm_tech = {
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
 	struct brcm_pvt *p;
+	struct brcm_subchannel *sub;
 
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
 
-	p = ast->tech_pvt;
+	sub = ast->tech_pvt;
 
-	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", p->connection_id);
+	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", sub->parent->line_id);
 	ast_localtime(&UtcTime, &tm, NULL);
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
@@ -233,13 +242,26 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		return -1;
 	}
 
-	p->channel_state = RINGING;
-	if (!clip) {
-		brcm_signal_ringing(p);
+	ast_mutex_lock(&sub->parent->lock);
+
+	p = sub->parent;
+	if (cw && brcm_in_call(p)) {
+		ast_log(LOG_WARNING, "Call waiting\n");
+		sub->channel_state = CALLWAITING;
+		brcm_signal_callwaiting(p);
+		int cwtimeout_ms = cwtimeout * 1000;
+		sub->timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
 	} else {
-		brcm_signal_ringing_callerid_pending(p);
-		brcm_signal_callerid(p);
+		ast_log(LOG_WARNING, "Not call waiting\n");
+		sub->channel_state = RINGING;
+		if (!clip) {
+			brcm_signal_ringing(p);
+		} else {
+			brcm_signal_ringing_callerid_pending(p);
+			brcm_signal_callerid(sub);
+		}
 	}
+	ast_mutex_unlock(&sub->parent->lock);
 
   	ast_setstate(ast, AST_STATE_RINGING);
 	ast_queue_control(ast, AST_CONTROL_RINGING);
@@ -249,31 +271,44 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 static int brcm_hangup(struct ast_channel *ast)
 {
 	struct brcm_pvt *p;
-	p = ast->tech_pvt;
+	struct brcm_subchannel *sub;
+	sub = ast->tech_pvt;
 
-	ast_verbose("brcm_hangup(%s) id =%d\n", ast->name, p->connection_id);
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
 	}
+	ast_mutex_lock(&sub->parent->lock);
 
-	if (!clip) {
-		brcm_stop_ringing(p);
+	p = sub->parent;
+	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
+
+	if (sub->channel_state == CALLWAITING) {
+		ast_log(LOG_DEBUG, "stop Call waiting\n");
+		brcm_stop_callwaiting(p);
+		if (ast_sched_del(sched, sub->timer_id)) {
+			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer");
+		}
+		sub->timer_id = -1;
 	} else {
-		brcm_stop_ringing_callerid_pending(p);
+		ast_log(LOG_DEBUG, "Not call waiting\n");
+		if (!clip) {
+			brcm_stop_ringing(p);
+		} else {
+			brcm_stop_ringing_callerid_pending(p);
+		}
 	}
-	ast_mutex_lock(&p->lock);
 	ast_setstate(ast, AST_STATE_DOWN);
 
 	p->lastformat = -1;
 	p->lastinput = -1;
-	p->channel_state = CALLENDED;
+	sub->channel_state = CALLENDED;
 	memset(p->ext, 0, sizeof(p->ext));
-	((struct brcm_pvt *)(ast->tech_pvt))->owner = NULL;
+	((struct brcm_subchannel *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
-	brcm_close_connection(p);
+	brcm_close_connection(sub);
 	ast_mutex_unlock(&p->lock);
 
 	return 0;
@@ -283,8 +318,16 @@ static int brcm_hangup(struct ast_channel *ast)
 static int brcm_answer(struct ast_channel *ast)
 {
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
+
+	struct brcm_subchannel *sub = ast->tech_pvt;
+	ast_mutex_lock(&sub->parent->lock);
+	if (ast->_state != AST_STATE_UP) {
+		ast_setstate(ast, AST_STATE_UP);
+		ast_log(LOG_DEBUG, "brcm_answer(%s) set state to up\n", ast->name);
+	}
 	ast->rings = 0;
-	ast_setstate(ast, AST_STATE_UP);
+	sub->channel_state = INCALL;
+	ast_mutex_unlock(&sub->parent->lock);
 	return 0;
 }
 
@@ -450,10 +493,10 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
-	struct brcm_pvt *p = ast->tech_pvt;
+	struct brcm_subchannel *p = ast->tech_pvt;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
 
-	if (ast->_state != AST_STATE_UP) {
+	if (ast->_state != AST_STATE_UP && ast->_state != AST_STATE_RING) {
 		/* Silently ignore packets until channel is up */
 		ast_debug(5, "error: channel not up\n");
 		return 0;
@@ -477,7 +520,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		p->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
 		tPacketParm_send.cnxId       = p->connection_id;
-		tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->connection_id];
+		tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[p->parent->line_id];
 		tPacketParm_send.length      = 12 + frame->datalen;
 		tPacketParm_send.bufDesc     = (int)&epPacket_send;
 		tPacketParm_send.epPacket    = &epPacket_send;
@@ -494,18 +537,18 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 /* Tell endpoint to play country specific dialtone. */
 int brcm_signal_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 1, -1, -1 , -1);
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 1, -1, -1 , -1);
 }
 
 int brcm_stop_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_DIAL, 0, -1, -1 , -1);
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 0, -1, -1 , -1);
 }
 
-static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, const char *linkedid, format_t format)
+static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *cntx, const char *linkedid, format_t format)
 {
 	struct ast_channel *tmp;
 
-	tmp = ast_channel_alloc(1, state, i->cid_num, i->cid_name, "", i->ext, i->context, linkedid, 0, "BRCM/%d", i->connection_id);
+	tmp = ast_channel_alloc(1, state, i->parent->cid_num, i->parent->cid_name, "", i->parent->ext, i->parent->context, linkedid, 0, "BRCM/%d/%d", i->parent->line_id, i->connection_id);
 
 	if (tmp) {
 		tmp->tech = cur_tech;
@@ -513,7 +556,7 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 
 		/* find out which codec to use */
 		format_t fmt = format;
-		fxs_settings *s = &fxs_config[i->connection_id];
+		fxs_settings *s = &fxs_config[i->parent->line_id];
 		tmp->nativeformats = s->capability;
 		if (fmt == 0) {
 			//Let asterisk decide which codec is the best
@@ -534,19 +577,19 @@ static struct ast_channel *brcm_new(struct brcm_pvt *i, int state, char *cntx, c
 			tmp->rings = 1;
 		tmp->tech_pvt = i;
 		ast_copy_string(tmp->context, cntx, sizeof(tmp->context));
-		if (!ast_strlen_zero(i->ext))
-			ast_copy_string(tmp->exten, i->ext, sizeof(tmp->exten));
+		if (!ast_strlen_zero(i->parent->ext))
+			ast_copy_string(tmp->exten, i->parent->ext, sizeof(tmp->exten));
 		else
 			strcpy(tmp->exten, "s");
 
-		if (!ast_strlen_zero(i->language))
-			ast_string_field_set(tmp, language, i->language);
+		if (!ast_strlen_zero(i->parent->language))
+			ast_string_field_set(tmp, language, i->parent->language);
 
 		/* Don't use ast_set_callerid() here because it will
 		 * generate a NewCallerID event before the NewChannel event */
-		if (!ast_strlen_zero(i->cid_num)) {
+		if (!ast_strlen_zero(i->parent->cid_num)) {
 			tmp->caller.ani.number.valid = 1;
-			tmp->caller.ani.number.str = ast_strdup(i->cid_num);
+			tmp->caller.ani.number.str = ast_strdup(i->parent->cid_num);
 		}
 
 		i->owner = tmp;
@@ -571,56 +614,124 @@ static struct brcm_pvt* brcm_get_next_pvt(struct brcm_pvt *p) {
 		return NULL;
 }
 
-
-static struct brcm_pvt* brcm_get_cid_pvt(struct brcm_pvt *p, int connection_id)
+static struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id)
 {
 	struct brcm_pvt *tmp = p;
-	if (p->connection_id == connection_id) return p;
+	if (p->line_id == line_id) return p;
 
 	tmp = brcm_get_next_pvt(tmp);
 
 	while(tmp) {
-		if (tmp->connection_id == connection_id) return tmp;
+		if (tmp->line_id == line_id) return tmp;
 		tmp = brcm_get_next_pvt(tmp);
 	}
 	return NULL;
 }
 
 
+static struct brcm_subchannel* brcm_get_subchannel_from_connectionid(struct brcm_pvt *p, int connection_id)
+{
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->connection_id == connection_id) {
+			return p->sub[i];
+		}
+	}
+	return NULL;
+}
+
+static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
+{
+	struct brcm_subchannel *sub = NULL;
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		switch (p->sub[i]->channel_state) {
+			case INCALL:
+			case DIALING:
+			case OFFHOOK:
+			case RINGING:
+				sub = p->sub[i];
+				return sub;
+			case CALLWAITING:
+			case ONHOLD:
+				break;
+			case ONHOOK:
+			case ANSWER: //Remove this state
+			case CALLENDED:
+				if (!sub) {
+					sub = p->sub[i];
+				}
+				break;
+			default:
+				ast_log(LOG_WARNING, "Unhandled channel state %d\n", sub->channel_state);
+				break;
+		}
+	}
+
+	return sub;
+}
+
+/* Hangup incoming call after call waiting times out */
+static int cwtimeout_cb(const void *data)
+{
+	struct brcm_subchannel *sub;
+
+	ast_log(LOG_DEBUG, "No response to call waiting, hanging up\n");
+
+	sub = (struct brcm_subchannel *) data;
+	ast_mutex_lock(&sub->parent->lock);
+	sub->timer_id = -1;
+	sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
+	ast_queue_control(sub->owner, AST_CONTROL_BUSY);
+	ast_mutex_unlock(&sub->parent->lock);
+
+	return 0;
+}
+
+
 static void *brcm_event_handler(void *data)
 {
 	struct brcm_pvt *p = iflist;
+	struct brcm_subchannel *sub;
 	struct timeval tim;
 	unsigned int ts;
 
 	while(events) {
 		p = iflist;
-		gettimeofday(&tim, NULL);
-		ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
 		/* loop over all pvt's */
 		while(p) {
 			int autodial = 0;
 
 			ast_mutex_lock(&p->lock);
+			sub = brcm_get_active_subchannel(p);
 
+			if (!sub) {
+				/* Get next channel pvt if there is one */
+				ast_mutex_unlock(&p->lock);
+				p = brcm_get_next_pvt(p);
+				continue;
+			}
 //			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
 //				ast_verbose("ts - last_dtmf_ts > 2000\n");
 //				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
 //			}
 			/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
-			if ((strlen(p->autodial) > 0) && ((p->channel_state == DIALING) || (p->channel_state == OFFHOOK))) {
+			if ((strlen(p->autodial) > 0) && ((sub->channel_state == DIALING) || (sub->channel_state == OFFHOOK))) {
 				autodial = 1;
 				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
 			}
 
 			/* Check if the dtmf string matches anything in the dialplan */
-			if ((((p->channel_state == DIALING) &&
-			    (ts - p->last_dtmf_ts > (fxs_config[p->connection_id].timeoutmsec))) || autodial) &&
+			gettimeofday(&tim, NULL);
+			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+			int delta = ts - p->last_dtmf_ts;
+			if ((((sub->channel_state == DIALING) &&
+			    (delta > (fxs_config[p->line_id].timeoutmsec))) || autodial) &&
 			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
 			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
 			    ) {
-				p->channel_state = INCALL;
+				sub->channel_state = DIALING;
 				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
 				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 				ast_verbose("Starting pbx in context: %s with cid: %s ext: %s\n", p->context, p->cid_num, p->ext);
@@ -632,10 +743,14 @@ static void *brcm_event_handler(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
 				/* Start the pbx */
-				if (!p->connection_init)
-					brcm_create_connection(p);
+				if (!sub->connection_init) {
+					sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
+					brcm_create_connection(sub);
+				}
 
-				brcm_new(p, AST_STATE_UP, p->context, NULL, 0);
+				/* Changed state from AST_STATE_UP to AST_STATE_RING ito get the brcm_answer callback 
+				 * which is needed for call waiting. */
+				brcm_new(sub, AST_STATE_RING, p->context, NULL, 0);
 
 			}
 
@@ -643,6 +758,10 @@ static void *brcm_event_handler(void *data)
 			ast_mutex_unlock(&p->lock);
 			p = brcm_get_next_pvt(p);
 		}
+
+		/* Give timer scheduler some cycles */
+		ast_sched_runq(sched);
+
 		usleep(100);
 //		sched_yield();
 	}
@@ -652,8 +771,29 @@ static void *brcm_event_handler(void *data)
 	return NULL;
 }
 
-static void handle_dtmf(EPEVT event, struct brcm_pvt *p)
+
+#define DTMF_CHECK(dtmf_button, event_string)				\
+	{								\
+		ast_verbose("%s event detected\n", event_string);	\
+		gettimeofday(&tim, NULL);				\
+		if (p->dtmf_first < 0) {				\
+			p->dtmf_first = dtmf_button;			\
+			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
+		} else if (p->dtmf_first == dtmf_button) {		\
+			p->dtmfbuf[p->dtmf_len] = dtmf_button;		\
+			p->dtmf_len++;					\
+			p->dtmfbuf[p->dtmf_len] = '\0';			\
+			p->dtmf_first = -1;				\
+			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC; \
+			if (sub->channel_state == OFFHOOK) sub->channel_state = DIALING; \
+		} else {						\
+			p->dtmf_first = -1;				\
+		}							\
+	}
+
+static void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 {
+	struct brcm_pvt *p;
 	const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
 	struct timeval tim;
 
@@ -667,50 +807,15 @@ static void handle_dtmf(EPEVT event, struct brcm_pvt *p)
 		}
 	}
 
-	char dtmf_button = dtmfMap->c;
-	gettimeofday(&tim, NULL);
+	ast_log(LOG_DEBUG, "Handle DTMF %s\n", dtmfMap->name);
+	p = sub->parent;
+	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
+}
 
-	if (p->dtmf_first < 0) {
-		p->dtmf_first = dtmf_button;
-		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-		ast_debug(9,"Pressed DTMF %s\n", dtmfMap->name);
-		if (p->channel_state == INCALL) { //Send directly to Asterisk
-			ast_channel_lock(p->owner);
-			struct ast_frame f = { 0, };
-			f.frametype = AST_FRAME_DTMF;
-			f.subclass.integer = dtmfMap->c;
-			f.src = "BRCM";
-			f.frametype = AST_FRAME_DTMF_BEGIN;
-			ast_queue_frame(p->owner, &f);
-			ast_channel_unlock(p->owner);
-		}
-	}
-	else if (p->dtmf_first == dtmf_button) {
-		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);
-		if (p->channel_state == INCALL) {
-			ast_channel_lock(p->owner);
-			struct ast_frame f = { 0, };
-			f.subclass.integer = dtmf_button;
-			f.src = "BRCM";
-			f.frametype = AST_FRAME_DTMF_END;
-			ast_queue_frame(p->owner, &f);
-			ast_channel_unlock(p->owner);
-			p->dtmf_first = -1;
-		}
-		else {
-			p->dtmfbuf[p->dtmf_len] = dtmf_button;
-			p->dtmf_len++;
-			p->dtmfbuf[p->dtmf_len] = '\0';
-			p->dtmf_first = -1;
-			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-			if (p->channel_state == OFFHOOK) {
-				p->channel_state = DIALING;
-			}
-		}
-	}
-	else {
-		p->dtmf_first = -1;
-	}
+static void handle_hookflash(struct brcm_pvt *p)
+{
+	ast_log(LOG_DEBUG, "handle hf\n");
+	//TODO
 }
 
 static char phone_2digit(char c)
@@ -727,7 +832,7 @@ static char phone_2digit(char c)
 
 static void *brcm_monitor_packets(void *data)
 {
-	struct brcm_pvt *p;
+	struct brcm_subchannel *p;
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
@@ -751,7 +856,7 @@ static void *brcm_monitor_packets(void *data)
 
 		if(ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS) {
 
-			p = brcm_get_cid_pvt(iflist, tPacketParm.cnxId);
+			p = brcm_get_subchannel_from_connectionid(iflist, tPacketParm.cnxId);
 			
 			if (tPacketParm.length <= 2) {
 				ast_log(LOG_WARNING, "Ignoring RTP package - too short\n");
@@ -798,7 +903,7 @@ static void *brcm_monitor_packets(void *data)
 					}
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
-				int dtmf_short = fxs_config[p->connection_id].dtmf_short;
+				int dtmf_short = fxs_config[p->parent->line_id].dtmf_short;
 
 				if (dtmf_short) {
 					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
@@ -831,8 +936,8 @@ static void *brcm_monitor_packets(void *data)
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
-			ast_mutex_lock(&p->lock);
-			if (p->owner && (p->owner->_state == AST_STATE_UP)) {
+			ast_mutex_lock(&p->parent->lock);
+			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
 				/* try to lock channel and send frame */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
@@ -841,7 +946,7 @@ static void *brcm_monitor_packets(void *data)
 					ast_channel_unlock(p->owner);
 				}
 			}
-			ast_mutex_unlock(&p->lock);
+			ast_mutex_unlock(&p->parent->lock);
 		}
 		//sched_yield();
 		usleep(100);
@@ -858,6 +963,7 @@ static void *brcm_monitor_events(void *data)
 	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
 	int rc = IOCTL_STATUS_FAILURE;
 	struct brcm_pvt *p;
+	struct brcm_subchannel *sub;
 	struct timeval tim;
 
 	while (monitor) {
@@ -868,118 +974,131 @@ static void *brcm_monitor_events(void *data)
 		ast_verbose("Waiting for event\n");
 		/* Get the event from the endpoint driver. */
 		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
-		if( rc == IOCTL_STATUS_SUCCESS )
-			{
-				ast_debug(9, "Event %d detected\n", tEventParm.event);
-				p = brcm_get_cid_pvt(iflist, tEventParm.lineId);
-				if (p) {
-					switch (tEventParm.event) {
-					case EPEVT_OFFHOOK:
-						ast_debug(9, "EPEVT_OFFHOOK detected\n");
-						ast_mutex_lock(&p->lock);		  
-						ast_verbose("me: got mutex\n");
-						gettimeofday(&tim, NULL);
-						p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-
-						/* Reset the dtmf buffer */
-						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-						p->dtmf_len          = 0;
-						p->dtmf_first        = -1;
-						p->dtmfbuf[p->dtmf_len] = '\0';
-						p->channel_state = OFFHOOK;
-						ast_verbose("Sending manager event\n");
-						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->connection_id);
-
-						if(p->owner) {
-
-							if (!p->connection_init) {
-								ast_debug(9, "create_connection()\n");
-								brcm_create_connection(p);
-							}
-
-							ast_queue_control(p->owner, AST_CONTROL_ANSWER);
-							p->channel_state = INCALL;
-						}
-
-						if (p->channel_state == OFFHOOK) {
-							/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
-							brcm_signal_dialtone(p);
-						}
-
-						ast_mutex_unlock(&p->lock);
-						ast_debug(9, "me: unlocked mutex\n");
-
-						break;
-					case EPEVT_ONHOOK:
-						ast_debug(9, "EPEVT_ONHOOK detected\n");
-						gettimeofday(&tim, NULL);
-						p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-
-						ast_mutex_lock(&p->lock);
-						ast_debug(9, "me: got mutex\n");
-
-						if (p->channel_state == OFFHOOK) {
-							/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
-							brcm_stop_dialtone(p);
-						}
-
-						p->channel_state = ONHOOK;
-						ast_verbose("Sending manager event\n");
-						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->connection_id);
-
-						/* Reset the dtmf buffer */
-						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-						p->dtmf_len          = 0;
-						p->dtmf_first        = -1;
-						p->dtmfbuf[p->dtmf_len] = '\0';
-						brcm_close_connection(p);
-
-						if(p->owner) {
-							ast_queue_control(p->owner, AST_CONTROL_HANGUP);
-						}
-						ast_mutex_unlock(&p->lock);
-						ast_debug(9, "me: unlocked mutex\n");
-						break;
-
-					case EPEVT_DTMF0:
-					case EPEVT_DTMF1:
-					case EPEVT_DTMF2:
-					case EPEVT_DTMF3:
-					case EPEVT_DTMF4:
-					case EPEVT_DTMF5:
-					case EPEVT_DTMF6:
-					case EPEVT_DTMF7:
-					case EPEVT_DTMF8:
-					case EPEVT_DTMF9:
-					case EPEVT_DTMFS:
-					case EPEVT_DTMFH:
-					{
-						ast_mutex_lock(&p->lock);
-						unsigned int old_state = p->channel_state;
-						handle_dtmf(tEventParm.event, p);
-						if (p->channel_state == DIALING && old_state != p->channel_state) {
-							/* DTMF event took channel state to DIALING. Stop dial tone. */
-							ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-							brcm_stop_dialtone(p); 
-						}
-						ast_mutex_unlock(&p->lock);
-						break;
-					}
-					case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
-					case EPEVT_EARLY_OFFHOOK: ast_verbose("EPEVT_EARLY_OFFHOOK\n"); break;
-					case EPEVT_EARLY_ONHOOK: ast_verbose("EPEVT_EARLY_ONHOOK\n"); break;
-					case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
-					default:
-						ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
-						break;
-					}
-				} else
-					ast_verbose("No pvt with the correct connection_id/lineId %d found!\n", tEventParm.lineId);
-
-
-			} else {
+		if( rc != IOCTL_STATUS_SUCCESS ) {
 			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
+			continue;
 		}
+
+		ast_debug(9, "Event %d detected\n", tEventParm.event);
+		p = brcm_get_pvt_from_lineid(iflist, tEventParm.lineId);
+		if (!p) {
+			ast_verbose("No pvt with the correct line_id %d found!\n", tEventParm.lineId);
+			continue;
+		}
+
+		ast_mutex_lock(&p->lock);		  
+		ast_verbose("me: got mutex\n");
+		sub = brcm_get_active_subchannel(p);
+		if (!sub) {
+			ast_mutex_unlock(&p->lock);
+			ast_debug(9, "me: unlocked mutex\n");
+			continue;
+		}
+		switch (tEventParm.event) {
+			case EPEVT_OFFHOOK:
+				ast_debug(9, "EPEVT_OFFHOOK detected\n");
+				gettimeofday(&tim, NULL);
+				p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+
+				/* Reset the dtmf buffer */
+				memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+				p->dtmf_len          = 0;
+				p->dtmf_first        = -1;
+				p->dtmfbuf[p->dtmf_len] = '\0';
+				sub->channel_state = OFFHOOK;
+				ast_verbose("Sending manager event\n");
+				manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
+
+				if(sub->owner) {
+
+					if (!sub->connection_init) {
+						ast_debug(9, "create_connection()\n");
+						brcm_create_connection(sub);
+					}
+
+					ast_queue_control(sub->owner, AST_CONTROL_ANSWER);
+					sub->channel_state = INCALL;
+				}
+
+				if (sub->channel_state == OFFHOOK) {
+					/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
+					brcm_signal_dialtone(p);
+				}
+
+				break;
+			case EPEVT_ONHOOK:
+				ast_debug(9, "EPEVT_ONHOOK detected\n");
+				gettimeofday(&tim, NULL);
+				p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+
+				if (sub->channel_state == OFFHOOK) {
+					/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
+					brcm_stop_dialtone(p);
+				}
+
+				sub->channel_state = ONHOOK;
+				ast_verbose("Sending manager event\n");
+				manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
+
+				/* Reset the dtmf buffer */
+				memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+				p->dtmf_len          = 0;
+				p->dtmf_first        = -1;
+				p->dtmfbuf[p->dtmf_len] = '\0';
+				brcm_close_connection(sub);
+
+				if(sub->owner) {
+					ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
+				}
+				break;
+
+			case EPEVT_DTMF0:
+			case EPEVT_DTMF1:
+			case EPEVT_DTMF2:
+			case EPEVT_DTMF3:
+			case EPEVT_DTMF4:
+			case EPEVT_DTMF5:
+			case EPEVT_DTMF6:
+			case EPEVT_DTMF7:
+			case EPEVT_DTMF8:
+			case EPEVT_DTMF9:
+			case EPEVT_DTMFS:
+			case EPEVT_DTMFH:
+			{
+				unsigned int old_state = sub->channel_state;
+				handle_dtmf(tEventParm.event, sub);
+				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+					/* DTMF event took channel state to DIALING. Stop dial tone. */
+					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+					brcm_stop_dialtone(p); 
+				}
+				break;
+			}
+			case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
+			case EPEVT_FLASH:
+				//Ignore, handle via early off/on hook
+				break;
+			case EPEVT_EARLY_OFFHOOK:
+				ast_verbose("EPEVT_EARLY_OFFHOOK\n");
+				gettimeofday(&tim, NULL);
+				unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+				if (now - p->last_early_onhook_ts < MAX_HOOKFLASH_DELAY) {
+					p->last_early_onhook_ts = 0;
+					handle_hookflash(p);
+				}
+				break;
+			case EPEVT_EARLY_ONHOOK:
+				ast_verbose("EPEVT_EARLY_ONHOOK\n");
+				gettimeofday(&tim, NULL);
+				p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+				break;
+			case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
+			default:
+				ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
+				break;
+		}
+		ast_mutex_unlock(&p->lock);
+		ast_debug(9, "me: unlocked mutex\n");
 	}
 
 	ast_verbose("Monitor thread ended\n");
@@ -1058,7 +1177,7 @@ static int start_threads(void)
 /* Load settings for each fxs line */
 static void brcm_initialize_pvt(struct brcm_pvt *p)
 {
-	fxs_settings *s = &fxs_config[p->connection_id];
+	fxs_settings *s = &fxs_config[p->line_id];
 
 	ast_copy_string(p->language, s->language, sizeof(p->language));
 	ast_copy_string(p->context, s->context, sizeof(p->context));
@@ -1070,10 +1189,10 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 
 static void brcm_fill_autodial(struct brcm_pvt *p) {
 	int i;
-	fxs_settings *s = &fxs_config[p->connection_id];
+	fxs_settings *s = &fxs_config[p->line_id];
 
 	for (i=0 ; i<s->autodial_nr ; i++) {
-		if (p->connection_id == s->autodial_ext[i].id)
+		if (p->line_id == s->autodial_ext[i].id)
 			ast_copy_string(p->autodial, s->autodial_ext[i].extension, sizeof(p->autodial));
 	}
 }
@@ -1086,22 +1205,37 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 	
 	tmp = ast_calloc(1, sizeof(*tmp));
 	if (tmp) {
-		tmp->owner = NULL;
+		struct brcm_subchannel *sub;
+		int i;
+		for (i=0; i<NUM_SUBCHANNELS; i++) {
+			sub = ast_calloc(1, sizeof(*sub));
+			if (sub) {
+				sub->owner = NULL;
+				sub->connection_id = -1;
+				sub->connection_init = 0;
+				sub->channel_state = ONHOOK;
+				sub->time_stamp = 0;
+				sub->sequence_number = 0;
+				sub->ssrc = 0;
+				sub->codec = -1;
+				sub->parent = tmp;
+				sub->timer_id = -1;
+				tmp->sub[i] = sub;
+				ast_log(LOG_ERROR, "subchannel created\n");
+			} else {
+				ast_log(LOG_ERROR, "no subchannel created\n");
+			}
+		}
+		tmp->line_id = -1;
 		tmp->dtmf_len = 0;
 		tmp->dtmf_first = -1;
-		tmp->connection_id = -1;
 		tmp->lastformat = -1;
 		tmp->lastinput = -1;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		tmp->next = NULL;
 		tmp->last_dtmf_ts = 0;
-		tmp->channel_state = ONHOOK;
-		tmp->connection_init = 0;
+		tmp->last_early_onhook_ts = 0;
 		tmp->endpoint_type = endpoint_type;
-		tmp->time_stamp = 0;
-		tmp->sequence_number = 0;
-		tmp->ssrc = 0;
-		tmp->codec = -1;
 	}
 	return tmp;
 }
@@ -1126,14 +1260,14 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 }
 
 
-static void brcm_assign_connection_id(struct brcm_pvt *p)
+static void brcm_assign_line_id(struct brcm_pvt *p)
 {
 	struct brcm_pvt *tmp = p;
 	int i;
 
-	/* Assign connection_id's */
+	/* Assign line_id's */
 	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
-		tmp->connection_id = endptObjState[i].lineId;
+		tmp->line_id = endptObjState[i].lineId;
 		brcm_fill_autodial(tmp);
 		brcm_initialize_pvt(tmp);
 		tmp = tmp->next;
@@ -1141,12 +1275,78 @@ static void brcm_assign_connection_id(struct brcm_pvt *p)
 }
 
 
+static int brcm_in_call(const struct brcm_pvt *p)
+{
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->channel_state == INCALL) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int brcm_active(const struct brcm_pvt *p)
+{
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->channel_state != ONHOOK &&
+		    p->sub[i]->channel_state != CALLENDED) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+
+/*
+ * Return free subchannel if conditions are met.
+ */
+static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
+{
+	struct brcm_subchannel *sub = NULL;
+	int i;
+
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->channel_state == ONHOOK || p->sub[i]->channel_state == CALLENDED) {
+			/* There is an idle subchannel */
+			if (!sub) {
+				/* which may be used */
+				sub = p->sub[i];
+				if (cw) {
+					/* for call waiting or 'ordinary' call */
+					if (brcm_active(p) && !brcm_in_call(p)) {
+						/* if there had been a 'busy' subchannel in state INCALL */
+						sub = NULL;
+					}
+					break;
+				}
+			}
+		} else {
+			/* There is a 'busy' subchannel */
+			if (!cw) {
+				/* and call waiting is disabled */
+				sub = NULL;
+				break;
+			}
+		}
+	}
+
+	if (sub) {
+		ast_log(LOG_DEBUG, "Got subchannel at %p\n", sub);
+	}
+	return sub;
+}
+
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
 	format_t oldformat;
 	struct brcm_pvt *p;
+	struct brcm_subchannel *sub;
 	struct ast_channel *tmp = NULL;
-	int port_id = -1;
+	int line_id = -1;
 
 	char buf[256];
 	ast_debug(1, "Asked to create a BRCM channel with formats: %s\n", ast_getformatname_multiple(buf, sizeof(buf), format));
@@ -1157,12 +1357,12 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		return NULL;
 	}
 	
-	/* Get port id */
-	port_id = atoi((char*)data);
-	ast_verbose("brcm_request = %s, port_id=%d, format %x\n", (char*) data, port_id, format);
+	/* Get line id */
+	line_id = atoi((char*)data);
+	ast_verbose("brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, format);
 
 	/* Map id to the correct pvt */
-	p = brcm_get_cid_pvt(iflist, port_id);
+	p = brcm_get_pvt_from_lineid(iflist, line_id);
 
 	/* If the id doesn't exist (p==NULL) use 0 as default */
 	if (!p) {
@@ -1172,14 +1372,17 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 
 	ast_mutex_lock(&p->lock);
 
+	sub = brcm_get_idle_subchannel(p);
+
 	/* Check that the request has an allowed format */
 	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1);
 
 	if (!allowedformat) {
 		ast_log(LOG_NOTICE, "Asked to get a channel of unsupported format %s\n", ast_getformatname(format));
 		*cause = AST_CAUSE_BEARERCAPABILITY_NOTAVAIL;
-	} else if ((!p->owner) && (!p->connection_init)) {
-		tmp = brcm_new(p, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL, format);
+	} else if (sub) {
+		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
+		tmp = brcm_new(sub, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL, format);
 	} else {
 		*cause = AST_CAUSE_BUSY;
 	}
@@ -1215,6 +1418,40 @@ static int parse_gain_value(const char *gain_type, const char *value)
 }
 
 
+static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
+{
+	struct brcm_subchannel *sub;
+
+	/* Output status for sub channels */
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		ast_cli(a->fd, "Subchannel          : %d\n", i);
+		sub = p->sub[i];
+		ast_cli(a->fd, "  Connection id       : %d\n", sub->connection_id);
+
+		ast_cli(a->fd, "  Owner ptr           : 0x%x\n", (unsigned int) sub->owner);
+		ast_cli(a->fd, "  Channel state       : ");
+		switch (sub->channel_state) {
+			case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
+			case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
+			case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
+			case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
+			case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
+			case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
+			case RINGING:	ast_cli(a->fd, "RINGING\n"); break;
+			case CALLWAITING:	ast_cli(a->fd, "CALLWAITING\n"); break;
+			case ONHOLD:	ast_cli(a->fd, "ONHOLD\n"); break;
+			default:	ast_cli(a->fd, "UNKNOWN\n"); break;
+		}
+		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
+		ast_cli(a->fd, "  Codec used          : %s\n", brcm_get_codec_string(sub->codec));
+		ast_cli(a->fd, "  RTP sequence number : %d\n", sub->sequence_number);
+		ast_cli(a->fd, "  RTP SSRC            : %d\n", sub->ssrc);
+		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
+		ast_cli(a->fd, "  Timer id            : %d\n", sub->timer_id);
+	}
+}
+
 static void brcm_show_pvts(struct ast_cli_args *a)
 {
 	struct brcm_pvt *p = iflist;
@@ -1222,21 +1459,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 	
 	while(p) {
 		ast_cli(a->fd, "\nPvt nr: %d\n",i);
-		ast_cli(a->fd, "Connection id       : %d\n", p->connection_id);
-		ast_cli(a->fd, "Channel state       : ");
-		switch (p->channel_state) {
-		case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
-		case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
-		case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
-		case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
-		case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
-		case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
-		case RINGING:	ast_cli(a->fd, "RINGING\n"); break;
-		default:		ast_cli(a->fd, "UNKNOWN\n"); break;
-		}
-		ast_cli(a->fd, "Connection init     : %d\n", p->connection_init);
+		ast_cli(a->fd, "Line id             : %d\n", p->line_id);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int) p->next);
-		ast_cli(a->fd, "Pvt owner ptr       : 0x%x\n", (unsigned int) p->owner);		
 		ast_cli(a->fd, "Endpoint type       : ");
 		switch (p->endpoint_type) {
 			case FXS:  ast_cli(a->fd, "FXS\n");  break;
@@ -1247,13 +1471,10 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
 		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
-		ast_cli(a->fd, "RTP sequence number : %d\n", p->sequence_number);
-		ast_cli(a->fd, "RTP SSRC            : %d\n", p->ssrc);
-		ast_cli(a->fd, "RTP timestamp       : %d\n", p->time_stamp);
+		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
-		ast_cli(a->fd, "Codec used          : %s\n", brcm_get_codec_string(p->codec));
 
-		fxs_settings* s = &fxs_config[p->connection_id];
+		fxs_settings* s = &fxs_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
 		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
@@ -1299,6 +1520,12 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 				default: ast_cli(a->fd, "[%d] config error, ", s->codec_list[j]);
 			}
 		}
+
+		ast_cli(a->fd, "\n");
+
+		/* Print status for subchannels */
+		brcm_show_subchannels(a, p);
+
 		ast_cli(a->fd, "\n");
 
 		i++;
@@ -1541,7 +1768,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 	
 	p = iflist;
 	while(p) {
-		if (p->connection_id == (a->argv[3][0]-'0'))
+		if (p->line_id == (a->argv[3][0]-'0'))
 			ast_copy_string(p->autodial, a->argv[4], sizeof(p->autodial));
 		p = brcm_get_next_pvt(p);
 	}
@@ -1566,6 +1793,9 @@ static struct ast_cli_entry cli_brcm[] = {
 static int unload_module(void)
 {
 	struct brcm_pvt *p, *pl;
+
+	ast_sched_dump(sched);
+
 	/* First, take us out of the channel loop */
 	if (cur_tech)
 		ast_channel_unregister(cur_tech);
@@ -1573,8 +1803,11 @@ static int unload_module(void)
 		/* Hangup all interfaces if they have an owner */
 		p = iflist;
 		while(p) {
-			if (p->owner)
-				ast_softhangup(p->owner, AST_SOFTHANGUP_APPUNLOAD);
+			int i;
+			for (i=0; i<NUM_SUBCHANNELS; i++) {
+				if (p->sub[i]->owner)
+					ast_softhangup(p->sub[i]->owner, AST_SOFTHANGUP_APPUNLOAD);
+			}
 			p = p->next;
 		}
 		iflist = NULL;
@@ -1639,6 +1872,9 @@ static int unload_module(void)
 	ast_verbose("Deinitializing endpoint...\n");
 	endpt_deinit();
 	ast_verbose("Endpoint deinited...\n");
+
+	sched_context_destroy(sched);
+
 	return 0;
 }
 
@@ -1698,10 +1934,10 @@ static void build_xlaw_table(uint8_t *linear_to_xlaw,
  * useful when configuring a connection in preparation for an
  * outgoing call.
  */
-static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_pvt *p)
+static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 {
 	EPZCNXPARAM epCnxParms = {0};
-	fxs_settings *s = &fxs_config[p->connection_id];
+	fxs_settings *s = &fxs_config[p->parent->line_id];
 
 	epCnxParms.mode = EPCNXMODE_SNDRX;
 
@@ -1893,6 +2129,12 @@ static int load_module(void)
 	struct ast_config *cfg;
 	struct ast_flags config_flags = { 0 };
 
+	/* Setup scheduler */
+	if (!(sched = sched_context_create())) {
+		ast_log(LOG_ERROR, "Unable to create scheduler context. Aborting.\n");
+		return AST_MODULE_LOAD_FAILURE;
+	}
+
 	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
 		return AST_MODULE_LOAD_DECLINE;
@@ -1931,6 +2173,12 @@ static int load_module(void)
 
 				countryMap++;
 			}
+		} else if (!strcasecmp(v->name, "cwtimeout")) {
+			cwtimeout = atoi(v->value);
+			if (cwtimeout > 60 || cwtimeout < 0) {
+				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
+				ast_log(LOG_WARNING, "Incorrect cwtimeouty '%s', defaulting to '%d'\n", v->value, cwtimeout);
+			}
 		}
 
 		v = v->next;
@@ -1960,7 +2208,7 @@ static int load_module(void)
 	}
 
 	brcm_create_pvts(iflist, 0);
-	brcm_assign_connection_id(iflist);
+	brcm_assign_line_id(iflist);
 	ast_mutex_unlock(&iflock);
 	cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
@@ -2074,10 +2322,23 @@ int endpt_init(void)
 }
 
 
+int brcm_signal_callwaiting(const struct brcm_pvt *p)
+{
+	ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLWT, 1, -1, -1, -1);
+	return 0;
+}
+
+int brcm_stop_callwaiting(const struct brcm_pvt *p)
+{
+	ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLWT, 0, -1, -1, -1);
+	return 0;
+}
+
+
 int brcm_signal_ringing(struct brcm_pvt *p)
 {
-	if (fxs_config[p->connection_id].ringsignal) {
-		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
+	if (fxs_config[p->line_id].ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 	}
 	return 0;
 }
@@ -2085,8 +2346,8 @@ int brcm_signal_ringing(struct brcm_pvt *p)
 
 int brcm_stop_ringing(struct brcm_pvt *p)
 {
-	if (fxs_config[p->connection_id].ringsignal) {
-		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
+	if (fxs_config[p->line_id].ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 	}
 
 	return 0;
@@ -2095,8 +2356,8 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 /* Prepare endpoint for ringing. Caller ID signal pending. */
 int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (fxs_config[p->connection_id].ringsignal) {
-		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 1, -1, -1 , -1);
+	if (fxs_config[p->line_id].ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLID_RINGING, 1, -1, -1 , -1);
 	}
 
 	return 0;
@@ -2104,8 +2365,8 @@ int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (fxs_config[p->connection_id].ringsignal) {
-		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID_RINGING, 0, -1, -1 , -1);
+	if (fxs_config[p->line_id].ringsignal) {
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLID_RINGING, 0, -1, -1 , -1);
 	}
 
 	return 0;
@@ -2117,9 +2378,9 @@ int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
  * 'O' in number or name => not available
  * 'P' in number or name => presentation not allowed
  */
-int brcm_signal_callerid(struct brcm_pvt *p)
+int brcm_signal_callerid(struct brcm_subchannel *sub)
 {
-	if (fxs_config[p->connection_id].ringsignal) {
+	if (fxs_config[sub->parent->line_id].ringsignal) {
 		CLID_STRING clid_string;
 		struct timeval utc_time;
 		struct ast_tm local_time;
@@ -2137,17 +2398,17 @@ int brcm_signal_callerid(struct brcm_pvt *p)
 			local_time.tm_min);
 
 		/* Get connected line identity if valid and presentation is allowed */
-		if (p->owner) {
-			if ((ast_party_id_presentation(&p->owner->connected.id) & AST_PRES_RESTRICTION) == AST_PRES_ALLOWED) {
-				if (p->owner->connected.id.number.valid) {
-					strncpy(number, p->owner->connected.id.number.str, CLID_MAX_NAME);
+		if (sub->owner) {
+			if ((ast_party_id_presentation(&sub->owner->connected.id) & AST_PRES_RESTRICTION) == AST_PRES_ALLOWED) {
+				if (sub->owner->connected.id.number.valid) {
+					strncpy(number, sub->owner->connected.id.number.str, CLID_MAX_NAME);
 					number[CLID_MAX_NUMBER - 1] = '\0';
 				} else {
 					strcpy(number, "O\0");
 				}
 
-				if (p->owner->connected.id.name.valid) {
-					strncpy(name, p->owner->connected.id.name.str, CLID_MAX_NAME);
+				if (sub->owner->connected.id.name.valid) {
+					strncpy(name, sub->owner->connected.id.name.str, CLID_MAX_NAME);
 					name[CLID_MAX_NAME - 1] = '\0';
 				} else {
 					strcpy(name, "O\0");
@@ -2175,7 +2436,7 @@ int brcm_signal_callerid(struct brcm_pvt *p)
 		clid_string.number_name[str_length++] = '\0';
 
 		ast_log(LOG_DEBUG, "CLID string: %s\n", (char *) &clid_string);
-		return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->connection_id], -1, EPSIG_CALLID, (int)&clid_string, -1, -1 , -1);
+		return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, EPSIG_CALLID, (int)&clid_string, -1, -1 , -1);
 	}
 
 	return( EPSTATUS_SUCCESS );
@@ -2314,7 +2575,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-static int brcm_create_connection(struct brcm_pvt *p) {
+static int brcm_create_connection(struct brcm_subchannel *p) {
 
 	/* generate random nr for rtp header */
 	p->ssrc = rand();
@@ -2322,7 +2583,7 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
 	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(p); //Create a parameter list for this pvt
 
-	ast_verbose("Creating connection for pvt %i\n", p->connection_id);
+	ast_verbose("Creating connection for pvt line_id=%i connection_id=%d\n", p->parent->line_id, p->connection_id);
 	if (p->owner) {
 		char buf[256];
 		ast_verbose("Owner channel raw read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawreadformat));
@@ -2336,7 +2597,7 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 
 	tConnectionParm.cnxId      = p->connection_id;
 	tConnectionParm.cnxParam   = &epCnxParms;
-	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->parent->line_id];
 	tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
 	tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
@@ -2354,13 +2615,13 @@ static int brcm_create_connection(struct brcm_pvt *p) {
 }
 
 
-static int brcm_close_connection(struct brcm_pvt *p) {
+static int brcm_close_connection(struct brcm_subchannel *p) {
 
 	/* Close connection */
 	ENDPOINTDRV_DELCONNECTION_PARM tDelConnectionParm;
 
 	tDelConnectionParm.cnxId      = p->connection_id;
-	tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->connection_id];
+	tDelConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->parent->line_id];
 	tDelConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
 	tDelConnectionParm.size       = sizeof(ENDPOINTDRV_DELCONNECTION_PARM);
 
@@ -2378,7 +2639,7 @@ static int brcm_close_connection(struct brcm_pvt *p) {
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
-static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type) {
+static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type) {
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
 

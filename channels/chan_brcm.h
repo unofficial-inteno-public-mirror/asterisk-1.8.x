@@ -25,7 +25,7 @@
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
 #define MAX_NUM_LINEID 2
-#define NUM_SUBCHANNELS 1
+#define NUM_SUBCHANNELS 2
 
 
 enum channel_state {
@@ -36,6 +36,8 @@ enum channel_state {
     ANSWER,
 	CALLENDED,
 	RINGING,
+	CALLWAITING,
+	ONHOLD,
 };
 
 enum endpoint_type {
@@ -55,6 +57,7 @@ struct brcm_subchannel {
 	unsigned int ssrc;		/* Endpoint RTP synchronization source */
 	int codec;			/* Used codec */
 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
+	int timer_id;			/* Current timer id, -1 if no active timer*/
 };
 
 static struct brcm_pvt {
@@ -84,7 +87,6 @@ static struct brcm_pvt {
 	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
-	struct brcm_subchannel *active_sub;		/* Currently active subchannel */
 } *iflist = NULL;
 
 enum rtp_type {
@@ -124,4 +126,7 @@ int brcm_signal_ringing(struct brcm_pvt *p);
 int brcm_stop_ringing(struct brcm_pvt *p);
 int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p);
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p);
-int brcm_signal_callerid(struct brcm_pvt *p);
+int brcm_signal_callwaiting(const struct brcm_pvt *p);
+int brcm_stop_callwaiting(const struct brcm_pvt *p);
+int brcm_signal_callerid(struct brcm_subchannel *sub);
+static int brcm_in_call(const struct brcm_pvt *p);
