@@ -87,6 +87,7 @@ static struct brcm_pvt {
 	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
+	int hf_detected;			/* Hook flash detected */
 } *iflist = NULL;
 
 enum rtp_type {
@@ -130,3 +131,5 @@ int brcm_signal_callwaiting(const struct brcm_pvt *p);
 int brcm_stop_callwaiting(const struct brcm_pvt *p);
 int brcm_signal_callerid(struct brcm_subchannel *sub);
 static int brcm_in_call(const struct brcm_pvt *p);
+static int brcm_in_callwaiting(const struct brcm_pvt *p);
+static int brcm_in_onhold(const struct brcm_pvt *p);

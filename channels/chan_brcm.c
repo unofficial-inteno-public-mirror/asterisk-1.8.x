@@ -302,6 +302,7 @@ static int brcm_hangup(struct ast_channel *ast)
 
 	p->lastformat = -1;
 	p->lastinput = -1;
+	p->hf_detected = 0;
 	sub->channel_state = CALLENDED;
 	memset(p->ext, 0, sizeof(p->ext));
 	((struct brcm_subchannel *)(ast->tech_pvt))->owner = NULL;
@@ -671,6 +672,19 @@ static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt 
 	return sub;
 }
 
+static struct brcm_subchannel *brcm_get_callwaiting_subchannel(const struct brcm_pvt *p)
+{
+	struct brcm_subchannel *sub;
+	int i;
+	for(i=0; i<NUM_SUBCHANNELS; i++) {
+			sub = p->sub[i];
+			if (sub->channel_state == CALLWAITING) {
+				return sub;
+			}
+	}
+	return NULL;
+}
+
 /* Hangup incoming call after call waiting times out */
 static int cwtimeout_cb(const void *data)
 {
@@ -742,6 +756,9 @@ static void *brcm_event_handler(void *data)
 				p->dtmf_first        = -1;
 				p->dtmfbuf[p->dtmf_len] = '\0';
 
+				/* Reset hook flash state */
+				p->hf_detected = 0;
+
 				/* Start the pbx */
 				if (!sub->connection_init) {
 					sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
@@ -771,6 +788,67 @@ static void *brcm_event_handler(void *data)
 	return NULL;
 }
 
+
+/* 
+ * Perform actions for hook flash.
+ * Preconditions: One subchannel should be in CALLWAITING or ONHOLD,
+ * 		  One subchannel should be in INCALL.
+ *		  brcm_pvt->lock is held
+ */
+static void handle_hookflash(struct brcm_pvt *p)
+{
+	if (p->dtmf_len <= 0) {
+		return;
+	}
+
+	struct brcm_subchannel* sub;
+	switch (p->dtmfbuf[0]) {
+		/* Force busy on waiting call*/
+		case '0':
+			if (brcm_in_call(p) && brcm_in_callwaiting(p)) {
+				ast_log(LOG_DEBUG, "Sending busy to waiting call\n");
+
+				sub = brcm_get_callwaiting_subchannel(p);
+				if (!sub) {
+					ast_log(LOG_WARNING, "Failed to get vall waiting subchannel\n");
+					break;
+				}
+				if (ast_sched_del(sched, sub->timer_id)) {
+					ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+				}
+				sub->timer_id = -1;
+
+				sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
+				ast_queue_control(sub->owner, AST_CONTROL_BUSY);
+			}
+			break;
+
+		/* Hangup current call and answer waiting call */
+		case '1':
+			ast_log(LOG_DEBUG, "DTMF1 after HF not implemented.\n");
+			break;
+
+		/* Answer waiting call and put other call on hold (switch calls) */
+		case '2':
+			ast_log(LOG_DEBUG, "DTMF2 after HF not implemented.\n");
+			break;
+
+		/* Connect waiting call to existing call to create 3-way */
+		case '3':
+			ast_log(LOG_DEBUG, "DTMF3 after HF not implemented.\n");
+			break;
+
+		default:
+			ast_log(LOG_NOTICE, "Unhandled DTMF %c\n", p->dtmfbuf[0]);
+			break;
+	}
+
+	/* Reset the dtmf buffer */
+	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+	p->dtmf_len = 0;
+	p->dtmf_first = -1;
+	p->dtmfbuf[p->dtmf_len] = '\0';
+}
 
 #define DTMF_CHECK(dtmf_button, event_string)				\
 	{								\
@@ -809,13 +887,24 @@ static void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 
 	ast_log(LOG_DEBUG, "Handle DTMF %s\n", dtmfMap->name);
 	p = sub->parent;
-	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
-}
 
-static void handle_hookflash(struct brcm_pvt *p)
-{
-	ast_log(LOG_DEBUG, "handle hf\n");
-	//TODO
+	DTMF_CHECK(dtmfMap->c, dtmfMap->name);
+
+	/* Handle single DTMF after HF */
+	if (p->hf_detected && p->dtmf_first == -1) {
+		ast_log(LOG_DEBUG, "DTMF after HF\n");
+		p->hf_detected = 0;
+		/* HF while not in a call doesn't make sense */
+		if (sub->channel_state == INCALL && 
+			(brcm_in_callwaiting(p) || brcm_in_onhold(p))) {
+			handle_hookflash(p);
+		} else {
+			ast_log(LOG_DEBUG, "DTMF after HF while not in call. state: %d, callwaiting: %d, onhold: %d\n",
+				sub->channel_state,
+				brcm_in_callwaiting(p),
+				brcm_in_onhold(p));
+		}
+	}
 }
 
 static char phone_2digit(char c)
@@ -1084,7 +1173,11 @@ static void *brcm_monitor_events(void *data)
 				unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 				if (now - p->last_early_onhook_ts < MAX_HOOKFLASH_DELAY) {
 					p->last_early_onhook_ts = 0;
-					handle_hookflash(p);
+					if (p->hf_detected == 1) {
+						p->hf_detected = 0;
+					} else {
+						p->hf_detected = 1;
+					}
 				}
 				break;
 			case EPEVT_EARLY_ONHOOK:
@@ -1280,6 +1373,30 @@ static int brcm_in_call(const struct brcm_pvt *p)
 	int i;
 	for (i=0; i<NUM_SUBCHANNELS; i++) {
 		if (p->sub[i]->channel_state == INCALL) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int brcm_in_callwaiting(const struct brcm_pvt *p)
+{
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->channel_state == CALLWAITING) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int brcm_in_onhold(const struct brcm_pvt *p)
+{
+	int i;
+	for (i=0; i<NUM_SUBCHANNELS; i++) {
+		if (p->sub[i]->channel_state == ONHOLD) {
 			return 1;
 		}
 	}
