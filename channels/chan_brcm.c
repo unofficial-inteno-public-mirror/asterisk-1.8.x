@@ -801,6 +801,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 		return;
 	}
 
+	struct brcm_subchannel* active_sub;
 	struct brcm_subchannel* sub;
 	switch (p->dtmfbuf[0]) {
 		/* Force busy on waiting call*/
@@ -825,7 +826,55 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 		/* Hangup current call and answer waiting call */
 		case '1':
-			ast_log(LOG_DEBUG, "DTMF1 after HF not implemented.\n");
+			if (brcm_in_call(p) && (brcm_in_callwaiting(p) || brcm_in_onhold(p))) {
+
+				if (brcm_in_callwaiting(p)) {
+					/* Stop call waiting tone on current call */
+					brcm_stop_callwaiting(p);
+
+					/* Get subchannel in call waiting and cancel timer */
+					sub = brcm_get_callwaiting_subchannel(p);
+					if (!sub) {
+						ast_log(LOG_WARNING, "Failed to get vall waiting subchannel\n");
+						break;
+					}
+					if (ast_sched_del(sched, sub->timer_id)) {
+						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+					}
+					sub->timer_id = -1;
+				} else if (brcm_in_onhold(p)) {
+					//TODO
+					break;
+				} else {
+					//Never reached
+					break;
+				}
+
+				/* Get active subchannel */
+				active_sub = brcm_get_active_subchannel(p);
+				if (!active_sub) {
+					ast_log(LOG_WARNING, "Failed to get active subchannel\n");
+				}
+
+				/* Close connection and hangup active subchannel */
+				brcm_close_connection(active_sub);
+				if(active_sub->owner) {
+					ast_queue_control(active_sub->owner, AST_CONTROL_HANGUP);
+				}
+				active_sub->channel_state = CALLENDED;
+
+				/* Answer pending call */
+				if(sub->owner) {
+
+					if (!sub->connection_init) {
+						ast_debug(9, "create_connection()\n");
+						brcm_create_connection(sub);
+					}
+
+					ast_queue_control(sub->owner, AST_CONTROL_ANSWER);
+					sub->channel_state = INCALL;
+				}
+			}
 			break;
 
 		/* Answer waiting call and put other call on hold (switch calls) */
