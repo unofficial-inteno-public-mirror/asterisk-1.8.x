@@ -180,6 +180,9 @@ typedef struct {
 	int timeoutmsec;
 	CODEC_PKT_PERIOD period;
 	int comfort_noise;
+	VRG_UINT32 jitterMin;
+	VRG_UINT32 jitterMax;
+	VRG_UINT32 jitterTarget;
 } fxs_settings;
 
 static fxs_settings fxs_config[MAX_NUM_LINEID];
@@ -1066,6 +1069,16 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 	ast_copy_string(p->cid_name, s->cid_name, sizeof(p->cid_name));
 	p->txgain = s->txgain;
 	p->rxgain = s->rxgain;
+
+	//Setup dynamic jitter buffer for this pvt
+	//TODO: not connectionId, should be lineId..?
+	VRG_UINT32 jitterMin = s->jitterMin;
+	VRG_UINT32 jitterMax = s->jitterMax;
+	VRG_UINT32 jitterTarget = s->jitterTarget;
+
+	vrgEndptProvSet(p->connection_id, EPPROV_VoiceJitterBuffMin, &jitterMin, sizeof(VRG_UINT32));
+	vrgEndptProvSet(p->connection_id, EPPROV_VoiceJitterBuffMax, &jitterMax, sizeof(VRG_UINT32));
+	vrgEndptProvSet(p->connection_id, EPPROV_VoiceJitterBuffTarget, &jitterTarget, sizeof(VRG_UINT32));
 }
 
 static void brcm_fill_autodial(struct brcm_pvt *p) {
@@ -1296,10 +1309,22 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 				case CODEC_G726_24:     ast_cli(a->fd, "g726_24, "); break;
 				case CODEC_G726_32:     ast_cli(a->fd, "g726_32, "); break;
 				case CODEC_G729A:        ast_cli(a->fd, "g729A, "); break;
-				default: ast_cli(a->fd, "[%d] config error, ", s->codec_list[j]);
+				default: ast_cli(a->fd, "[%d] config error, ", s->codec_list[j]); break;
 			}
 		}
 		ast_cli(a->fd, "\n");
+
+		//Log some Jitter buffer info
+		VRG_UINT32 jitterMax;
+		VRG_UINT32 jitterMin;
+		VRG_UINT32 jitterTarget;
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMax, &jitterMax, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMin, &jitterMin, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffTarget, &jitterTarget, sizeof(VRG_UINT32));
+
+		ast_cli(a->fd, "Jitter Buffer Max   : %u\n", jitterMax);
+		ast_cli(a->fd, "Jitter Buffer Min   : %u\n", jitterMin);
+		ast_cli(a->fd, "Jitter Buffer Target: %u\n", jitterTarget);
 
 		i++;
 		p = brcm_get_next_pvt(p);
@@ -1778,6 +1803,9 @@ static fxs_settings fxs_settings_create(void)
 		.timeoutmsec = 4000,
 		.period = CODEC_PTIME_20,
 		.comfort_noise = 0,
+		.jitterMin = 0,
+		.jitterMax = 0,
+		.jitterTarget = 0,
 	};
 	return fxs_conf;
 }
@@ -1793,7 +1821,7 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 
 	while(v) {
 		if (!strcasecmp(v->name, "silence")) {
-			fxs_config->silence = ast_true(v->value)?1:0;
+			fxs_config->silence = atoi(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
 			ast_copy_string(fxs_config->language, v->value, sizeof(fxs_config->language));
 		} else if (!strcasecmp(v->name, "callerid")) {
@@ -1877,8 +1905,17 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 					fxs_config->period = CODEC_PTIME_20;
 					break;
 			}
-		} else if (!strcasecmp(v->name, "comfortnoice")) {
+		} else if (!strcasecmp(v->name, "comfortnoise")) {
 			fxs_config->comfort_noise = atoi(v->value);
+		}
+		else if (!strcasecmp(v->name, "jitter_min")) {
+			fxs_config->jitterMin = strtoul(v->value, NULL, 0);
+		}
+		else if (!strcasecmp(v->name, "jitter_max")) {
+			fxs_config->jitterMax = strtoul(v->value, NULL, 0);
+		}
+		else if (!strcasecmp(v->name, "jitter_target")) {
+			fxs_config->jitterTarget = strtoul(v->value, NULL, 0);
 		}
 
 		if (config_codecs > 0)
@@ -1979,7 +2016,7 @@ static int load_module(void)
 
 	/* Start channel threads */
 	start_threads();
-	
+
 	ast_verbose("BRCM init done\n");
 
 	return AST_MODULE_LOAD_SUCCESS;
@@ -2246,7 +2283,87 @@ EPSTATUS vrgEndptDeinit( void )
 
 	return( EPSTATUS_SUCCESS );
 }
- 
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptProvSet
+**
+** PURPOSE:    Set a value to the endpoint provisioning database
+**             The application would use this API to store a value
+**             in the endpoint provisioning database so that the
+**             parameter's value is directly available to the endpoint.
+**
+** PARAMETERS: line           -  [IN]  Line id
+**             provItemId     -  [IN]  Provisioning item id
+**             provItemValue  -  [IN]  Pointer to the variable whose value needs to be
+**                                     stored in the endpoint provisioning database
+**             provItemLength -  [IN]  Length/Size of the variable whose value needs to be
+**                                     stored in the endpoint provisioning database.
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE:
+*****************************************************************************
+*/
+EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength )
+{
+	ENDPOINTDRV_PROV_PARM provParm;
+
+	provParm.size           = sizeof(ENDPOINTDRV_PROV_PARM);
+	provParm.provItemId     = provItemId;
+	provParm.provItemValue  = provItemValue;
+	provParm.provItemLength = provItemLength;
+	provParm.line           = line;
+	provParm.epStatus       = EPSTATUS_DRIVER_ERROR;
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_PROV_SET, &provParm ) != IOCTL_STATUS_SUCCESS )
+	{
+		ast_log(LOG_ERROR, "error during ioctl EndptProvSet\n");
+	}
+
+	return( provParm.epStatus );
+}
+
+/*
+*****************************************************************************
+** FUNCTION:   vrgEndptProvGet
+**
+** PURPOSE:    Get a value from the endpoint provisioning database
+**             The application would use this API to get a value
+**             that is currently stored in the endpoint provisioning database.
+**
+** PARAMETERS: line           -  [IN]  Line id
+**             provItemId     -  [IN]  Provisioning item id
+**             provItemValue  -  [OUT] Pointer to the variable that will be
+**                                     filled with the current value in the
+**                                     endpoint provisioning database
+**             provItemLength -  [IN]  Length/Size of the variable whose value needs to be
+**                                     stored in the endpoint provisioning database.
+**
+** RETURNS:    EPSTATUS
+**
+** NOTE: The caller of this function should allocate memory for provItemValue
+**
+*****************************************************************************
+*/
+EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int provItemLength )
+{
+	ENDPOINTDRV_PROV_PARM provParm;
+
+	provParm.size           = sizeof(ENDPOINTDRV_PROV_PARM);
+	provParm.provItemId     = provItemId;
+	provParm.provItemValue  = provItemValue;
+	provParm.provItemLength = provItemLength;
+	provParm.line           = line;
+	provParm.epStatus       = EPSTATUS_DRIVER_ERROR;
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_PROV_GET, &provParm ) != IOCTL_STATUS_SUCCESS )
+	{
+		ast_log(LOG_ERROR, "error during ioctl EndptProvSet\n");
+	}
+
+	return( provParm.epStatus );
+}
 
 EPSTATUS ovrgEndptSignal
 (

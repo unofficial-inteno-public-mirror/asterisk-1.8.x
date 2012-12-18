@@ -88,6 +88,8 @@ enum rtp_type {
 EPSTATUS vrgEndptDriverOpen(void);
 EPSTATUS vrgEndptDriverClose(void);
 EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsigned int value, int duration, int period, int repetition);
+EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
+EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 
 static void brcm_generate_rtp_packet(struct brcm_pvt *p, UINT8 *packet_buf, int type);
 static int brcm_create_connection(struct brcm_pvt *p);
