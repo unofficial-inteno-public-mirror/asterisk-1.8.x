@@ -2049,8 +2049,8 @@ static int brcm_get_endpoints_count(void)
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
-		ast_verbose("ENDPOINTIOCTL_ENDPOINTCOUNT failed");
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXSENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
+		ast_verbose("ENDPOINTIOCTL_FXSENDPOINTCOUNT failed");
 		return -1;
 	} else {
 		num_fxs_endpoints = endpointCount.endpointNum;
