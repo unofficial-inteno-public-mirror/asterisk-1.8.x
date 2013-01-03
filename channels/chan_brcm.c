@@ -904,7 +904,6 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 		/* Answer waiting call and put other call on hold (switch calls) */
 		case '2':
-			ast_log(LOG_DEBUG, "DTMF2 after HF\n");
 
 			if (brcm_in_call(p) && (brcm_in_callwaiting(p) || brcm_in_onhold(p))) {
 
@@ -915,11 +914,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 					break;
 				}
 				brcm_mute_connection(active_sub);
-				ast_log(LOG_WARNING, "HEST\n");
 				ast_queue_control(active_sub->owner, AST_CONTROL_HOLD);
-				ast_log(LOG_WARNING, "HUND\n");
-
-				ast_log(LOG_WARNING, "KATT\n");
 
 				if (brcm_in_callwaiting(p)) {
 					ast_log(LOG_WARNING, "R2 Call waiting\n");
