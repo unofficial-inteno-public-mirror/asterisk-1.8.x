@@ -1280,6 +1280,26 @@ static void *brcm_monitor_events(void *data)
 				if(sub->owner) {
 					ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
 				}
+
+				/* Hangup peer subchannels on hold or in call waiting */
+				struct brcm_subchannel *peer_sub;
+				if ((peer_sub = brcm_get_callwaiting_subchannel(sub->parent)) != NULL) {
+					if (ast_sched_del(sched, peer_sub->timer_id)) {
+						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+					}
+					peer_sub->timer_id = -1;
+
+					if (peer_sub->owner) {
+						peer_sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
+						ast_queue_control(peer_sub->owner, AST_CONTROL_BUSY);
+					}
+				}
+				if ((peer_sub = brcm_get_onhold_subchannel(sub->parent)) != NULL) {
+					ast_log(LOG_DEBUG, "should hangup call on hold\n");
+					if (peer_sub->owner) {
+						ast_queue_control(peer_sub->owner, AST_CONTROL_HANGUP);
+					}
+				}
 				break;
 
 			case EPEVT_DTMF0:
