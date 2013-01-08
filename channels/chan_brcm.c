@@ -304,11 +304,6 @@ static int brcm_hangup(struct ast_channel *ast)
 	p->lastinput = -1;
 	p->hf_detected = 0;
 	sub->channel_state = CALLENDED;
-	struct brcm_subchannel *peer_sub = brcm_get_active_subchannel(p);
-	if (peer_sub && peer_sub->channel_state == INCALL) {
-		/* Switch still active call leg out of conference mode */
-		brcm_stop_conference(peer_sub);
-	}
 	memset(p->ext, 0, sizeof(p->ext));
 	((struct brcm_subchannel *)(ast->tech_pvt))->owner = NULL;
 	ast_module_unref(ast_module_info->self);
@@ -544,14 +539,6 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		}
 	}
 	return 0;
-}
-
-static void brcm_reset_dtmf_buffer(struct brcm_pvt *p)
-{
-	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-	p->dtmf_len = 0;
-	p->dtmf_first = -1;
-	p->dtmfbuf[p->dtmf_len] = '\0';
 }
 
 /* Tell endpoint to play country specific dialtone. */
@@ -829,79 +816,6 @@ static void *brcm_event_handler(void *data)
 static void handle_hookflash(struct brcm_pvt *p)
 {
 	if (p->dtmf_len <= 0) {
-
-		struct brcm_subchannel *sub;
-		struct brcm_subchannel *peer_sub;
-
-		if ((sub = brcm_get_active_subchannel(p)) == NULL) {
-			ast_log(LOG_WARNING, "No active subchannel for hook flash\n");
-			return;
-		}
-
-		/* If current subchannel is in call and peer subchannel is idle, provide dialtone */
-		if (sub->channel_state == INCALL && ((peer_sub = brcm_get_idle_subchannel(p)) != NULL)) {
-			ast_log(LOG_DEBUG, "R while in call and idle peer subchannel\n");
-
-			brcm_reset_dtmf_buffer(p);
-			p->hf_detected = 0;
-
-			/* Put current call on hold */
-			if (sub->owner) {
-				brcm_mute_connection(sub);
-				sub->channel_state = ONHOLD;
-				ast_queue_control(sub->owner, AST_CONTROL_HOLD);
-			}
-
-			/* Provide new line */
-			brcm_signal_dialtone(p);
-			peer_sub->channel_state = OFFHOOK;
-
-		/* If offhook/dialing and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK)
-				&& ((peer_sub = brcm_get_onhold_subchannel(p)) != NULL)) {
-
-			ast_log(LOG_DEBUG, "R while offhook/dialing and peer subchannel on hold\n");
-
-			brcm_reset_dtmf_buffer(p);
-			p->hf_detected = 0;
-
-			if (sub->channel_state == OFFHOOK) {
-				brcm_stop_dialtone(p);
-			}
-			sub->channel_state = ONHOOK;
-
-			/* Hang up current */
-			if(sub->owner) {
-				ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
-			}
-
-			/* Pick up old */
-			if (peer_sub->owner) {
-				brcm_unmute_connection(peer_sub);
-				ast_queue_control(peer_sub->owner, AST_CONTROL_UNHOLD);
-				peer_sub->channel_state = INCALL;
-			}
-
-		/* Switch back to old call (remote hung up) */
-		} else if ((sub->channel_state == ONHOOK || sub->channel_state == CALLENDED)
-				&& ((peer_sub = brcm_get_onhold_subchannel(p)) != NULL)) {
-
-			ast_log(LOG_DEBUG, "R when idle and peer subchannel on hold\n");
-
-			p->hf_detected = 0;
-
-			/* Hang up current */
-			if(sub->owner) {
-				ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
-			}
-
-			/* Pick up old */
-			if (peer_sub->owner) {
-				brcm_unmute_connection(peer_sub);
-				ast_queue_control(peer_sub->owner, AST_CONTROL_UNHOLD);
-				peer_sub->channel_state = INCALL;
-			}
-		}
 		return;
 	}
 
@@ -1050,31 +964,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 		/* Connect waiting call to existing call to create 3-way */
 		case '3':
-			if (brcm_in_call(p) && brcm_in_onhold(p)) {
-				ast_log(LOG_DEBUG, "DTMF3 after HF\n");
-
-				/* Get active subchannel */
-				active_sub = brcm_get_active_subchannel(p);
-				if (!active_sub) {
-					ast_log(LOG_WARNING, "Failed to get active subchannel\n");
-					break;
-				}
-
-				/* Unhold inactive subchannel */
-				sub = brcm_get_onhold_subchannel(p);
-				if (!sub) {
-					ast_log(LOG_WARNING, "Failed to get on hold subchannel\n");
-					break;
-				}
-				if (sub->owner) {
-					brcm_unmute_connection(sub);
-					ast_queue_control(sub->owner, AST_CONTROL_UNHOLD);
-					sub->channel_state = INCALL;
-				}
-
-				/* Switch all connections to conferencing mode */
-				brcm_create_conference(p);
-			}
+			ast_log(LOG_DEBUG, "DTMF3 after HF not implemented.\n");
 			break;
 
 		default:
@@ -1386,7 +1276,7 @@ static void *brcm_monitor_events(void *data)
 					ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
 				}
 
-				/* Hangup peer subchannels in call, on hold or in call waiting */
+				/* Hangup peer subchannels on hold or in call waiting */
 				struct brcm_subchannel *peer_sub;
 				if ((peer_sub = brcm_get_callwaiting_subchannel(sub->parent)) != NULL) {
 					if (ast_sched_del(sched, peer_sub->timer_id)) {
@@ -1399,8 +1289,8 @@ static void *brcm_monitor_events(void *data)
 						ast_queue_control(peer_sub->owner, AST_CONTROL_BUSY);
 					}
 				}
-				if ((peer_sub = brcm_get_onhold_subchannel(sub->parent)) != NULL || (peer_sub = brcm_get_active_subchannel(sub->parent)) != NULL) {
-					ast_log(LOG_DEBUG, "should hangup call on hold or incall\n");
+				if ((peer_sub = brcm_get_onhold_subchannel(sub->parent)) != NULL) {
+					ast_log(LOG_DEBUG, "should hangup call on hold\n");
 					if (peer_sub->owner) {
 						ast_queue_control(peer_sub->owner, AST_CONTROL_HANGUP);
 					}
@@ -1443,7 +1333,6 @@ static void *brcm_monitor_events(void *data)
 						p->hf_detected = 0;
 					} else {
 						p->hf_detected = 1;
-						handle_hookflash(p);
 					}
 				}
 				break;
@@ -1684,24 +1573,11 @@ static int brcm_active(const struct brcm_pvt *p)
 	return 0;
 }
 
-/*
- * Return idle subchannel
- */
-static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
-{
-	int i;
-	for (i=0; i<NUM_SUBCHANNELS; i++) {
-		if (p->sub[i]->channel_state == ONHOOK || p->sub[i]->channel_state == CALLENDED) {
-			return p->sub[i];
-		}
-	}
-	return NULL;
-}
 
 /*
  * Return free subchannel if conditions are met.
  */
-static struct brcm_subchannel *brcm_get_idle_subchannel_incomingcall(const struct brcm_pvt *p)
+static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
 {
 	struct brcm_subchannel *sub = NULL;
 	int i;
@@ -1769,7 +1645,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 
 	ast_mutex_lock(&p->lock);
 
-	sub = brcm_get_idle_subchannel_incomingcall(p);
+	sub = brcm_get_idle_subchannel(p);
 
 	/* Check that the request has an allowed format */
 	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1);
@@ -3049,63 +2925,6 @@ static int brcm_unmute_connection(struct brcm_subchannel *sub)
 	}
 
 	return 0;
-}
-
-/* Put all subchannels in conferencing mode */
-static int brcm_create_conference(struct brcm_pvt *p)
-{
-	int i;
-	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-	EPZCNXPARAM epCnxParms;
-
-	for (i=0; i<NUM_SUBCHANNELS; i++) {
-		if (p->sub[i]->connection_init) {
-
-			epCnxParms = brcm_get_epzcnxparam(p->sub[i]);
-			epCnxParms.mode = EPCNXMODE_CONF;
-
-			tConnectionParm.cnxId      = p->sub[i]->connection_id;
-			tConnectionParm.cnxParam   = &epCnxParms;
-			tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->line_id];
-			tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
-
-			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-				ast_verbose("%s: error during ioctl", __FUNCTION__);
-			} else {
-				ast_log(LOG_DEBUG, "Put BRCM/%d/%d in conferencing mode\n", p->line_id, p->sub[i]->connection_id);
-			}
-		}
-	}
-
-	return 0;
-}
-
-/* Change EPZCNXPARAM.mode to EPCNXMODE_SNDRX */
-static int brcm_stop_conference(struct brcm_subchannel *p)
-{
-	if (p->connection_init) {
-
-		ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-		EPZCNXPARAM epCnxParms;
-
-		epCnxParms = brcm_get_epzcnxparam(p);
-
-		tConnectionParm.cnxId      = p->connection_id;
-		tConnectionParm.cnxParam   = &epCnxParms;
-		tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->parent->line_id];
-		tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-		tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
-
-		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
-			return -1;
-		} else {
-			ast_log(LOG_DEBUG, "Put BRCM/%d/%d in send/recv mode\n", p->parent->line_id, p->connection_id);
-		}
-		return 0;
-	}
-	return -1;
 }
 
 static int brcm_close_connection(struct brcm_subchannel *p) {
