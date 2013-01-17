@@ -222,7 +222,69 @@ static const struct ast_channel_tech brcm_tech = {
 	.answer = brcm_answer,
 	.read = brcm_read,
 	.write = brcm_write,
+	.send_digit_begin = brcm_senddigit_begin,
+	.send_digit_end = brcm_senddigit_end,
 };
+
+static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
+{
+	int res;
+	struct brcm_subchannel *sub;
+	fxs_settings* s;
+
+	sub = ast->tech_pvt;
+	ast_mutex_lock(&sub->parent->lock);
+
+	res = 0;
+	s = &fxs_config[sub->parent->line_id];
+	switch (s->dtmf_relay) {
+		case EPDTMFRFC2833_DISABLED:
+			res = -1;
+			break;
+		case EPDTMFRFC2833_ENABLED:
+		case EPDTMFRFC2833_SUBTRACT:
+			if (brcm_signal_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
+				res = -1;
+			}
+			break;
+		default:
+			res = -1;
+			break;
+	}
+
+	ast_mutex_unlock(&sub->parent->lock);
+	return res;
+}
+
+static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
+{
+	int res;
+	struct brcm_subchannel *sub;
+	fxs_settings* s;
+
+	sub = ast->tech_pvt;
+	ast_mutex_lock(&sub->parent->lock);
+
+	res = 0;
+	s = &fxs_config[sub->parent->line_id];
+	switch (s->dtmf_relay) {
+		case EPDTMFRFC2833_DISABLED:
+			res = -1;
+			break;
+		case EPDTMFRFC2833_ENABLED:
+		case EPDTMFRFC2833_SUBTRACT:
+			if (brcm_stop_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
+				res = -1;
+			}
+			break;
+		default:
+			res = -1;
+			break;
+	}
+
+	ast_mutex_unlock(&sub->parent->lock);
+	return res;
+}
 
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
@@ -2713,6 +2775,84 @@ int brcm_signal_callerid(struct brcm_subchannel *sub)
 	}
 
 	return( EPSTATUS_SUCCESS );
+}
+
+static EPSIG map_dtmf_to_epsig(char digit)
+{
+	EPSIG signal;
+	switch (digit) {
+		case '0':
+			signal = EPSIG_DTMF0;
+			break;
+		case '1':
+			signal = EPSIG_DTMF1;
+			break;
+		case '2':
+			signal = EPSIG_DTMF2;
+			break;
+		case '3':
+			signal = EPSIG_DTMF3;
+			break;
+		case '4':
+			signal = EPSIG_DTMF4;
+			break;
+		case '5':
+			signal = EPSIG_DTMF5;
+			break;
+		case '6':
+			signal = EPSIG_DTMF6;
+			break;
+		case '7':
+			signal = EPSIG_DTMF7;
+			break;
+		case '8':
+			signal = EPSIG_DTMF8;
+			break;
+		case '9':
+			signal = EPSIG_DTMF9;
+			break;
+		case 'A':
+			signal = EPSIG_DTMFA;
+			break;
+		case 'B':
+			signal = EPSIG_DTMFB;
+			break;
+		case 'C':
+			signal = EPSIG_DTMFC;
+			break;
+		case 'D':
+			signal = EPSIG_DTMFD;
+			break;
+		case '*':
+			signal = EPSIG_DTMFS;
+			break;
+		case '#':
+			signal = EPSIG_DTMFH;
+			break;
+		default:
+			ast_log(LOG_WARNING, "Can't signal unknown DTMF %c", digit);
+			signal = EPSIG_LAST;
+			break;
+	}
+	return signal;
+}
+
+int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit)
+{
+	EPSIG signal = map_dtmf_to_epsig(digit);
+	if (signal == EPSIG_LAST) {
+		return EPSTATUS_ERROR;
+	}
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, signal, 1, -1, -1 , -1);
+}
+
+int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit)
+{
+	EPSIG signal = map_dtmf_to_epsig(digit);
+	if (signal == EPSIG_LAST) {
+		return EPSTATUS_ERROR;
+	}
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, signal, 0, -1, -1 , -1);
 }
 
 EPSTATUS vrgEndptDriverOpen(void)
