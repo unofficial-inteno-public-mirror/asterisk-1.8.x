@@ -98,6 +98,18 @@ typedef struct CLID_STRING
 	char number_name[CLID_MAX_NUMBER + CLID_MAX_NAME + 4]; // 4 = comma, quotation marks and null terminator
 } CLID_STRING;
 
+/* Global jitterbuffer configuration - by default, jb is disabled */
+static struct ast_jb_conf default_jbconf =
+{
+	.flags = 0,
+	.max_size = -1,
+	.resync_threshold = -1,
+	.impl = "",
+	.target_extra = -1,
+};
+static struct ast_jb_conf global_jbconf;                /* Global jitterbuffer configuration */
+
+
 /* Mapping of DTMF to char/name */
 typedef struct DTMF_CHARNAME_MAP
 {
@@ -713,6 +725,10 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 				ast_hangup(tmp);
 			}
 		}
+
+		//Setup jitter buffer
+		ast_jb_configure(tmp, &global_jbconf);
+
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
 
@@ -2711,11 +2727,20 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
+	/* Load jitterbuffer defaults, Copy the default jb config over global_jbconf */
+	memcpy(&global_jbconf, &default_jbconf, sizeof(struct ast_jb_conf));
+
 	/* Load global settings */
 	struct ast_variable *v;
 	v = ast_variable_browse(cfg, "default");
 
 	while(v) {
+		if (!ast_jb_read_conf(&global_jbconf, v->name, v->value)) {
+			ast_log(LOG_DEBUG, "Loaded jitterbuffer settings '%s'\n", v->value);
+			v = v->next;
+			continue;
+		}
+
 		if (!strcasecmp(v->name, "country")) {
 			const COUNTRY_MAP *countryMap = country_map;
 			for (;;) {
