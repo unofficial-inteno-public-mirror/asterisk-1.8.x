@@ -2026,9 +2026,9 @@ static char *brcm_set_cng(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
 static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	if (cmd == CLI_INIT) {
-		e->command = "brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract}";
+		e->command = "brcm set dtmf_relay {inband|rfc2833|info}";
 		e->usage =
-			"Usage: brcm set dtmf_relay {inband|rfc2833|rfc2833_subtract} PvtNr\n"
+			"Usage: brcm set dtmf_relay {inband|rfc2833|info} PvtNr\n"
 			"       dtmf_relay, dtmf relay mode.\n"
 			"       PvtNr, the Pvt to modify.\n";
 		return NULL;
@@ -2049,7 +2049,7 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
 		s->dtmf_relay = EPDTMFRFC2833_DISABLED;
 	} else if (!strcasecmp(a->argv[3], "rfc2833")) {
 		s->dtmf_relay = EPDTMFRFC2833_ENABLED;
-	} else if (!strcasecmp(a->argv[3], "rfc2833_subtract")) {
+	} else if (!strcasecmp(a->argv[3], "info")) {
 		s->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 	}
 
@@ -2385,7 +2385,7 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 		} else if (!strcasecmp(v->name, "rxgain")) {
 			fxs_config->rxgain = parse_gain_value(v->name, v->value);
 		} else if (!strcasecmp(v->name, "dtmfrelay")) {
-			if (!strcasecmp(v->value, "sipinfo")) {
+			if (!strcasecmp(v->value, "info")) {
 				fxs_config->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 			} else if (!strcasecmp(v->value, "rfc2833")) {
 				fxs_config->dtmf_relay = EPDTMFRFC2833_ENABLED;
