@@ -700,10 +700,15 @@ static struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id
 static struct brcm_subchannel* brcm_get_subchannel_from_connectionid(struct brcm_pvt *p, int connection_id)
 {
 	int i;
-	for (i=0; i<NUM_SUBCHANNELS; i++) {
-		if (p->sub[i]->connection_id == connection_id) {
-			return p->sub[i];
+	struct brcm_pvt *tmp = p;
+
+	while (tmp) {
+		for (i=0; i<NUM_SUBCHANNELS; i++) {
+			if (tmp->sub[i]->connection_id == connection_id) {
+				return tmp->sub[i];
+			}
 		}
+		tmp = brcm_get_next_pvt(tmp);
 	}
 	return NULL;
 }
@@ -1145,6 +1150,10 @@ static void *brcm_monitor_packets(void *data)
 			rtp_packet_type = brcm_classify_rtp_packet(pdata[1]);
 
 			p = brcm_get_subchannel_from_connectionid(iflist, tPacketParm.cnxId);
+			if (p == NULL) {
+				ast_log(LOG_ERROR, "Failed to find subchannel for connection id %d\n", tPacketParm.cnxId);
+				continue;
+			}
 			ast_mutex_lock(&p->parent->lock);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
