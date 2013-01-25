@@ -30,7 +30,6 @@
  * Prefered codec order mulaw/alaw/g729/g723.1/g726_24/g726_32
  * Enable T38 support
  * Enable V18 support
- * Ingress/egress gain
  */
 
 #include "asterisk.h"
@@ -107,7 +106,7 @@ static struct ast_jb_conf default_jbconf =
 	.impl = "",
 	.target_extra = -1,
 };
-static struct ast_jb_conf global_jbconf;                /* Global jitterbuffer configuration */
+static struct ast_jb_conf global_jbconf; /* Global jitterbuffer configuration */
 
 
 /* Mapping of DTMF to char/name */
@@ -1679,18 +1678,6 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 	ast_copy_string(p->context, s->context, sizeof(p->context));
 	ast_copy_string(p->cid_num, s->cid_num, sizeof(p->cid_num));
 	ast_copy_string(p->cid_name, s->cid_name, sizeof(p->cid_name));
-	p->txgain = s->txgain;
-	p->rxgain = s->rxgain;
-
-	//Setup dynamic jitter buffer for this pvt
-	//TODO: not connectionId, should be lineId..?
-	VRG_UINT32 jitterMin = s->jitterMin;
-	VRG_UINT32 jitterMax = s->jitterMax;
-	VRG_UINT32 jitterTarget = s->jitterTarget;
-
-	vrgEndptProvSet(p->line_id, EPPROV_VoiceJitterBuffMin, &jitterMin, sizeof(VRG_UINT32));
-	vrgEndptProvSet(p->line_id, EPPROV_VoiceJitterBuffMax, &jitterMax, sizeof(VRG_UINT32));
-	vrgEndptProvSet(p->line_id, EPPROV_VoiceJitterBuffTarget, &jitterTarget, sizeof(VRG_UINT32));
 }
 
 static void brcm_fill_autodial(struct brcm_pvt *p) {
@@ -1947,24 +1934,21 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 /* parse gain value from config file */
 static int parse_gain_value(const char *gain_type, const char *value)
 {
-	float gain;
+	//Gain can be between -96 and 32 dB
+	int gain = atoi(value);
 
-	/* try to scan number */
-	if (sscanf(value, "%30f", &gain) != 1)
-		{
-			ast_log(LOG_ERROR, "Invalid %s value '%s' in '%s' config\n",
-				value, gain_type, config);
-			return DEFAULT_GAIN;
-		}
+	if (gain < GAIN_MIN) {
+		ast_log(LOG_WARNING, "%s is a too low value for '%s' in '%s' config\n",
+						value, gain_type, config);
+		gain = GAIN_MIN;
+	}
 
-	/* multiplicate gain by 1.0 gain value */ 
-	gain = gain * (float)DEFAULT_GAIN;
-
-	/* percentage? */
-	if (value[strlen(value) - 1] == '%')
-		return (int)(gain / (float)100);
-
-	return (int)gain;
+	if (gain > GAIN_MAX) {
+		ast_log(LOG_WARNING, "%s is a too high value for '%s' in '%s' config\n",
+							value, gain_type, config);
+		gain = GAIN_MAX;
+	}
+	return gain;
 }
 
 
@@ -2070,25 +2054,19 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 				default: ast_cli(a->fd, "[%d] config error, ", s->codec_list[j]); break;
 			}
 		}
-
 		ast_cli(a->fd, "\n");
+
+		/* Print Gain settings */
+		VRG_UINT32 txgain, rxgain;
+		vrgEndptProvGet(i, EPPROV_TxGain, &txgain, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_RxGain, &rxgain, sizeof(VRG_UINT32));
+		ast_cli(a->fd, "Tx Gain             : %d\n", txgain);
+		ast_cli(a->fd, "Rx Gain             : %d\n", rxgain);
 
 		/* Print status for subchannels */
 		brcm_show_subchannels(a, p);
 
 		ast_cli(a->fd, "\n");
-
-		//Log some Jitter buffer info
-		VRG_UINT32 jitterMax;
-		VRG_UINT32 jitterMin;
-		VRG_UINT32 jitterTarget;
-		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMax, &jitterMax, sizeof(VRG_UINT32));
-		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMin, &jitterMin, sizeof(VRG_UINT32));
-		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffTarget, &jitterTarget, sizeof(VRG_UINT32));
-
-		ast_cli(a->fd, "Jitter Buffer Max   : %u\n", jitterMax);
-		ast_cli(a->fd, "Jitter Buffer Min   : %u\n", jitterMin);
-		ast_cli(a->fd, "Jitter Buffer Target: %u\n", jitterTarget);
 
 		i++;
 		p = brcm_get_next_pvt(p);
@@ -2566,8 +2544,8 @@ static fxs_settings fxs_settings_create(void)
 		.autodial_ext = {{0}},
 		.autodial_nr = 0,
 		.echocancel = 1,
-		.txgain = DEFAULT_GAIN,
-		.rxgain = DEFAULT_GAIN,
+		.txgain = GAIN_DEFAULT,
+		.rxgain = GAIN_DEFAULT,
 		.dtmf_relay = EPDTMFRFC2833_ENABLED,
 		.dtmf_short = 1,
 		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
@@ -2772,7 +2750,6 @@ static int load_module(void)
 	/* Initialize the endpoints */
 	endpt_init();
 	brcm_get_endpoints_count();
-	brcm_create_fxs_endpoints();
 
 	/* Load fxs endpoint settings */
 	int i;
@@ -2792,6 +2769,8 @@ static int load_module(void)
 		fxs_settings_load(&fxs_config[i], v);
 	}
 
+	brcm_provision_endpoints();
+	brcm_create_fxs_endpoints();
 	brcm_create_pvts(iflist, 0);
 	brcm_assign_line_id(iflist);
 	ast_mutex_unlock(&iflock);
@@ -2871,6 +2850,21 @@ static int brcm_get_endpoints_count(void)
 	return 0;
 }
 
+static void brcm_provision_endpoints(void)
+{
+	int i;
+	fxs_settings* s;
+
+	//Provision fxs endpoints
+	for ( i = 0; i < num_fxs_endpoints; i++ )
+	{
+		s = &fxs_config[i];
+		ast_log(LOG_DEBUG, "Setting TxGain to %d for Endpoint %d\n", s->txgain, i);
+		ast_log(LOG_DEBUG, "Setting RxGain to %d for Endpoint %d\n", s->rxgain, i);
+		vrgEndptProvSet(i, EPPROV_TxGain, &s->txgain, sizeof(VRG_UINT32));
+		vrgEndptProvSet(i, EPPROV_RxGain, &s->rxgain, sizeof(VRG_UINT32));
+	}
+}
 
 static void brcm_create_fxs_endpoints(void)
 {

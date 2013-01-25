@@ -5,7 +5,11 @@
 
 #define DEFAULT_CALLER_ID "Unknown"
 #define PHONE_MAX_BUF 480
-#define DEFAULT_GAIN 0x100
+
+/* Gain min/max values */
+#define GAIN_MIN -96
+#define GAIN_MAX 32
+#define GAIN_DEFAULT 0
 
 #define TIMEMSEC 1000
 
@@ -126,6 +130,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit);
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_get_endpoints_count(void);
 static void brcm_create_fxs_endpoints(void);
+static void brcm_provision_endpoints(void);
 int brcm_signal_dialtone(struct brcm_pvt *p);
 int brcm_stop_dialtone(struct brcm_pvt *p);
 int brcm_signal_ringing(struct brcm_pvt *p);
