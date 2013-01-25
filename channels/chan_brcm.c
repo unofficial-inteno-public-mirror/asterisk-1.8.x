@@ -2063,6 +2063,19 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Tx Gain             : %d\n", txgain);
 		ast_cli(a->fd, "Rx Gain             : %d\n", rxgain);
 
+		/* Print Jitterbuffer settings */
+		VRG_UINT32 jbfixed, jbmin, jbmax, jbtarget;
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffFixed, &jbfixed, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMin, &jbmin, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMax, &jbmax, sizeof(VRG_UINT32));
+		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffTarget, &jbtarget, sizeof(VRG_UINT32));
+		ast_cli(a->fd, "Brcm JitterBuf fix  : %d\n", jbfixed);
+		ast_cli(a->fd, "Brcm JitterBuf min  : %d\n", jbmin);
+		ast_cli(a->fd, "Brcm JitterBuf max  : %d\n", jbmax);
+		ast_cli(a->fd, "Brcm JitterBuf trg  : %d\n", jbtarget);
+		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
+		ast_cli(a->fd, "Ast JitterBuf max   : %d\n", global_jbconf.max_size);
+
 		/* Print status for subchannels */
 		brcm_show_subchannels(a, p);
 
@@ -2863,6 +2876,13 @@ static void brcm_provision_endpoints(void)
 		ast_log(LOG_DEBUG, "Setting RxGain to %d for Endpoint %d\n", s->rxgain, i);
 		vrgEndptProvSet(i, EPPROV_TxGain, &s->txgain, sizeof(VRG_UINT32));
 		vrgEndptProvSet(i, EPPROV_RxGain, &s->rxgain, sizeof(VRG_UINT32));
+
+		//TODO: hardcoded disable of jitter buffers, better if configurable
+		ast_log(LOG_DEBUG, "Disable jitter buffers for Endpoint %d. Using asterisks jb instead\n", i);
+		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffFixed, 0, sizeof(VRG_UINT32));
+		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMax, 0, sizeof(VRG_UINT32));
+		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMin, 0, sizeof(VRG_UINT32));
+		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffTarget, 0, sizeof(VRG_UINT32));
 	}
 }
 
