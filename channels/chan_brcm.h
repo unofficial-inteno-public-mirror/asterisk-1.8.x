@@ -19,12 +19,8 @@
 
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 2
+#define MAX_NUM_LINEID 3
 #define PACKET_BUFFER_SIZE 1024
-
-#define NOT_INITIALIZED -1
-#define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 2
 #define NUM_SUBCHANNELS 2
 
 
@@ -47,6 +43,7 @@ enum endpoint_type {
 };
 
 struct brcm_subchannel {
+	int id;
 	struct ast_channel *owner;	/* Channel we belong to, possibly NULL */
 	int connection_id;		/* Current connection id, may be -1 */
 	unsigned int channel_state;	/* Channel states */
@@ -104,6 +101,8 @@ enum rtp_type {
 EPSTATUS vrgEndptDriverOpen(void);
 EPSTATUS vrgEndptDriverClose(void);
 EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsigned int value, int duration, int period, int repetition);
+EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
+EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 
 static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
 static int brcm_create_connection(struct brcm_subchannel *p);
@@ -143,3 +142,4 @@ static int brcm_in_callwaiting(const struct brcm_pvt *p);
 static int brcm_in_onhold(const struct brcm_pvt *p);
 static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
 static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
+static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
