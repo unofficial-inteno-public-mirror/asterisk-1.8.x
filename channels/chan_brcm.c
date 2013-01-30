@@ -199,6 +199,7 @@ typedef struct {
 	int timeoutmsec;
 	CODEC_PKT_PERIOD period;
 	int comfort_noise;
+	VRG_UINT32 jitterFixed;
 	VRG_UINT32 jitterMin;
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
@@ -2569,6 +2570,7 @@ static fxs_settings fxs_settings_create(void)
 		.timeoutmsec = 4000,
 		.period = CODEC_PTIME_20,
 		.comfort_noise = 0,
+		.jitterFixed = 0,
 		.jitterMin = 0,
 		.jitterMax = 0,
 		.jitterTarget = 0,
@@ -2673,6 +2675,9 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 			}
 		} else if (!strcasecmp(v->name, "comfortnoise")) {
 			fxs_config->comfort_noise = atoi(v->value);
+		}
+		else if (!strcasecmp(v->name, "jitter_fixed")) {
+			fxs_config->jitterFixed = strtoul(v->value, NULL, 0);
 		}
 		else if (!strcasecmp(v->name, "jitter_min")) {
 			fxs_config->jitterMin = strtoul(v->value, NULL, 0);
@@ -2871,18 +2876,49 @@ static void brcm_provision_endpoints(void)
 	//Provision fxs endpoints
 	for ( i = 0; i < num_fxs_endpoints; i++ )
 	{
+		EPSTATUS result;
 		s = &fxs_config[i];
-		ast_log(LOG_DEBUG, "Setting TxGain to %d for Endpoint %d\n", s->txgain, i);
-		ast_log(LOG_DEBUG, "Setting RxGain to %d for Endpoint %d\n", s->rxgain, i);
-		vrgEndptProvSet(i, EPPROV_TxGain, &s->txgain, sizeof(VRG_UINT32));
-		vrgEndptProvSet(i, EPPROV_RxGain, &s->rxgain, sizeof(VRG_UINT32));
 
-		//TODO: hardcoded disable of jitter buffers, better if configurable
-		ast_log(LOG_DEBUG, "Disable jitter buffers for Endpoint %d. Using asterisks jb instead\n", i);
-		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffFixed, 0, sizeof(VRG_UINT32));
-		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMax, 0, sizeof(VRG_UINT32));
-		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMin, 0, sizeof(VRG_UINT32));
-		vrgEndptProvSet(i, EPPROV_VoiceJitterBuffTarget, 0, sizeof(VRG_UINT32));
+		/*
+		 * Provision DSP Gain values according to configuration
+		 */
+
+		ast_log(LOG_DEBUG, "Setting TxGain to %d for Endpoint %d\n", s->txgain, i);
+		result = vrgEndptProvSet(i, EPPROV_TxGain, &s->txgain, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting TxGain to %d for Endpoint %d failed with EPSTATUS %d\n", s->txgain, i, result);
+		}
+
+		ast_log(LOG_DEBUG, "Setting RxGain to %d for Endpoint %d\n", s->rxgain, i);
+		result = vrgEndptProvSet(i, EPPROV_RxGain, &s->rxgain, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting RxGain to %d for Endpoint %d failed with EPSTATUS %d\n", s->rxgain, i, result);
+		}
+
+		/*
+		 * Set DSP jitter buffer values accoring to configuration
+		 * Should be set to zero if asterisk jitter buffer is used.
+		 */
+
+		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffFixed, &s->jitterFixed, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffFixed to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterFixed, i, result);
+		}
+
+		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMax, &s->jitterMax, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMax to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterMax, i, result);
+		}
+
+		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMin, &s->jitterMin, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMin to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterMin, i, result);
+		}
+
+		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffTarget, &s->jitterTarget, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffTarget to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterTarget, i, result);
+		}
 	}
 }
 
