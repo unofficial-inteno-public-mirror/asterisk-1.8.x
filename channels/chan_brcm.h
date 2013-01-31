@@ -46,6 +46,14 @@ enum endpoint_type {
 	DECT,
 };
 
+typedef enum dialtone_state {
+	DIALTONE_OFF = 0,
+	DIALTONE_ON,
+	DIALTONE_CONGESTION,
+	DIALTONE_UNKNOWN,
+	DIALTONE_LAST,
+} dialtone_state;
+
 struct brcm_subchannel {
 	int id;
 	struct ast_channel *owner;	/* Channel we belong to, possibly NULL */
@@ -89,6 +97,7 @@ static struct brcm_pvt {
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
+	dialtone_state dialtone;		/* Set by manager command */
 } *iflist = NULL;
 
 enum rtp_type {

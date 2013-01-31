@@ -62,6 +62,21 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 
+/*** DOCUMENTATION
+	<manager name="BRCMDialtoneSet" language="en_US">
+		<synopsis>
+			Set dialtone state for BRCM port.
+		</synopsis>
+		<syntax>
+			<xi:include xpointer="xpointer(/docs/manager[@name='Login']/syntax/parameter[@name='ActionID'])" />
+			<parameter name="LineType" required="true" />
+			<parameter name="LineId" required="true" />
+			<parameter name="State" required="true" />
+		</syntax>
+		<description>
+		</description>
+	</manager>
+ ***/
 
 /* Global brcm channel parameters */
 
@@ -170,6 +185,21 @@ static const COUNTRY_MAP country_map[] =
 	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
 	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
 	{VRG_COUNTRY_MAX, 			"-"}
+};
+
+typedef struct DIALTONE_MAP
+{
+	dialtone_state	state;
+	char		str[11];
+} DIALTONE_MAP;
+
+static const DIALTONE_MAP dialtone_map[] =
+{
+	{DIALTONE_OFF,		"off"},
+	{DIALTONE_ON,		"on"},
+	{DIALTONE_CONGESTION,	"congestion"},
+	{DIALTONE_UNKNOWN,	"unknown"},
+	{DIALTONE_LAST,		"-"},
 };
 
 typedef struct {
@@ -662,11 +692,25 @@ static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_
 
 /* Tell endpoint to play country specific dialtone. */
 int brcm_signal_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 1, -1, -1 , -1);
+	EPSIG signal;
+	switch (p->dialtone) {
+		case DIALTONE_OFF:
+			return EPSTATUS_SUCCESS;
+		case DIALTONE_ON:
+			signal = EPSIG_DIAL;
+			break;
+		case DIALTONE_CONGESTION:
+			signal = EPSIG_NETBUSY;
+			break;
+		default:
+			ast_log(LOG_ERROR, "Requested to signal unknown dialtone\n");
+			return EPSTATUS_ERROR;
+	}
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, signal, 1, -1, -1 , -1);
 }
 
 int brcm_stop_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 0, -1, -1 , -1);
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_NULL, -1, -1, -1 , -1);
 }
 
 static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *cntx, const char *linkedid, format_t format)
@@ -1731,6 +1775,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->last_dtmf_ts = 0;
 		tmp->last_early_onhook_ts = 0;
 		tmp->endpoint_type = endpoint_type;
+		tmp->dialtone = DIALTONE_UNKNOWN;
 	}
 	return tmp;
 }
@@ -1768,7 +1813,6 @@ static void brcm_assign_line_id(struct brcm_pvt *p)
 		brcm_initialize_pvt(tmp);
 		int j;
 		for (j=0; j<NUM_SUBCHANNELS; j++) {
-			ast_log(LOG_DEBUG, "%d %d", i, j);
 			brcm_subchannel_set_state(tmp->sub[j], ONHOOK);
 		}
 		tmp = tmp->next;
@@ -2077,6 +2121,16 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
 		ast_cli(a->fd, "Ast JitterBuf max   : %d\n", global_jbconf.max_size);
 
+		ast_cli(a->fd, "Dialtone            : ");
+		const DIALTONE_MAP *dialtone = dialtone_map;
+		while (dialtone->state != DIALTONE_LAST) {
+			if (dialtone->state == p->dialtone) {
+				break;
+			}
+			dialtone++;
+		}
+		ast_cli(a->fd, "%s\n", dialtone->str);
+
 		/* Print status for subchannels */
 		brcm_show_subchannels(a, p);
 
@@ -2119,6 +2173,73 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	brcm_show_pvts(a);
 
 	return CLI_SUCCESS;
+}
+
+static int manager_brcm_dialtone_set(struct mansession *s, const struct message *m)
+{
+	struct brcm_pvt *p;
+	struct brcm_pvt *p_tmp;
+	const char *line_id = astman_get_header(m, "LineId");
+	const char *requested_dialtone = astman_get_header(m, "Dialtone");
+	int line;
+
+	if (ast_strlen_zero(line_id)) {
+		astman_send_error(s, m, "BRCMDialtoneSet requires LineId");
+		return 0;
+	}
+
+	if (ast_strlen_zero(requested_dialtone)) {
+		astman_send_error(s, m, "BRCMDialtoneSet requires Dialtone");
+		return 0;
+	}
+
+	/* Find line id */
+	int i;
+        for (i = 0; i < strlen(line_id); i++) {
+                if (!isdigit(line_id[i])) {
+			astman_send_error(s, m, "Invalid LineId");
+			return 0;
+                }
+        }
+	line = atoi(line_id);
+	if (ast_mutex_lock(&iflock)) {
+		astman_send_error(s, m, "Failed to lock iflist");
+		return -1;
+	}
+	p = NULL;
+	p_tmp = iflist;
+	while (p_tmp) {
+		if (p_tmp->line_id == line) {
+			p = p_tmp;
+			break;
+		}
+		p_tmp = p_tmp->next;
+	}
+	ast_mutex_unlock(&iflock);
+	if (!p) {
+		astman_send_error(s, m, "Unknown LineId");
+		return 0;
+	}
+
+	/* Match requested dialtone str with corresponding dialtone enum */
+	const DIALTONE_MAP *dialtone = dialtone_map;
+	while (dialtone->state != DIALTONE_UNKNOWN) {
+		if (strcmp(dialtone->str, requested_dialtone) == 0) {
+			break;
+		}
+		dialtone++;
+	}
+	if (dialtone->state == DIALTONE_UNKNOWN) {
+		astman_send_error(s, m, "Unknown dialtone");
+		return 0;
+	}
+
+	ast_mutex_lock(&p->lock);
+	p->dialtone = dialtone->state;
+	ast_mutex_unlock(&p->lock);
+
+	astman_send_ack(s, m, "Dialtone Set");
+	return 0;
 }
 
 static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
@@ -2422,6 +2543,9 @@ static int unload_module(void)
 
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
+
+	/* Unregister manager commands */
+	ast_manager_unregister("BRCMDialtoneSet");
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module unload\r\n");
 
@@ -2806,6 +2930,9 @@ static int load_module(void)
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	ast_config_destroy(cfg);
+
+	/* Register manager commands */
+	ast_manager_register_xml("BRCMDialtoneSet", EVENT_FLAG_SYSTEM, manager_brcm_dialtone_set);
 
 	/* Start channel threads */
 	start_threads();
