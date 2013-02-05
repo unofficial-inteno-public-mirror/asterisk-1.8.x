@@ -710,7 +710,8 @@ int brcm_signal_dialtone(struct brcm_pvt *p) {
 }
 
 int brcm_stop_dialtone(struct brcm_pvt *p) {
-	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_NULL, -1, -1, -1 , -1);
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 0, -1, -1 , -1) ||
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_NETBUSY, 0, -1, -1 , -1);
 }
 
 static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *cntx, const char *linkedid, format_t format)
