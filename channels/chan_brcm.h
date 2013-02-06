@@ -23,7 +23,7 @@
 
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
-#define MAX_NUM_LINEID 3
+#define MAX_NUM_LINEID 30
 #define PACKET_BUFFER_SIZE 1024
 #define NUM_SUBCHANNELS 2
 
@@ -140,8 +140,8 @@ static int brcm_send_text(struct ast_channel *ast, const char *text);
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit);
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_get_endpoints_count(void);
-static void brcm_create_fxs_endpoints(void);
 static void brcm_provision_endpoints(void);
+static void brcm_create_endpoints(void);
 int brcm_signal_dialtone(struct brcm_pvt *p);
 int brcm_stop_dialtone(struct brcm_pvt *p);
 int brcm_signal_ringing(struct brcm_pvt *p);
