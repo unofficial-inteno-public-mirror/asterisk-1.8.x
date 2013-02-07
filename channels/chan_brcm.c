@@ -2472,6 +2472,11 @@ static int unload_module(void)
 
 	ast_sched_dump(sched);
 
+	/* Unregister manager commands */
+	ast_manager_unregister("BRCMDialtoneSet");
+
+	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module unload\r\n");
+
 	/* First, take us out of the channel loop */
 	if (cur_tech)
 		ast_channel_unregister(cur_tech);
@@ -2544,11 +2549,6 @@ static int unload_module(void)
 
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
-
-	/* Unregister manager commands */
-	ast_manager_unregister("BRCMDialtoneSet");
-
-	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module unload\r\n");
 
 	ast_verbose("Deinitializing endpoint...\n");
 	endpt_deinit();
@@ -2941,6 +2941,8 @@ static int load_module(void)
 
 	/* Start channel threads */
 	start_threads();
+
+	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module load\r\n");
 
 	ast_verbose("BRCM init done\n");
 
