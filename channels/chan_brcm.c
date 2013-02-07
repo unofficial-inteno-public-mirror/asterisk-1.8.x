@@ -99,6 +99,7 @@ static int current_connection_id = 0;
 static int num_fxs_endpoints = -1;
 static int num_fxo_endpoints = -1;
 static int num_dect_endpoints = -1;
+static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
@@ -1858,7 +1859,7 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 	struct brcm_pvt *tmp = iflist;
 	struct brcm_pvt *tmp_next;
 
-	for (i=0 ; i<num_fxs_endpoints ; i++) {
+	for (i=0 ; i<num_endpoints ; i++) {
 		tmp_next = brcm_allocate_pvt("", FXS);
 		if (tmp == NULL) {
 			iflist = tmp_next; //First loop round, set iflist to point at first pvt
@@ -1879,7 +1880,7 @@ static void brcm_assign_line_id(struct brcm_pvt *p)
 	int i;
 
 	/* Assign line_id's */
-	for (i=0 ; i<num_fxs_endpoints ; i++) { // + num_fxo_endpoints + num_dect_endpoints
+	for (i=0 ; i<num_endpoints ; i++) {
 		tmp->line_id = endptObjState[i].lineId;
 		brcm_fill_autodial(tmp);
 		brcm_initialize_pvt(tmp);
@@ -2987,7 +2988,7 @@ static int load_module(void)
 
 	/* Load fxs endpoint settings */
 	int i;
-	for (i = 0; i < num_fxs_endpoints; i++) {
+	for (i = 0; i < num_endpoints; i++) {
 		// Create and init a new settings struct
 		line_config[i] = line_settings_create();
 		// Load default settings
@@ -3004,7 +3005,7 @@ static int load_module(void)
 	}
 
 	brcm_provision_endpoints();
-	brcm_create_fxs_endpoints();
+	brcm_create_endpoints();
 	brcm_create_pvts(iflist, 0);
 	brcm_assign_line_id(iflist);
 	ast_mutex_unlock(&iflock);
@@ -3087,6 +3088,9 @@ static int brcm_get_endpoints_count(void)
 		num_dect_endpoints = endpointCount.endpointNum;
 		ast_verbose("num_dect_endpoints = %d\n", num_dect_endpoints);
 	}
+
+	num_endpoints = num_fxs_endpoints + num_fxo_endpoints + num_dect_endpoints;
+
 	return 0;
 }
 
@@ -3144,12 +3148,12 @@ static void brcm_provision_endpoints(void)
 	}
 }
 
-static void brcm_create_fxs_endpoints(void)
+static void brcm_create_endpoints(void)
 {
 	int i, rc;
 
 	/* Creating Endpt */
-	for ( i = 0; i < num_fxs_endpoints; i++ )
+	for ( i = 0; i < num_endpoints; i++ )
 	{
 		rc = vrgEndptCreate(i, i,(VRG_ENDPT_STATE *)&endptObjState[i]);
 	}
