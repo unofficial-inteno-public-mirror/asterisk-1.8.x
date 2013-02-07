@@ -2731,9 +2731,13 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			fxs_config->echocancel = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "txgain")) {
-			fxs_config->txgain = parse_gain_value(v->name, v->value);
+			if (!ast_strlen_zero(v->value)) {
+				fxs_config->txgain = parse_gain_value(v->name, v->value);
+			}
 		} else if (!strcasecmp(v->name, "rxgain")) {
-			fxs_config->rxgain = parse_gain_value(v->name, v->value);
+			if (!ast_strlen_zero(v->value)) {
+				fxs_config->rxgain = parse_gain_value(v->name, v->value);
+			}
 		} else if (!strcasecmp(v->name, "dtmfrelay")) {
 			if (!strcasecmp(v->value, "info")) {
 				fxs_config->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
