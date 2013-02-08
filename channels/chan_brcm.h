@@ -32,6 +32,7 @@ enum channel_state {
     ONHOOK,
     OFFHOOK,
     DIALING,
+    CALLING,
     INCALL,
     ANSWER,
 	CALLENDED,

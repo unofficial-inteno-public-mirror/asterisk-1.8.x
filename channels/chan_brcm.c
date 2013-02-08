@@ -667,6 +667,7 @@ static char *state2str(enum channel_state state)
 	case ONHOOK:		return "ONHOOK";
 	case OFFHOOK:		return "OFFHOOK";
 	case DIALING:		return "DIALING";
+	case CALLING:		return "CALLING";
 	case INCALL:		return "INCALL";
 	case ANSWER:		return "ANSWER";
 	case CALLENDED:		return "CALLENDED";
@@ -827,6 +828,7 @@ static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt 
 		switch (p->sub[i]->channel_state) {
 			case INCALL:
 			case DIALING:
+			case CALLING:
 			case OFFHOOK:
 			case RINGING:
 				sub = p->sub[i];
@@ -936,7 +938,7 @@ static void *brcm_event_handler(void *data)
 			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
 			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
 			    ) {
-				brcm_subchannel_set_state(sub, DIALING);
+				brcm_subchannel_set_state(sub, CALLING);
 				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
 				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 				ast_verbose("Starting pbx in context: %s with cid: %s ext: %s\n", p->context, p->cid_num, p->ext);
@@ -1015,8 +1017,8 @@ static void handle_hookflash(struct brcm_pvt *p)
 			brcm_signal_dialtone(p);
 			brcm_subchannel_set_state(peer_sub, OFFHOOK);
 
-		/* If offhook/dialing and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK)
+		/* If offhook/dialing/calling and peer subchannel is on hold, switch call */
+		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING)
 				&& ((peer_sub = brcm_get_onhold_subchannel(p)) != NULL)) {
 
 			ast_log(LOG_DEBUG, "R while offhook/dialing and peer subchannel on hold\n");
@@ -1271,7 +1273,7 @@ static void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 		p->dtmf_first = dtmf_button;
 		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 		ast_debug(9,"Pressed DTMF %s\n", dtmfMap->name);
-		if (p->hf_detected == 0 && sub->channel_state == INCALL) { //Send directly to Asterisk
+		if (p->hf_detected == 0 && (sub->channel_state == INCALL || sub->channel_state == CALLING)) { //Send directly to Asterisk
 			ast_channel_lock(sub->owner);
 			struct ast_frame f = { 0, };
 			f.frametype = AST_FRAME_DTMF;
@@ -1297,7 +1299,7 @@ static void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 					brcm_in_callwaiting(p),
 					brcm_in_onhold(p));
 			}
-		} else if (sub->channel_state == INCALL) {
+		} else if (sub->channel_state == INCALL || sub->channel_state == CALLING) {
 			ast_channel_lock(sub->owner);
 			struct ast_frame f = { 0, };
 			f.subclass.integer = dtmf_button;
@@ -1761,7 +1763,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 				sub->parent = tmp;
 				sub->timer_id = -1;
 				tmp->sub[i] = sub;
-				ast_log(LOG_ERROR, "subchannel created\n");
+				ast_log(LOG_DEBUG, "subchannel created\n");
 			} else {
 				ast_log(LOG_ERROR, "no subchannel created\n");
 			}
