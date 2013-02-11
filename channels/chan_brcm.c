@@ -1201,6 +1201,10 @@ static void handle_hookflash(struct brcm_pvt *p)
 						brcm_unmute_connection(sub);
 						ast_queue_control(sub->owner, AST_CONTROL_UNHOLD);
 						brcm_subchannel_set_state(sub, INCALL);
+
+						//Asterisk jitter buffer causes one way audio when going from unhold.
+						//This is a workaround until jitter buffer is handled by DSP.
+						ast_jb_destroy(sub->owner);
 					}
 					brcm_subchannel_set_state(active_sub, ONHOLD);
 				}
