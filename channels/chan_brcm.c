@@ -701,7 +701,7 @@ int brcm_signal_dialtone(struct brcm_pvt *p) {
 			signal = EPSIG_DIAL;
 			break;
 		case DIALTONE_CONGESTION:
-			signal = EPSIG_NETBUSY;
+			signal = EPSIG_STUTTER;
 			break;
 		default:
 			ast_log(LOG_ERROR, "Requested to signal unknown dialtone\n");
