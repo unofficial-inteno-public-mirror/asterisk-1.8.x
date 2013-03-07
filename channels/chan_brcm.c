@@ -1640,6 +1640,12 @@ static void *brcm_monitor_events(void *data)
 				p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 				break;
 			case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
+			case EPEVT_VBD_START:
+				ast_verbose("EPEVT_VBD_START\n");
+				if (sub->owner) {
+					ast_jb_destroy(sub->owner);
+				}
+				break;
 			default:
 				ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
 				break;
