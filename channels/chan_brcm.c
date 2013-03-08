@@ -76,6 +76,16 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 		<description>
 		</description>
 	</manager>
+	<manager name="BRCMPortsShow" language="en_US">
+		<synopsis>
+			Show detected BRCM ports.
+		</synopsis>
+		<syntax>
+			<xi:include xpointer="xpointer(/docs/manager[@name='Login']/syntax/parameter[@name='ActionID'])" />
+		</syntax>
+		<description>
+		</description>
+	</manager>
  ***/
 
 /* Global brcm channel parameters */
@@ -2255,6 +2265,17 @@ static int manager_brcm_dialtone_set(struct mansession *s, const struct message 
 	return 0;
 }
 
+static int manager_brcm_ports_show(struct mansession *s, const struct message *m)
+{
+	char response[64];
+	snprintf(response, 64, "\r\nFXS %d\r\nDECT %d\r\n",
+		num_fxs_endpoints,
+		num_dect_endpoints);
+
+	astman_send_ack(s, m, response);
+	return 0;
+}
+
 static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	int on_off = 0;
@@ -2486,6 +2507,7 @@ static int unload_module(void)
 
 	/* Unregister manager commands */
 	ast_manager_unregister("BRCMDialtoneSet");
+	ast_manager_unregister("BRCMPortsShow");
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module unload\r\n");
 
@@ -2950,6 +2972,7 @@ static int load_module(void)
 
 	/* Register manager commands */
 	ast_manager_register_xml("BRCMDialtoneSet", EVENT_FLAG_SYSTEM, manager_brcm_dialtone_set);
+	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
 
 	/* Start channel threads */
 	start_threads();
