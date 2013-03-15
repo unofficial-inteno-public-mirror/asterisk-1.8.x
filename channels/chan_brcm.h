@@ -85,6 +85,7 @@ static struct brcm_pvt {
 	int txgain, rxgain;             /* gain control for playing, recording  */
 									/* 0x100 - 1.0, 0x200 - 2.0, 0x80 - 0.5 */
 	int silencesupression;
+	char context_direct[AST_MAX_EXTENSION];
 	char context[AST_MAX_EXTENSION];
 	char obuf[PHONE_MAX_BUF * 2];
 	char ext[AST_MAX_EXTENSION];

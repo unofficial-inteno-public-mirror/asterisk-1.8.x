@@ -223,6 +223,7 @@ typedef struct {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
+	char context_direct[AST_MAX_EXTENSION]; //Context that will be checked for exact matches
 	char context[AST_MAX_EXTENSION]; //Default context for dialtone mode
 	autodial autodial_ext[4];
 	int autodial_nr;
@@ -905,6 +906,36 @@ static int cwtimeout_cb(const void *data)
 	return 0;
 }
 
+/*
+ * Helper function that tells asterisk to start a call on the provided pvt/sub/context
+ * using the content of the dtmf buffer.
+ */
+static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, char* context)
+{
+	ast_verbose("Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
+	sub->channel_state = DIALING;
+	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
+
+	/* Reset the dtmf buffer */
+	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+	p->dtmf_len          = 0;
+	p->dtmf_first        = -1;
+	p->dtmfbuf[p->dtmf_len] = '\0';
+
+	/* Reset hook flash state */
+	p->hf_detected = 0;
+
+	/* Start the pbx */
+	if (!sub->connection_init) {
+		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
+		brcm_create_connection(sub);
+	}
+
+	/* Changed state from AST_STATE_UP to AST_STATE_RING ito get the brcm_answer callback
+	 * which is needed for call waiting. */
+	brcm_new(sub, AST_STATE_RING, context, NULL, 0);
+
+}
 
 static void *brcm_event_handler(void *data)
 {
@@ -918,8 +949,6 @@ static void *brcm_event_handler(void *data)
 
 		/* loop over all pvt's */
 		while(p) {
-			int autodial = 0;
-
 			ast_mutex_lock(&p->lock);
 			sub = brcm_get_active_subchannel(p);
 
@@ -929,49 +958,46 @@ static void *brcm_event_handler(void *data)
 				p = brcm_get_next_pvt(p);
 				continue;
 			}
-//			if ((p->channel_state == DIALING) && (ts - p->last_dtmf_ts > TIMEOUTMSEC)) {
-//				ast_verbose("ts - last_dtmf_ts > 2000\n");
-//				ast_verbose("Trying to dial extension %s\n",p->dtmfbuf);
-//			}
-			/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
-			if ((strlen(p->autodial) > 0) && ((sub->channel_state == DIALING) || (sub->channel_state == OFFHOOK))) {
-				autodial = 1;
-				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
-			}
 
-			/* Check if the dtmf string matches anything in the dialplan */
-			gettimeofday(&tim, NULL);
-			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-			int delta = ts - p->last_dtmf_ts;
-			if ((((sub->channel_state == DIALING) &&
-			    (delta > (fxs_config[p->line_id].timeoutmsec))) || autodial) &&
-			    ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) &&
-			    !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num)
-			    ) {
-				brcm_subchannel_set_state(sub, CALLING);
-				ast_verbose("Extension matching: %s found\n", p->dtmfbuf);
-				ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
-				ast_verbose("Starting pbx in context: %s with cid: %s ext: %s\n", p->context, p->cid_num, p->ext);
+			/*
+			 * Determine if we should tell asterisk to start dialing.
+			 * Used conditions:
+			 * - delta > timeoutmsec		- Interdigit timeout reached
+			 * - ast_exists_extension		- If an extension within the given context(or callerid) with the given priority is found a non zero value will be returned
+			 * - ast_matchmore_extension	- If "exten" *could match* a valid extension in this context with some more digits, return non-zero
+			 * 									Does NOT return non-zero if this is an exact-match only
+			 * 									Basically, when this returns 0, no matter what you add to exten, it's not going to be a valid extension anymore
+			 *
+			 * TODO: this does away with the autodial feature...
+			 */
+			if (sub->channel_state == DIALING) {
+				gettimeofday(&tim, NULL);
+				ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+				int delta = ts - p->last_dtmf_ts;
+				int timeoutmsec = fxs_config[p->line_id].timeoutmsec;
 
-				/* Reset the dtmf buffer */
-				memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-				p->dtmf_len          = 0;
-				p->dtmf_first        = -1;
-				p->dtmfbuf[p->dtmf_len] = '\0';
-
-				/* Reset hook flash state */
-				p->hf_detected = 0;
-
-				/* Start the pbx */
-				if (!sub->connection_init) {
-					sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
-					brcm_create_connection(sub);
+				if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
+				{
+					//We have a full match in the "direct" context, so have asterisk place a call immediately
+					ast_verbose("Direct extension matching %s found\n", p->dtmfbuf);
+					brcm_start_calling(p, sub, p->context_direct);
 				}
-
-				/* Changed state from AST_STATE_UP to AST_STATE_RING ito get the brcm_answer callback 
-				 * which is needed for call waiting. */
-				brcm_new(sub, AST_STATE_RING, p->context, NULL, 0);
-
+				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+				{
+					//We have a full match in the "default" context, so have asterisk place a call immediately,
+					//since no more digits can be added to the number
+					//(this is unlikely to happen since there is probably a "catch-all" extension)
+					ast_verbose("Unique extension matching %s found\n", p->dtmfbuf);
+					brcm_start_calling(p, sub, p->context_direct);
+				}
+				else if ((delta > timeoutmsec) && ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+				{
+					//We have at least one matching extension in "default" context,
+					//and interdigit timeout has passed, so have asterisk start calling.
+					//Asterisk will select the best matching extension if there are more than one possibility.
+					ast_verbose("Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
+					brcm_start_calling(p, sub, p->context);
+				}
 			}
 
 			/* Get next channel pvt if there is one */
@@ -1760,6 +1786,7 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 
 	ast_copy_string(p->language, s->language, sizeof(p->language));
 	ast_copy_string(p->context, s->context, sizeof(p->context));
+	ast_copy_string(p->context_direct, s->context_direct, sizeof(p->context_direct));
 	ast_copy_string(p->cid_num, s->cid_num, sizeof(p->cid_num));
 	ast_copy_string(p->cid_name, s->cid_name, sizeof(p->cid_name));
 }
@@ -2088,6 +2115,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		}
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
+		ast_cli(a->fd, "Direct context      : %s\n", p->context_direct);
 		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
 		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
@@ -2728,6 +2756,7 @@ static fxs_settings fxs_settings_create(void)
 		.language = "",
 		.cid_num = "",
 		.cid_name = "",
+		.context_direct = "default",
 		.context = "default",
 		.silence = 0,
 		.autodial_ext = {{0}},
@@ -2771,6 +2800,8 @@ static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
 			ast_callerid_split(v->value, fxs_config->cid_name, sizeof(fxs_config->cid_name), fxs_config->cid_num, sizeof(fxs_config->cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
 			ast_copy_string(fxs_config->context, v->value, sizeof(fxs_config->context));
+		} else if (!strcasecmp(v->name, "context_direct")) {
+			ast_copy_string(fxs_config->context_direct, v->value, sizeof(fxs_config->context_direct));
 		} else if (!strcasecmp(v->name, "autodial")) {
 			if (fxs_config->autodial_nr < 4) {
 				fxs_config->autodial_ext[fxs_config->autodial_nr].id = v->value[0] - '0';
