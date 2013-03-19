@@ -244,9 +244,9 @@ typedef struct {
 	VRG_UINT32 jitterMin;
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
-} fxs_settings;
+} line_settings;
 
-static fxs_settings fxs_config[MAX_NUM_LINEID];
+static line_settings line_config[MAX_NUM_LINEID];
 
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
@@ -286,13 +286,13 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
 	int res;
 	struct brcm_subchannel *sub;
-	fxs_settings* s;
+	line_settings* s;
 
 	sub = ast->tech_pvt;
 	ast_mutex_lock(&sub->parent->lock);
 
 	res = 0;
-	s = &fxs_config[sub->parent->line_id];
+	s = &line_config[sub->parent->line_id];
 	switch (s->dtmf_relay) {
 		case EPDTMFRFC2833_DISABLED:
 			res = -1;
@@ -316,13 +316,13 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 {
 	int res;
 	struct brcm_subchannel *sub;
-	fxs_settings* s;
+	line_settings* s;
 
 	sub = ast->tech_pvt;
 	ast_mutex_lock(&sub->parent->lock);
 
 	res = 0;
-	s = &fxs_config[sub->parent->line_id];
+	s = &line_config[sub->parent->line_id];
 	switch (s->dtmf_relay) {
 		case EPDTMFRFC2833_DISABLED:
 			res = -1;
@@ -738,7 +738,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 
 		/* find out which codec to use */
 		format_t fmt = format;
-		fxs_settings *s = &fxs_config[i->parent->line_id];
+		line_settings *s = &line_config[i->parent->line_id];
 		tmp->nativeformats = s->capability;
 		if (fmt == 0) {
 			//Let asterisk decide which codec is the best
@@ -974,7 +974,7 @@ static void *brcm_event_handler(void *data)
 				gettimeofday(&tim, NULL);
 				ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 				int delta = ts - p->last_dtmf_ts;
-				int timeoutmsec = fxs_config[p->line_id].timeoutmsec;
+				int timeoutmsec = line_config[p->line_id].timeoutmsec;
 
 				if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
 				{
@@ -1478,7 +1478,7 @@ static void *brcm_monitor_packets(void *data)
 					}
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
-				int dtmf_short = fxs_config[p->parent->line_id].dtmf_short;
+				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
 
 				if (dtmf_short) {
 					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
@@ -1782,7 +1782,7 @@ static int start_threads(void)
 /* Load settings for each fxs line */
 static void brcm_initialize_pvt(struct brcm_pvt *p)
 {
-	fxs_settings *s = &fxs_config[p->line_id];
+	line_settings *s = &line_config[p->line_id];
 
 	ast_copy_string(p->language, s->language, sizeof(p->language));
 	ast_copy_string(p->context, s->context, sizeof(p->context));
@@ -1793,7 +1793,7 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 
 static void brcm_fill_autodial(struct brcm_pvt *p) {
 	int i;
-	fxs_settings *s = &fxs_config[p->line_id];
+	line_settings *s = &line_config[p->line_id];
 
 	for (i=0 ; i<s->autodial_nr ; i++) {
 		if (p->line_id == s->autodial_ext[i].id)
@@ -2120,7 +2120,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
 		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
 
-		fxs_settings* s = &fxs_config[p->line_id];
+		line_settings* s = &line_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
 		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
@@ -2345,7 +2345,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
 		return CLI_SHOWUSAGE;
 	}
-	fxs_settings *s = &fxs_config[pvt_id];
+	line_settings *s = &line_config[pvt_id];
 
 	if (!strcasecmp(a->argv[3], "on")) {
 		on_off = 1;
@@ -2387,7 +2387,7 @@ static char *brcm_set_vad(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
     if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
-    fxs_settings *s = &fxs_config[pvt_id];
+    line_settings *s = &line_config[pvt_id];
 
 	if (!strcasecmp(a->argv[3], "off")) {
 		s->silence = 0;
@@ -2426,7 +2426,7 @@ static char *brcm_set_cng(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
     if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
-    fxs_settings *s = &fxs_config[pvt_id];
+    line_settings *s = &line_config[pvt_id];
 
     if (!strcasecmp(a->argv[3], "off")) {
         s->comfort_noise = 0;
@@ -2461,7 +2461,7 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
     if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
-    fxs_settings *s = &fxs_config[pvt_id];
+    line_settings *s = &line_config[pvt_id];
 
 	if        (!strcasecmp(a->argv[3], "inband")) {
 		s->dtmf_relay = EPDTMFRFC2833_DISABLED;
@@ -2493,7 +2493,7 @@ static char *brcm_set_parameters_value(struct ast_cli_entry *e, int cmd, struct 
     if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
-    fxs_settings *s = &fxs_config[pvt_id];
+    line_settings *s = &line_config[pvt_id];
 
 	s->timeoutmsec = atoi(a->argv[3]);
 
@@ -2696,7 +2696,7 @@ static void build_xlaw_table(uint8_t *linear_to_xlaw,
 static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 {
 	EPZCNXPARAM epCnxParms = {0};
-	fxs_settings *s = &fxs_config[p->parent->line_id];
+	line_settings *s = &line_config[p->parent->line_id];
 
 	epCnxParms.mode = EPCNXMODE_SNDRX;
 
@@ -2748,11 +2748,11 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 }
 
 /*
- * Create a fxs_settings struct with default values.
+ * Create a line_settings struct with default values.
  */
-static fxs_settings fxs_settings_create(void)
+static line_settings line_settings_create(void)
 {
-	fxs_settings fxs_conf = (fxs_settings){
+	line_settings line_conf = (line_settings){
 		.language = "",
 		.cid_num = "",
 		.cid_name = "",
@@ -2779,128 +2779,128 @@ static fxs_settings fxs_settings_create(void)
 		.jitterMax = 0,
 		.jitterTarget = 0,
 	};
-	return fxs_conf;
+	return line_conf;
 }
 
 /*
- * Load config file settings into the specified fxs_settings struct.
+ * Load config file settings into the specified line_settings struct.
  * Can be called multiple times in order to load from multiple ast_variables.
  */
-static void fxs_settings_load(fxs_settings *fxs_config, struct ast_variable *v)
+static void line_settings_load(line_settings *line_config, struct ast_variable *v)
 {
 	int config_codecs = 0;
 	int capability_set = 0;
 
 	while(v) {
 		if (!strcasecmp(v->name, "silence")) {
-			fxs_config->silence = atoi(v->value);
+			line_config->silence = atoi(v->value);
 		} else if (!strcasecmp(v->name, "language")) {
-			ast_copy_string(fxs_config->language, v->value, sizeof(fxs_config->language));
+			ast_copy_string(line_config->language, v->value, sizeof(line_config->language));
 		} else if (!strcasecmp(v->name, "callerid")) {
-			ast_callerid_split(v->value, fxs_config->cid_name, sizeof(fxs_config->cid_name), fxs_config->cid_num, sizeof(fxs_config->cid_num));
+			ast_callerid_split(v->value, line_config->cid_name, sizeof(line_config->cid_name), line_config->cid_num, sizeof(line_config->cid_num));
 		} else if (!strcasecmp(v->name, "context")) {
-			ast_copy_string(fxs_config->context, v->value, sizeof(fxs_config->context));
+			ast_copy_string(line_config->context, v->value, sizeof(line_config->context));
 		} else if (!strcasecmp(v->name, "context_direct")) {
-			ast_copy_string(fxs_config->context_direct, v->value, sizeof(fxs_config->context_direct));
+			ast_copy_string(line_config->context_direct, v->value, sizeof(line_config->context_direct));
 		} else if (!strcasecmp(v->name, "autodial")) {
-			if (fxs_config->autodial_nr < 4) {
-				fxs_config->autodial_ext[fxs_config->autodial_nr].id = v->value[0] - '0';
-				autodial* ad = &(fxs_config->autodial_ext[fxs_config->autodial_nr]);
+			if (line_config->autodial_nr < 4) {
+				line_config->autodial_ext[line_config->autodial_nr].id = v->value[0] - '0';
+				autodial* ad = &(line_config->autodial_ext[line_config->autodial_nr]);
 				ast_copy_string(ad->extension, &v->value[2], sizeof(autodial));
-				fxs_config->autodial_nr++;
+				line_config->autodial_nr++;
 			}
 		} else if (!strcasecmp(v->name, "echocancel")) {
-			fxs_config->echocancel = ast_true(v->value)?1:0;
+			line_config->echocancel = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "txgain")) {
 			if (!ast_strlen_zero(v->value)) {
-				fxs_config->txgain = parse_gain_value(v->name, v->value);
+				line_config->txgain = parse_gain_value(v->name, v->value);
 			}
 		} else if (!strcasecmp(v->name, "rxgain")) {
 			if (!ast_strlen_zero(v->value)) {
-				fxs_config->rxgain = parse_gain_value(v->name, v->value);
+				line_config->rxgain = parse_gain_value(v->name, v->value);
 			}
 		} else if (!strcasecmp(v->name, "dtmfrelay")) {
 			if (!strcasecmp(v->value, "info")) {
-				fxs_config->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
+				line_config->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 			} else if (!strcasecmp(v->value, "rfc2833")) {
-				fxs_config->dtmf_relay = EPDTMFRFC2833_ENABLED;
+				line_config->dtmf_relay = EPDTMFRFC2833_ENABLED;
 			} else {
-				fxs_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
+				line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 			}
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
-			fxs_config->dtmf_short = ast_true(v->value)?1:0;
+			line_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "allow")) {
 			if (!capability_set) {
-				fxs_config->capability = 0; //Clear default capability
+				line_config->capability = 0; //Clear default capability
 				capability_set = 1;
 			}
 
 			if (!strcasecmp(v->value, "alaw")) {
-				fxs_config->codec_list[config_codecs] = CODEC_PCMA;
-				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
-				fxs_config->capability = fxs_config->capability | AST_FORMAT_ALAW;
+				line_config->codec_list[config_codecs] = CODEC_PCMA;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMA;
+				line_config->capability = line_config->capability | AST_FORMAT_ALAW;
 			} else if (!strcasecmp(v->value, "ulaw")) {
-				fxs_config->codec_list[config_codecs] = CODEC_PCMU;
-				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
-				fxs_config->capability = fxs_config->capability | AST_FORMAT_ULAW;
+				line_config->codec_list[config_codecs] = CODEC_PCMU;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_PCMU;
+				line_config->capability = line_config->capability | AST_FORMAT_ULAW;
 			} else if (!strcasecmp(v->value, "g729")) {
-				fxs_config->codec_list[config_codecs] = CODEC_G729A;
-				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
-				fxs_config->capability = fxs_config->capability | AST_FORMAT_G729A;
+				line_config->codec_list[config_codecs] = CODEC_G729A;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G729;
+				line_config->capability = line_config->capability | AST_FORMAT_G729A;
 			} else if (!strcasecmp(v->value, "g723")) {
-				fxs_config->codec_list[config_codecs] = CODEC_G7231_63;
-				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
-				fxs_config->capability = fxs_config->capability | AST_FORMAT_G723_1;
+				line_config->codec_list[config_codecs] = CODEC_G7231_63;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G723;
+				line_config->capability = line_config->capability | AST_FORMAT_G723_1;
 			} else if (!strcasecmp(v->value, "g726")) {
-				fxs_config->codec_list[config_codecs] = CODEC_G726_32;
-				fxs_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
-				fxs_config->capability = fxs_config->capability | AST_FORMAT_G726;
+				line_config->codec_list[config_codecs] = CODEC_G726_32;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
+				line_config->capability = line_config->capability | AST_FORMAT_G726;
 			} else {
 				ast_log(LOG_WARNING, "Unknown codec: %s\n", v->value);
 			}
 		} else if (!strcasecmp(v->name, "ringsignal")) {
-			fxs_config->ringsignal = ast_true(v->value)?1:0;
+			line_config->ringsignal = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "dialoutmsec")) {
-			fxs_config->timeoutmsec = atoi(v->value);
+			line_config->timeoutmsec = atoi(v->value);
 		} else if (!strcasecmp(v->name, "period")) {
 			switch(atoi(v->value)) {
 				case 5:
-					fxs_config->period = CODEC_PTIME_5;
+					line_config->period = CODEC_PTIME_5;
 					break;
 				case 10:
-					fxs_config->period = CODEC_PTIME_10;
+					line_config->period = CODEC_PTIME_10;
 					break;
 				case 20:
-					fxs_config->period = CODEC_PTIME_20;
+					line_config->period = CODEC_PTIME_20;
 					break;
 				case 30:
-					fxs_config->period = CODEC_PTIME_30;
+					line_config->period = CODEC_PTIME_30;
 					break;
 				case 40:
-					fxs_config->period = CODEC_PTIME_40;
+					line_config->period = CODEC_PTIME_40;
 					break;
 				default:
-					fxs_config->period = CODEC_PTIME_20;
+					line_config->period = CODEC_PTIME_20;
 					break;
 			}
 		} else if (!strcasecmp(v->name, "comfortnoise")) {
-			fxs_config->comfort_noise = atoi(v->value);
+			line_config->comfort_noise = atoi(v->value);
 		}
 		else if (!strcasecmp(v->name, "jitter_fixed")) {
-			fxs_config->jitterFixed = strtoul(v->value, NULL, 0);
+			line_config->jitterFixed = strtoul(v->value, NULL, 0);
 		}
 		else if (!strcasecmp(v->name, "jitter_min")) {
-			fxs_config->jitterMin = strtoul(v->value, NULL, 0);
+			line_config->jitterMin = strtoul(v->value, NULL, 0);
 		}
 		else if (!strcasecmp(v->name, "jitter_max")) {
-			fxs_config->jitterMax = strtoul(v->value, NULL, 0);
+			line_config->jitterMax = strtoul(v->value, NULL, 0);
 		}
 		else if (!strcasecmp(v->name, "jitter_target")) {
-			fxs_config->jitterTarget = strtoul(v->value, NULL, 0);
+			line_config->jitterTarget = strtoul(v->value, NULL, 0);
 		}
 
 		if (config_codecs > 0)
-			fxs_config->codec_nr = config_codecs;
+			line_config->codec_nr = config_codecs;
 
 		v = v->next;
 	}
@@ -2983,18 +2983,18 @@ static int load_module(void)
 	int i;
 	for (i = 0; i < num_fxs_endpoints; i++) {
 		// Create and init a new settings struct
-		fxs_config[i] = fxs_settings_create();
+		line_config[i] = line_settings_create();
 		// Load default settings
 		v = ast_variable_browse(cfg, "default");
-		fxs_settings_load(&fxs_config[i], v);
+		line_settings_load(&line_config[i], v);
 		// Load endpoint specific settings
 		char config_section[64];
-		snprintf(config_section, 64, "fxs_%d", i);
+		snprintf(config_section, 64, "brcm%d", i);
 		v = ast_variable_browse(cfg, config_section);
 		if (!v) {
 			ast_log(LOG_WARNING, "Unable to load endpoint specific config (missing config section?): %s\n", config_section);
 		}
-		fxs_settings_load(&fxs_config[i], v);
+		line_settings_load(&line_config[i], v);
 	}
 
 	brcm_provision_endpoints();
@@ -3087,13 +3087,13 @@ static int brcm_get_endpoints_count(void)
 static void brcm_provision_endpoints(void)
 {
 	int i;
-	fxs_settings* s;
+	line_settings* s;
 
 	//Provision fxs endpoints
 	for ( i = 0; i < num_fxs_endpoints; i++ )
 	{
 		EPSTATUS result;
-		s = &fxs_config[i];
+		s = &line_config[i];
 
 		/*
 		 * Provision DSP Gain values according to configuration
@@ -3190,7 +3190,7 @@ int brcm_stop_callwaiting(const struct brcm_pvt *p)
 
 int brcm_signal_ringing(struct brcm_pvt *p)
 {
-	if (fxs_config[p->line_id].ringsignal) {
+	if (line_config[p->line_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_RINGING, 1, -1, -1 , -1);
 	}
 	return 0;
@@ -3199,7 +3199,7 @@ int brcm_signal_ringing(struct brcm_pvt *p)
 
 int brcm_stop_ringing(struct brcm_pvt *p)
 {
-	if (fxs_config[p->line_id].ringsignal) {
+	if (line_config[p->line_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_RINGING, 0, -1, -1 , -1);
 	}
 
@@ -3209,7 +3209,7 @@ int brcm_stop_ringing(struct brcm_pvt *p)
 /* Prepare endpoint for ringing. Caller ID signal pending. */
 int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (fxs_config[p->line_id].ringsignal) {
+	if (line_config[p->line_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLID_RINGING, 1, -1, -1 , -1);
 	}
 
@@ -3218,7 +3218,7 @@ int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p)
 
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
 {
-	if (fxs_config[p->line_id].ringsignal) {
+	if (line_config[p->line_id].ringsignal) {
 		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLID_RINGING, 0, -1, -1 , -1);
 	}
 
@@ -3233,7 +3233,7 @@ int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p)
  */
 int brcm_signal_callerid(struct brcm_subchannel *sub)
 {
-	if (fxs_config[sub->parent->line_id].ringsignal) {
+	if (line_config[sub->parent->line_id].ringsignal) {
 		CLID_STRING clid_string;
 		struct timeval utc_time;
 		struct ast_tm local_time;
