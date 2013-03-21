@@ -2756,7 +2756,7 @@ static line_settings line_settings_create(void)
 		.language = "",
 		.cid_num = "",
 		.cid_name = "",
-		.context_direct = "default",
+		.context_direct = "default-direct",
 		.context = "default",
 		.silence = 0,
 		.autodial_ext = {{0}},
