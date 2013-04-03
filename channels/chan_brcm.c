@@ -1054,7 +1054,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 				//Asterisk jitter buffer causes one way audio when going from unhold.
 				//This is a workaround until jitter buffer is handled by DSP.
-				ast_jb_destroy(sub->owner);
+				ast_jb_destroy(peer_sub->owner);
 			}
 
 		/* Switch back to old call (remote hung up) */
@@ -1078,7 +1078,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 				//Asterisk jitter buffer causes one way audio when going from unhold.
 				//This is a workaround until jitter buffer is handled by DSP.
-				ast_jb_destroy(sub->owner);
+				ast_jb_destroy(peer_sub->owner);
 			}
 		}
 		return;
