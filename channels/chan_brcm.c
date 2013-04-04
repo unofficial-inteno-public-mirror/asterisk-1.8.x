@@ -959,6 +959,14 @@ static void *brcm_event_handler(void *data)
 				continue;
 			}
 
+			/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
+			if (sub->channel_state == OFFHOOK &&  ast_exists_extension(NULL, p->context, p->autodial, 1, p->cid_num)) {
+				//We have a full match in the "direct" context, so have asterisk place a call immediately
+				brcm_stop_dialtone(p);
+				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
+				ast_verbose("Autodial extension matching %s found\n", p->dtmfbuf);
+				brcm_start_calling(p, sub, p->context);
+			}
 			/*
 			 * Determine if we should tell asterisk to start dialing.
 			 * Used conditions:
@@ -967,10 +975,8 @@ static void *brcm_event_handler(void *data)
 			 * - ast_matchmore_extension	- If "exten" *could match* a valid extension in this context with some more digits, return non-zero
 			 * 									Does NOT return non-zero if this is an exact-match only
 			 * 									Basically, when this returns 0, no matter what you add to exten, it's not going to be a valid extension anymore
-			 *
-			 * TODO: this does away with the autodial feature...
 			 */
-			if (sub->channel_state == DIALING) {
+			else if (sub->channel_state == DIALING) {
 				gettimeofday(&tim, NULL);
 				ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 				int delta = ts - p->last_dtmf_ts;
