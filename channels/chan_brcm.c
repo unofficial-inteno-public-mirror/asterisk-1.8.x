@@ -3100,7 +3100,7 @@ static void brcm_provision_endpoints(void)
 	line_settings* s;
 
 	//Provision fxs endpoints
-	for ( i = 0; i < num_fxs_endpoints; i++ )
+	for ( i = 0; i < num_endpoints; i++ )
 	{
 		EPSTATUS result;
 		s = &line_config[i];
