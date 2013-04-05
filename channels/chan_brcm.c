@@ -1786,7 +1786,7 @@ static int start_threads(void)
 	return 0;
 }
 
-/* Load settings for each fxs line */
+/* Load settings for each line */
 static void brcm_initialize_pvt(struct brcm_pvt *p)
 {
 	line_settings *s = &line_config[p->line_id];
@@ -2349,7 +2349,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	}
 	
 	int pvt_id = atoi(a->argv[4]);
-	if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+	if (pvt_id >= num_endpoints || pvt_id < 0) {
 		return CLI_SHOWUSAGE;
 	}
 	line_settings *s = &line_config[pvt_id];
@@ -2391,7 +2391,7 @@ static char *brcm_set_vad(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
 	}
 
     int pvt_id = atoi(a->argv[4]);
-    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+    if (pvt_id >= num_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
     line_settings *s = &line_config[pvt_id];
@@ -2430,7 +2430,7 @@ static char *brcm_set_cng(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
     }
 
     int pvt_id = atoi(a->argv[4]);
-    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+    if (pvt_id >= num_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
     line_settings *s = &line_config[pvt_id];
@@ -2465,7 +2465,7 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
     }
 
     int pvt_id = atoi(a->argv[4]);
-    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+    if (pvt_id >= num_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
     line_settings *s = &line_config[pvt_id];
@@ -2497,7 +2497,7 @@ static char *brcm_set_parameters_value(struct ast_cli_entry *e, int cmd, struct 
 		return CLI_SHOWUSAGE;
 
 	int pvt_id = atoi(a->argv[4]);
-    if (pvt_id >= num_fxs_endpoints || pvt_id < 0) {
+    if (pvt_id >= num_endpoints || pvt_id < 0) {
         return CLI_SHOWUSAGE;
     }
     line_settings *s = &line_config[pvt_id];
@@ -2986,7 +2986,7 @@ static int load_module(void)
 	endpt_init();
 	brcm_get_endpoints_count();
 
-	/* Load fxs endpoint settings */
+	/* Load endpoint settings */
 	int i;
 	for (i = 0; i < num_endpoints; i++) {
 		// Create and init a new settings struct
@@ -3043,7 +3043,7 @@ int endpt_deinit(void)
 {
 	int i, rc;
 	/* Destroy Endpt */
-	for ( i = 0; i < num_fxs_endpoints; i++ ) {
+	for ( i = 0; i < num_endpoints; i++ ) {
 		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
 	}
 	if (!ast_mutex_lock(&ioctl_lock)) {
@@ -3099,7 +3099,7 @@ static void brcm_provision_endpoints(void)
 	int i;
 	line_settings* s;
 
-	//Provision fxs endpoints
+	//Provision endpoints
 	for ( i = 0; i < num_endpoints; i++ )
 	{
 		EPSTATUS result;
