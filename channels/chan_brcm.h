@@ -73,7 +73,7 @@ struct brcm_subchannel {
 	int timer_id;			/* Current timer id, -1 if no active timer*/
 };
 
-static struct brcm_pvt {
+struct brcm_pvt {
 	ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
 	int line_id;				/* Maps to the correct port */
@@ -103,7 +103,7 @@ static struct brcm_pvt {
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
 	dialtone_state dialtone;		/* Set by manager command */
-} *iflist = NULL;
+};
 
 enum rtp_type {
 	BRCM_UNKNOWN,
@@ -123,22 +123,6 @@ typedef struct DTMF_CHARNAME_MAP
 	char	c;
 } DTMF_CHARNAME_MAP;
 
-static const DTMF_CHARNAME_MAP dtmf_to_charname[] =
-{
-	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
-	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
-	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
-	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
-	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
-	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
-	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
-	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
-	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
-	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
-	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23}, //#
-	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A}, //*
-	{EPEVT_LAST,  "EPEVT_LAST", '-'}
-};
 
 
 
@@ -149,36 +133,6 @@ typedef struct COUNTRY_TABLE
 	char		isoCode[3];
 } COUNTRY_MAP;
 
-static const COUNTRY_MAP country_map[] =
-{
-	{VRG_COUNTRY_AUSTRALIA,			"AUS"},
-	{VRG_COUNTRY_BELGIUM,			"BEL"},
-	{VRG_COUNTRY_BRAZIL,			"BRA"},
-	{VRG_COUNTRY_CHILE,			"CHL"},
-	{VRG_COUNTRY_CHINA,	 		"CHN"},
-	{VRG_COUNTRY_CZECH, 			"CZE"},
-	{VRG_COUNTRY_DENMARK, 			"DNK"},
-	{VRG_COUNTRY_ETSI, 			"ETS"}, //Not really an iso code
-	{VRG_COUNTRY_FINLAND, 			"FIN"},
-	{VRG_COUNTRY_FRANCE, 			"FRA"},
-	{VRG_COUNTRY_GERMANY, 			"DEU"},
-	{VRG_COUNTRY_HUNGARY,			"HUN"},
-	{VRG_COUNTRY_INDIA,			"IND"},
-	{VRG_COUNTRY_ITALY, 			"ITA"},
-	{VRG_COUNTRY_JAPAN,	 		"JPN"},
-	{VRG_COUNTRY_NETHERLANDS, 		"NLD"},
-	{VRG_COUNTRY_NEW_ZEALAND, 		"NZL"},
-	{VRG_COUNTRY_NORTH_AMERICA, 		"USA"},
-	{VRG_COUNTRY_SPAIN, 			"ESP"},
-	{VRG_COUNTRY_SWEDEN,			"SWE"},
-	{VRG_COUNTRY_SWITZERLAND, 		"CHE"},
-	{VRG_COUNTRY_NORWAY, 			"NOR"},
-	{VRG_COUNTRY_TAIWAN,	 		"TWN"},
-	{VRG_COUNTRY_UK,		 	"GBR"},
-	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
-	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
-	{VRG_COUNTRY_MAX, 			"-"}
-};
 
 typedef struct DIALTONE_MAP
 {
@@ -303,9 +257,10 @@ int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit);
 static int brcm_in_call(const struct brcm_pvt *p);
 static int brcm_in_callwaiting(const struct brcm_pvt *p);
 static int brcm_in_onhold(const struct brcm_pvt *p);
-static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
-static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
+struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
+struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
 static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
+void handle_dtmf(EPEVT event, struct brcm_subchannel *sub);
 
 #endif /* CHAN_BRCM_H */

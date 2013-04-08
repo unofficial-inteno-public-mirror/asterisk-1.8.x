@@ -127,6 +127,58 @@ static pthread_t packet_thread = AST_PTHREADT_NULL;
 
 static struct ast_channel_tech *cur_tech;
 
+const DTMF_CHARNAME_MAP dtmf_to_charname[] =
+{
+	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
+	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
+	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
+	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
+	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
+	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
+	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
+	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
+	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
+	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
+	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23}, //#
+	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A}, //*
+	{EPEVT_LAST,  "EPEVT_LAST", '-'}
+};
+
+
+static COUNTRY_MAP country_map[] =
+{
+	{VRG_COUNTRY_AUSTRALIA,			"AUS"},
+	{VRG_COUNTRY_BELGIUM,			"BEL"},
+	{VRG_COUNTRY_BRAZIL,			"BRA"},
+	{VRG_COUNTRY_CHILE,			"CHL"},
+	{VRG_COUNTRY_CHINA,	 		"CHN"},
+	{VRG_COUNTRY_CZECH, 			"CZE"},
+	{VRG_COUNTRY_DENMARK, 			"DNK"},
+	{VRG_COUNTRY_ETSI, 			"ETS"}, //Not really an iso code
+	{VRG_COUNTRY_FINLAND, 			"FIN"},
+	{VRG_COUNTRY_FRANCE, 			"FRA"},
+	{VRG_COUNTRY_GERMANY, 			"DEU"},
+	{VRG_COUNTRY_HUNGARY,			"HUN"},
+	{VRG_COUNTRY_INDIA,			"IND"},
+	{VRG_COUNTRY_ITALY, 			"ITA"},
+	{VRG_COUNTRY_JAPAN,	 		"JPN"},
+	{VRG_COUNTRY_NETHERLANDS, 		"NLD"},
+	{VRG_COUNTRY_NEW_ZEALAND, 		"NZL"},
+	{VRG_COUNTRY_NORTH_AMERICA, 		"USA"},
+	{VRG_COUNTRY_SPAIN, 			"ESP"},
+	{VRG_COUNTRY_SWEDEN,			"SWE"},
+	{VRG_COUNTRY_SWITZERLAND, 		"CHE"},
+	{VRG_COUNTRY_NORWAY, 			"NOR"},
+	{VRG_COUNTRY_TAIWAN,	 		"TWN"},
+	{VRG_COUNTRY_UK,		 	"GBR"},
+	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
+	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
+	{VRG_COUNTRY_MAX, 			"-"}
+};
+
+/* Linked list of pvt:s */
+struct brcm_pvt *iflist;
+
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
 
@@ -699,7 +751,7 @@ static struct brcm_subchannel* brcm_get_subchannel_from_connectionid(struct brcm
 	return NULL;
 }
 
-static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
+struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
 {
 	struct brcm_subchannel *sub = NULL;
 	int i;
@@ -1179,7 +1231,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 	p->dtmfbuf[p->dtmf_len] = '\0';
 }
 
-static void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
+void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p;
 	const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
@@ -1823,7 +1875,7 @@ static int brcm_active(const struct brcm_pvt *p)
 /*
  * Return idle subchannel
  */
-static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
+struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
 {
 	int i;
 	for (i=0; i<NUM_SUBCHANNELS; i++) {

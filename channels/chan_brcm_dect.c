@@ -513,7 +513,6 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
    
-
 	if ((IeBlockPtr == NULL) || (IeBlockLength == 0))
 		return;
 
@@ -532,6 +531,7 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 	for (i = 0; i < keyPadLen; i++) {
 
 		const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
+
 		while (dtmfMap->c != IePtr->IeData[i]) {
 			dtmfMap++;
 			if (dtmfMap->event == EPEVT_LAST) {
@@ -540,7 +540,7 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 				return;
 			}
 		}
-	   
+
 		ast_mutex_lock(&p->lock);
 		sub = brcm_get_active_subchannel(p);
 
@@ -572,11 +572,15 @@ static void dect_info_ind(unsigned char *MailPtr) {
 
 
 	ast_verbose("INPUT: API_FP_CC_INFO_IND:\n");
+
+
+
 	handset = ((ApiFpCcInfoIndType*) MailPtr)->CallReference.HandsetId;
 
 	if( (((ApiFpCcInfoIndType*) MailPtr)->InfoElementLength > 0) ) {
 
 		ccInfoInd_IePtr = ApiGetInfoElement(ccInfoInd_IeBlockPtr, ccInfoInd_IeBlockLength, API_IE_MULTIKEYPAD);
+
 		/* Process API_IE_MULTIKEYPAD if present */
 		if(ccInfoInd_IePtr && ccInfoInd_IePtr->IeLength != 0)
 			dectProcessCCKeyPadInfo(handset, ccInfoInd_IeBlockPtr, ccInfoInd_IeBlockLength);
