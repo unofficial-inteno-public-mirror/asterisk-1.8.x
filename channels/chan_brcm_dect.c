@@ -294,7 +294,7 @@ static void dectRingHandSet( int destHandset, int dspChannel) //, int line, int 
 			((ApiFpCcSetupReqType *) newMailPtr)->SourceId = dspChannel;
 			((ApiFpCcSetupReqType *) newMailPtr)->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
 
-			/* Copy over infoElements */
+		/* Copy over infoElements */
 			memcpy( &(((ApiFpCcSetupReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength );
 			ApiFreeInfoElement( &IeBlockPtr );
 
@@ -845,7 +845,7 @@ static int dect_init(void)
 	/* download the eeprom values to the DECT driver*/
 	t = (ApiFpLinuxInitReqType*) malloc(sizeof(ApiFpLinuxInitReqType));
 	t->Primitive = API_FP_LINUX_INIT_REQ;
-	dectNvsCtlGetData(t->NvsData);
+	nvs_get_data(t->NvsData);
 	dectDrvWrite(t, sizeof(ApiFpLinuxInitReqType));
 
 
