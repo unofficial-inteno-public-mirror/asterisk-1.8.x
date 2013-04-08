@@ -223,7 +223,7 @@ void dectSetupPingingCall(int handset)
 }
 
 
-static void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId )
+void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId )
 {
 
 	ApiCcBasicServiceType basicService;
