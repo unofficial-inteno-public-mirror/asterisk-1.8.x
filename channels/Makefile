@@ -90,11 +90,43 @@ chan_h323.so: chan_h323.o h323/libchanh323.a
 endif
 endif
 
+# dect flags
+DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-4.12/4.12L.04/userspace/private/apps/dectd
+
+chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       	\
+           -I$(DECTD_DIR)/inc                   		\
+           -I$(DECTD_DIR)/dectI/inc               		\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix               	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api               	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/CodecList     	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpCc          	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpFwu         	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpMm          	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpNoEmission  	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/GenEveNot     	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpGeneral     	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Las           	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/LasDb         	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Project       	\
+           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Types         	\
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/bcmdrivers/broadcom/include/bcm963xx/ \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/bcmdrivers/opensource/include/bcm963xx/ \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/endpt/inc/ \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/inc \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/codec \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/xchg_common/bos/publicInc/ \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/casCtl/inc/ \
+	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/xchg_drivers/inc \
+	-DBOS_OS_LINUXUSER -DBOS_CFG_TIME -DNTR_SUPPORT \
+
+
 chan_misdn.o: _ASTCFLAGS+=-Imisdn
 
 misdn_config.o: _ASTCFLAGS+=-Imisdn
 
 misdn/isdn_lib.o: _ASTCFLAGS+=-Wno-strict-aliasing
+
+$(if $(filter chan_brcm,$(EMBEDDED_MODS)),modules.link,chan_brcm.so): chan_brcm.o chan_brcm_dect.o
 
 $(if $(filter chan_misdn,$(EMBEDDED_MODS)),modules.link,chan_misdn.so): misdn_config.o misdn/isdn_lib.o misdn/isdn_msg_parser.o
 misdn_config.o misdn/isdn_lib.o misdn/isdn_msg_parser.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,chan_misdn)

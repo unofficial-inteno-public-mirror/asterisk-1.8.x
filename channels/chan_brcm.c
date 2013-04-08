@@ -255,6 +255,7 @@ static unsigned int events;
 static unsigned int packets;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
+static pthread_t dect_thread = AST_PTHREADT_NULL;
 static pthread_t event_thread = AST_PTHREADT_NULL;
 static pthread_t packet_thread = AST_PTHREADT_NULL;
 
@@ -1761,6 +1762,17 @@ static int start_threads(void)
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
 		return -1;
 	}
+
+
+	/* Start a dect event polling thread */
+	/* This thread blocks on ioctl and wakes up when an event is avaliable from the endpoint  */
+	dect = 1;
+	if (ast_pthread_create_background(&dect_thread, NULL, brcm_monitor_dect, NULL) < 0) {
+		ast_mutex_unlock(&monlock);
+		ast_log(LOG_ERROR, "Unable to start dect thread.\n");
+		return -1;
+	}
+
 
 	/* Start a new event handler thread */
 	/* This thread processes events recieved by brcm_monitor_events */
