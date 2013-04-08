@@ -1,12 +1,39 @@
 
+#include "asterisk.h"
 
-#include "chan_brcm.h"
-#include "chan_brcm_dect.h"
+ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
+
+#include <math.h>
+#include <ctype.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+
+#include "asterisk/lock.h"
+#include "asterisk/channel.h"
+#include "asterisk/cli.h"
+#include "asterisk/config.h"
+#include "asterisk/module.h"
+#include "asterisk/pbx.h"
+#include "asterisk/utils.h"
+#include "asterisk/callerid.h"
+#include "asterisk/causes.h"
+#include "asterisk/stringfields.h"
+#include "asterisk/musiconhold.h"
+#include "asterisk/indications.h"
+#include "asterisk/manager.h"
+#include "asterisk/sched.h"
 
 #include <ApiFpProject.h>
 #include <dectUtils.h>
 #include <dectshimdrv.h>
 #include <dectNvsCtl.h>
+
+#include "chan_brcm.h"
+#include "chan_brcm_dect.h"
 
 
 int s;
@@ -196,7 +223,7 @@ void dectSetupPingingCall(int handset)
 }
 
 
-void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId )
+static void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId )
 {
 
 	ApiCcBasicServiceType basicService;
@@ -755,7 +782,7 @@ static void nvs_update_ind(unsigned char *mail)
 }
 
 
-static void dectNvsCtlGetData( unsigned char *pNvsData )
+static void nvs_get_data( unsigned char *pNvsData )
 {
 	int fd, ret;
 	
@@ -934,3 +961,6 @@ void *brcm_monitor_dect(void *data) {
 		}
 	}
 }
+
+
+

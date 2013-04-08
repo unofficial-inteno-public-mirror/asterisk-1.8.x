@@ -1,3 +1,6 @@
+#ifndef CHAN_BRCM_H
+#define CHAN_BRCM_H
+
 #include <endpointdrv.h>
 
 /* Change this value when needed */
@@ -111,6 +114,149 @@ enum rtp_type {
 };
 
 
+
+/* Mapping of DTMF to char/name */
+typedef struct DTMF_CHARNAME_MAP
+{
+	EPEVT	event;
+	char	name[12];
+	char	c;
+} DTMF_CHARNAME_MAP;
+
+static const DTMF_CHARNAME_MAP dtmf_to_charname[] =
+{
+	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
+	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
+	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
+	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
+	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
+	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
+	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
+	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
+	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
+	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
+	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23}, //#
+	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A}, //*
+	{EPEVT_LAST,  "EPEVT_LAST", '-'}
+};
+
+
+
+/* List of supported country name, ISO 3166-1 alpha-3 codes */
+typedef struct COUNTRY_TABLE
+{
+	VRG_COUNTRY	vrgCountry;
+	char		isoCode[3];
+} COUNTRY_MAP;
+
+static const COUNTRY_MAP country_map[] =
+{
+	{VRG_COUNTRY_AUSTRALIA,			"AUS"},
+	{VRG_COUNTRY_BELGIUM,			"BEL"},
+	{VRG_COUNTRY_BRAZIL,			"BRA"},
+	{VRG_COUNTRY_CHILE,			"CHL"},
+	{VRG_COUNTRY_CHINA,	 		"CHN"},
+	{VRG_COUNTRY_CZECH, 			"CZE"},
+	{VRG_COUNTRY_DENMARK, 			"DNK"},
+	{VRG_COUNTRY_ETSI, 			"ETS"}, //Not really an iso code
+	{VRG_COUNTRY_FINLAND, 			"FIN"},
+	{VRG_COUNTRY_FRANCE, 			"FRA"},
+	{VRG_COUNTRY_GERMANY, 			"DEU"},
+	{VRG_COUNTRY_HUNGARY,			"HUN"},
+	{VRG_COUNTRY_INDIA,			"IND"},
+	{VRG_COUNTRY_ITALY, 			"ITA"},
+	{VRG_COUNTRY_JAPAN,	 		"JPN"},
+	{VRG_COUNTRY_NETHERLANDS, 		"NLD"},
+	{VRG_COUNTRY_NEW_ZEALAND, 		"NZL"},
+	{VRG_COUNTRY_NORTH_AMERICA, 		"USA"},
+	{VRG_COUNTRY_SPAIN, 			"ESP"},
+	{VRG_COUNTRY_SWEDEN,			"SWE"},
+	{VRG_COUNTRY_SWITZERLAND, 		"CHE"},
+	{VRG_COUNTRY_NORWAY, 			"NOR"},
+	{VRG_COUNTRY_TAIWAN,	 		"TWN"},
+	{VRG_COUNTRY_UK,		 	"GBR"},
+	{VRG_COUNTRY_UNITED_ARAB_EMIRATES,	"ARE"},
+	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
+	{VRG_COUNTRY_MAX, 			"-"}
+};
+
+typedef struct DIALTONE_MAP
+{
+	dialtone_state	state;
+	char		str[11];
+} DIALTONE_MAP;
+
+static const DIALTONE_MAP dialtone_map[] =
+{
+	{DIALTONE_OFF,		"off"},
+	{DIALTONE_ON,		"on"},
+	{DIALTONE_CONGESTION,	"congestion"},
+	{DIALTONE_UNKNOWN,	"unknown"},
+	{DIALTONE_LAST,		"-"},
+};
+
+typedef struct {
+	int		id;
+	char	extension[AST_MAX_EXTENSION];
+} autodial;
+
+/* Struct for individual endpoint settings */
+typedef struct {
+	int silence;
+	char language[MAX_LANGUAGE];
+	char cid_num[AST_MAX_EXTENSION];
+	char cid_name[AST_MAX_EXTENSION];
+	char context_direct[AST_MAX_EXTENSION]; //Context that will be checked for exact matches
+	char context[AST_MAX_EXTENSION]; //Default context for dialtone mode
+	autodial autodial_ext[4];
+	int autodial_nr;
+	int echocancel;
+	int txgain;
+	int rxgain;
+	int dtmf_relay;
+	int dtmf_short;
+	int codec_list[6];
+	int codec_nr;
+	format_t capability;
+	int rtp_payload_list[6];
+	int ringsignal;
+	int timeoutmsec;
+	CODEC_PKT_PERIOD period;
+	int comfort_noise;
+	VRG_UINT32 jitterFixed;
+	VRG_UINT32 jitterMin;
+	VRG_UINT32 jitterMax;
+	VRG_UINT32 jitterTarget;
+} line_settings;
+
+
+/* Caller ID */
+#define CLID_MAX_DATE	10
+#define CLID_MAX_NUMBER	16
+#define CLID_MAX_NAME	16
+typedef struct CLID_STRING
+{
+	char date[CLID_MAX_DATE];
+	char number_name[CLID_MAX_NUMBER + CLID_MAX_NAME + 4]; // 4 = comma, quotation marks and null terminator
+} CLID_STRING;
+
+
+/* Global jitterbuffer configuration - by default, jb is disabled */
+static struct ast_jb_conf default_jbconf =
+{
+	.flags = 0,
+	.max_size = -1,
+	.resync_threshold = -1,
+	.impl = "",
+	.target_extra = -1,
+};
+
+
+#define DEFAULT_CALL_WAITING_TIMEOUT 24 // In seconds, Telia uses 24s
+
+#define MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook
+
+
 /* function declaration */
 
 EPSTATUS vrgEndptDriverOpen(void);
@@ -119,6 +265,7 @@ EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsig
 EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 
+static int cwtimeout_cb(const void *data);
 static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
 static int brcm_create_connection(struct brcm_subchannel *p);
 static int brcm_mute_connection(struct brcm_subchannel *p);
@@ -159,3 +306,6 @@ static int brcm_in_onhold(const struct brcm_pvt *p);
 static struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
 static struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
 static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
+struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
+
+#endif /* CHAN_BRCM_H */
