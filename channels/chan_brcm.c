@@ -907,6 +907,8 @@ static void *brcm_event_handler(void *data)
 				ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 				int delta = ts - p->last_dtmf_ts;
 				int timeoutmsec = line_config[p->line_id].timeoutmsec;
+				int dtmfbuf_len = strlen(p->dtmfbuf);
+				char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
 
 				if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
 				{
@@ -914,13 +916,19 @@ static void *brcm_event_handler(void *data)
 					ast_verbose("Direct extension matching %s found\n", p->dtmfbuf);
 					brcm_start_calling(p, sub, p->context_direct);
 				}
+				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
+					//We have a match in the "default" context, and user ended the dialling sequence with a #,
+					// so have asterisk place a call immediately
+					ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
+					brcm_start_calling(p, sub, p->context);
+				}
 				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
 				{
 					//We have a full match in the "default" context, so have asterisk place a call immediately,
 					//since no more digits can be added to the number
 					//(this is unlikely to happen since there is probably a "catch-all" extension)
 					ast_verbose("Unique extension matching %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context_direct);
+					brcm_start_calling(p, sub, p->context);
 				}
 				else if ((delta > timeoutmsec) && ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
 				{
