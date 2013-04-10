@@ -619,6 +619,28 @@ static void alert_ind(unsigned char *buf) {
 }
 
 
+static init_cfm(unsigned char *buf) {
+
+	ENDPT_STATE    endptState;
+	EPCMD_PARMS    consoleCmdParams;
+
+	/* Dect stack initialized */
+	/* Initialize dect procesing in enpoint driver */
+	memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
+	memset( &endptState, 0, sizeof(endptState) );
+
+	endptState.lineId = 0;
+
+	/* if ( vrgEndptGetNumDectEndpoints() > 0 ) */
+	/*   { */
+	vrgEndptConsoleCmd( &endptState,
+			    EPCMD_DECT_START_BUFF_PROC,
+			    &consoleCmdParams );
+	/* } */
+
+}
+
+
 static void connect_ind(unsigned char *buf) {
 
 	ApiHandsetIdType handset;
@@ -726,6 +748,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_LINUX_INIT_CFM:
 		ast_verbose("API_FP_LINUX_INIT_CFM\n");
+		init_cfm(buf);
 		break;
 
 	case API_FP_CC_ALERT_IND:
@@ -825,8 +848,6 @@ static int dect_init(void)
 	int fd, r;
 	ApiFpLinuxInitReqType *t = NULL;
 	DECTSHIMDRV_INIT_PARAM parm;
-	ENDPT_STATE    endptState;
-	EPCMD_PARMS    consoleCmdParams;
 
 
 	fd = open("/dev/dectshim", O_RDWR);
@@ -850,22 +871,9 @@ static int dect_init(void)
 	t = (ApiFpLinuxInitReqType*) malloc(sizeof(ApiFpLinuxInitReqType));
 	t->Primitive = API_FP_LINUX_INIT_REQ;
 	nvs_get_data(t->NvsData);
+
 	dectDrvWrite(t, sizeof(ApiFpLinuxInitReqType));
-
-
-
-	/* initialize dect procesing in dect enpoint driver */
-	memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
-	memset( &endptState, 0, sizeof(endptState) );
-
-	endptState.lineId = 0;
-
-	/* if ( vrgEndptGetNumDectEndpoints() > 0 ) */
-	/*   { */
-	vrgEndptConsoleCmd( &endptState,
-			    EPCMD_DECT_START_BUFF_PROC,
-			    &consoleCmdParams );
-	/* } */
+	
 
 	return r;
 }
