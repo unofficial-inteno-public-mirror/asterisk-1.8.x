@@ -437,7 +437,7 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	*(o_buf + 1) = ((API_FP_CC_SETUP_RES & 0x00ff) >> 0);
 	*(o_buf + 2) = handset;
 	*(o_buf + 3) = 0;
-	*(o_buf + 4) = 0;
+	*(o_buf + 4) = endpt_id;
 
 	ast_verbose("API_FP_CC_SETUP_RES\n");
 	dectDrvWrite(o_buf, 5);
