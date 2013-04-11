@@ -492,16 +492,16 @@ static void dect_release_ind(unsigned char *buf) {
   
 	ast_verbose("DECT: API_FP_CC_RELEASE_IND\n");
 
-	/* Signal offhook to endpoint */
-	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[0], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
+	/* Signal onhook to endpoint */
 	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 
 	/* write endpoint id to device */
 	*(o_buf + 0) = ((API_FP_CC_RELEASE_RES & 0xff00) >> 8);
 	*(o_buf + 1) = ((API_FP_CC_RELEASE_RES & 0x00ff) >> 0);
 	*(o_buf + 2) = handset;
 	*(o_buf + 3) = 0;
-	*(o_buf + 4) = 0;
+	*(o_buf + 4) = handset - 1;
 
 	printf("API_FP_CC_RELEASE_RES\n");
 	dectDrvWrite(o_buf, 5);
@@ -631,20 +631,19 @@ static init_cfm(unsigned char *buf) {
 
 	ENDPT_STATE    endptState;
 	EPCMD_PARMS    consoleCmdParams;
+	int i;
 
 	/* Dect stack initialized */
 	/* Initialize dect procesing in enpoint driver */
-	memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
-	memset( &endptState, 0, sizeof(endptState) );
 
-	endptState.lineId = 0;
-
-	/* if ( vrgEndptGetNumDectEndpoints() > 0 ) */
-	/*   { */
-	vrgEndptConsoleCmd( &endptState,
-			    EPCMD_DECT_START_BUFF_PROC,
-			    &consoleCmdParams );
-	/* } */
+	for (i = 0; i < 4; i++) {
+		memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
+		memset( &endptState, 0, sizeof(endptState) );
+		endptState.lineId = i;
+		vrgEndptConsoleCmd( &endptState,
+				    EPCMD_DECT_START_BUFF_PROC,
+				    &consoleCmdParams );
+	}
 
 }
 
@@ -659,7 +658,7 @@ static void connect_ind(unsigned char *buf) {
 	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
 
 	/* Signal offhook to endpoint */
-	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[0], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 
 	ast_verbose("Handset %d answered\n", handset);
 
@@ -670,14 +669,14 @@ static void connect_ind(unsigned char *buf) {
 	/* write endpoint id to device */
 	*(o_buf + 0) = ((API_FP_CC_CONNECT_RES & 0xff00) >> 8);
 	*(o_buf + 1) = ((API_FP_CC_CONNECT_RES & 0x00ff) >> 0);
-	*(o_buf + 2) = 1;
+	*(o_buf + 2) = handset;
 	*(o_buf + 3) = 0;
-	*(o_buf + 4) = 0;
+	*(o_buf + 4) = handset - 1; /* endpoint id */
 
 	ast_verbose("API_FP_CC_CONNECT_RES\n");
 	dectDrvWrite(o_buf, 5);
 
-	p = brcm_get_pvt_from_lineid(iflist, 0);
+	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
 	if (!p)
 		return;
 

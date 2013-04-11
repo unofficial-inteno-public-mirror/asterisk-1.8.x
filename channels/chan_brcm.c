@@ -277,9 +277,9 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	/* Alert dect handset of call. Not so pretty. 
 	   We should check some pvt parameter to determine
-	   pvt type. Also pvt and dsp channel is hard-coded. */
+	   pvt type. */
 	if (sub->parent->line_id < 4)
-		dectRingHandSet(1, 0);
+		dectRingHandSet(sub->parent->line_id + 1, sub->parent->line_id);
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
