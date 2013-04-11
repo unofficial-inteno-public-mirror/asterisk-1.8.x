@@ -534,7 +534,7 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 		return;
 	}
 
-	p = brcm_get_pvt_from_lineid(iflist, 0);
+	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
 
 	for (i = 0; i < keyPadLen; i++) {
 
