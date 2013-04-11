@@ -404,9 +404,17 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	int newMailSize;
 	ApiCalledNumberType * calledNumber;
 	ApiSystemCallIdType *callIdPtr;
+	ApiHandsetIdType handset;
+	int endpt_id;
+
 
 	IeBlockPtr = (ApiInfoElementType *)&(((ApiFpCcSetupIndType*) MailPtr)->InfoElement[0]);
 	ast_verbose("DECT: API_FP_CC_SETUP_IND\n");
+	handset = ((ApiFpCcSetupIndType*) MailPtr)->CallReference.HandsetId;
+	ast_verbose("handset: %d\n", (int) handset);
+	
+	/* Quick fix */
+	endpt_id = handset - 1;
 	
 	/* Process API_IE_SYSTEM_CALL_ID if present */
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_SYSTEM_CALL_ID)) ) {
@@ -420,14 +428,14 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 
 
 	/* Signal offhook to endpoint */
-	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[0]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt_id]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 
 	IeBlockPtr = NULL;
 
 	/* write endpoint id to device */
 	*(o_buf + 0) = ((API_FP_CC_SETUP_RES & 0xff00) >> 8);
 	*(o_buf + 1) = ((API_FP_CC_SETUP_RES & 0x00ff) >> 0);
-	*(o_buf + 2) = 1;
+	*(o_buf + 2) = handset;
 	*(o_buf + 3) = 0;
 	*(o_buf + 4) = 0;
 
@@ -459,7 +467,7 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 		if (newMailPtr != NULL) {
 
 			((ApiFpCcConnectReqType *) newMailPtr)->Primitive = API_FP_CC_CONNECT_REQ;
-			((ApiFpCcConnectReqType *) newMailPtr)->CallReference.HandsetId = 1;
+			((ApiFpCcConnectReqType *) newMailPtr)->CallReference.HandsetId = handset;
 	 
 			/* Copy over infoElements */
 			memcpy( &(((ApiFpCcConnectReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength );
