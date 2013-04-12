@@ -501,7 +501,7 @@ static void dect_release_ind(unsigned char *buf) {
 	*(o_buf + 1) = ((API_FP_CC_RELEASE_RES & 0x00ff) >> 0);
 	*(o_buf + 2) = handset;
 	*(o_buf + 3) = 0;
-	*(o_buf + 4) = handset - 1;
+	*(o_buf + 4) = 0;
 
 	printf("API_FP_CC_RELEASE_RES\n");
 	dectDrvWrite(o_buf, 5);
