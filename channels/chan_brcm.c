@@ -3536,7 +3536,7 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-static int brcm_create_connection(struct brcm_subchannel *p) {
+int brcm_create_connection(struct brcm_subchannel *p) {
 
 	/* generate random nr for rtp header */
 	p->ssrc = rand();

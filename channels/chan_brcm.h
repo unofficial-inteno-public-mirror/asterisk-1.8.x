@@ -221,7 +221,7 @@ EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int 
 
 static int cwtimeout_cb(const void *data);
 static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
-static int brcm_create_connection(struct brcm_subchannel *p);
+int brcm_create_connection(struct brcm_subchannel *p);
 static int brcm_mute_connection(struct brcm_subchannel *p);
 static int brcm_unmute_connection(struct brcm_subchannel *p);
 static int brcm_close_connection(struct brcm_subchannel *p);
