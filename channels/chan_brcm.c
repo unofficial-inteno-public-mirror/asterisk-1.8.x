@@ -665,12 +665,12 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 		/* find out which codec to use */
 		format_t fmt = format;
 		line_settings *s = &line_config[i->parent->line_id];
-		tmp->nativeformats = s->capability;
 		if (fmt == 0) {
-			//Let asterisk decide which codec is the best
-			fmt = ast_best_codec(tmp->nativeformats);
+			tmp->nativeformats = map_codec_brcm_to_ast(s->codec_list[0]);
+			fmt = tmp->nativeformats;
 			ast_debug(1, "Selected codec: %s\n", ast_getformatname(fmt));
 		} else {
+			tmp->nativeformats = fmt;
 			ast_debug(1, "Forced codec: %s\n", ast_getformatname(fmt));
 		}
 
@@ -2660,13 +2660,9 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 		epCnxParms.cnxParmList.send.numPeriods = 1;
 	}
 	else {
-		//Let asterisk decide which codec to use. Trying to force a particular codec or order has proven to be difficult.
-		//Just go with the one asterisk thinks is best to avoid problems. This will let asterisk transcode
-		//if remote SIP peer doesn't support 'fmt' selected below, which is of course not optimal in the case where we actually
-		//support the selected codec.
-		//TODO: We could check the codec of incoming frames and switch to that codec on the fly, or use indicate-callback
-		//	and look for AST_CONTROL_SRCUPDATE. 
-		format_t fmt = ast_best_codec(s->capability);
+		//Select our preferred codec. This may result in asterisk transcoding if remote SIP peer doesn't support this codec,
+		//which is of course not optimal in the case where we actually support the negotiated codec.
+		format_t fmt = map_codec_brcm_to_ast(s->codec_list[0]);
 
 		epCnxParms.cnxParmList.send.codecs[0].type              = map_codec_ast_to_brcm(fmt);
 		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = map_codec_ast_to_brcm_rtp(fmt); 
