@@ -393,6 +393,26 @@ ApiGetInfoElement(ApiInfoElementType *IeBlockPtr,
 
 
 
+static void dectDumpHsetCodecList( ApiInfoElementType* IePtr)
+{
+   int i;
+   ApiCodecListType * codecList = ((ApiCodecListType*)&(IePtr->IeData[0]));
+   ApiCodecInfoType * codecInfo = NULL;
+
+   ast_verbose("API_IE_CODEC_LIST\nNegotiationIndicator: %d\n", codecList->NegotiationIndicator );
+
+   for( i=0; i< codecList->NoOfCodecs; i++ )
+   {
+      codecInfo = &(codecList->Codec[i]);
+      ast_verbose("Codec         : %d\n",codecInfo->Codec);
+      ast_verbose("MacDlcService : %d\n",codecInfo->MacDlcService);
+      ast_verbose("CplaneRouting : %d\n",codecInfo->CplaneRouting);
+      ast_verbose("SlotSize      : %d\n",codecInfo->SlotSize);
+   }
+}
+
+
+
 static void dect_setup_ind(unsigned char *MailPtr) {
 
 	ApiInfoElementType *IePtr;
@@ -419,12 +439,13 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	/* Process API_IE_SYSTEM_CALL_ID if present */
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_SYSTEM_CALL_ID)) ) {
 		callIdPtr = (ApiSystemCallIdType*)&(IePtr->IeData[0]);
-		ast_verbose("dectSetupOutgoingCall: SYSTEM_CALL_ID (%d)in IE", callIdPtr->ApiSystemCallId);
+		ast_verbose("dectSetupOutgoingCall: SYSTEM_CALL_ID (%d) in IE\n", callIdPtr->ApiSystemCallId);
 	}
 
 	/* Process API_IE_CALLED_NUMBER if present */
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CALLED_NUMBER)) )
 		calledNumber = ((ApiCalledNumberType*)&(IePtr->IeData[0]));
+
 
 
 	/* Signal offhook to endpoint */
@@ -446,7 +467,8 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	/* Build API_IE_CODEC_LIST infoElement with a single codec in our list*/
 	codecList.NegotiationIndicator = API_NI_POSSIBLE;
 	codecList.NoOfCodecs = 1;
-	codecList.Codec[0].Codec = API_CT_G722; /* G.722, information transfer rate 64 kbit/s */
+	codecList.Codec[0].Codec = API_CT_G711U; /*!< G.711 u-law PCM, information transfer rate 64 kbit/s */
+	/* codecList.Codec[0].Codec = API_CT_G722; /\* G.722, information transfer rate 64 kbit/s *\/ */
 	codecList.Codec[0].MacDlcService = API_MDS_1_MD; /* DLC service LU1, MAC service: In_minimum_delay */
 	codecList.Codec[0].CplaneRouting = API_CPR_CS; /* CS only */
 	codecList.Codec[0].SlotSize = API_SS_LS640; /* Long slot; j = 640 */
@@ -704,6 +726,39 @@ static void connect_ind(unsigned char *buf) {
 }
 
 
+static void handset_present_ind(unsigned char *mail)
+{
+	
+	int handset;
+
+	handset = ((ApiFpMmHandsetPresentIndType*) mail)->HandsetId;
+	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d) ", handset);
+
+	
+	/* Retrieve MANIC and MODIC from Info elements */
+	ApiInfoElementType *IeBlockPtr = (ApiInfoElementType *)&(((ApiFpMmHandsetPresentIndType*) mail)->InfoElement[0]);
+	unsigned short IeBlockLength = ((ApiFpMmHandsetPresentIndType*) mail)->InfoElementLength;
+	ApiInfoElementType* IePtr = NULL;
+
+
+
+	/* Process API_IE_CODEC_LIST if present */
+	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) {
+		dectDumpHsetCodecList( IePtr );
+	}
+
+
+
+
+
+
+
+
+
+}
+
+
+
 static void handle_data(unsigned char *buf) {
 
 	RosPrimitiveType primitive;
@@ -743,6 +798,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_MM_HANDSET_PRESENT_IND:
 		ast_verbose("API_FP_MM_HANDSET_PRESENT_IND\n");
+		handset_present_ind(buf);
 		break;
 
 	case API_FP_MM_SET_REGISTRATION_MODE_CFM:
@@ -774,6 +830,11 @@ static void handle_data(unsigned char *buf) {
 
 
 }
+
+
+
+
+
 
 static void nvs_update_ind(unsigned char *mail)
 {
