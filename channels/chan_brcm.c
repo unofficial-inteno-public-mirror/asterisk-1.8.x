@@ -324,6 +324,13 @@ static int brcm_hangup(struct ast_channel *ast)
 	}
 	ast_mutex_lock(&sub->parent->lock);
 
+
+	/* Alert dect handset of call termination. Not so pretty. 
+	   We should check some pvt parameter to determine
+	   pvt type. */
+	if (sub->parent->line_id < 4)
+		dect_hangup(sub->parent->line_id + 1);
+
 	p = sub->parent;
 	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
 

@@ -21,6 +21,7 @@ void dectSetupPingingCall(int handset);
 void dectDrvWrite(void *data, int size);
 
 void dectRingHandSet( int destHandset, int dspChannel);
+void dect_hangup(int handset);
 static void connect_cfm(unsigned char *buf);
 static void alert_ind(unsigned char *buf);
 static void connect_ind(unsigned char *buf);

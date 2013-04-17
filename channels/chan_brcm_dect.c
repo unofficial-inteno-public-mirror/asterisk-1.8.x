@@ -552,6 +552,42 @@ static void dect_release_ind(unsigned char *buf) {
 }
 
 
+
+static void dect_release_cfm(unsigned char *buf) {
+
+	ApiHandsetIdType handset;
+	unsigned char o_buf[5];
+  
+	ast_verbose("DECT: API_FP_CC_RELEASE_CFM\n");
+
+	/* Signal onhook to endpoint */
+	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
+
+}
+
+
+
+
+
+void dect_hangup(int handset) {
+
+	unsigned char o_buf[5];
+  
+
+	/* write endpoint id to device */
+	*(o_buf + 0) = ((API_FP_CC_RELEASE_REQ & 0xff00) >> 8);
+	*(o_buf + 1) = ((API_FP_CC_RELEASE_REQ & 0x00ff) >> 0);
+	*(o_buf + 2) = handset;
+	*(o_buf + 3) = 0;
+	*(o_buf + 4) = 0;
+
+	printf("API_FP_CC_RELEASE_REQ\n");
+	dectDrvWrite(o_buf, 5);
+
+}
+
+
 static void 
 dectProcessCCKeyPadInfo(unsigned char handset,
 			ApiInfoElementType* IeBlockPtr,
@@ -792,6 +828,11 @@ static void handle_data(unsigned char *buf) {
 	case API_FP_CC_RELEASE_IND:
 		ast_verbose("API_FP_CC_RELEASE_IND\n");
 		dect_release_ind(buf);
+		break;
+
+	case API_FP_CC_RELEASE_CFM:
+		ast_verbose("API_FP_CC_RELEASE_CFM\n");
+		dect_release_cfm(buf);
 		break;
 
 	case API_FP_CC_SETUP_IND:
