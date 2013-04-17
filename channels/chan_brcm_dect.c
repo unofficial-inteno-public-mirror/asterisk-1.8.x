@@ -446,6 +446,11 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CALLED_NUMBER)) )
 		calledNumber = ((ApiCalledNumberType*)&(IePtr->IeData[0]));
 
+     
+	/* Process API_IE_CODEC_LIST if present */
+	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) {
+		dectDumpHsetCodecList( IePtr );
+	}
 
 
 	/* Signal offhook to endpoint */
@@ -464,14 +469,24 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	dectDrvWrite(o_buf, 5);
 
 
+	/* If the handset supports wideband audio we should probably use that.
+	   However, all handsets seem to like the settings below. That includes
+	   the handsets that don't explicily inform us of the codec parameters
+	   they like. It's not clear if the mac & cplane values will always be
+	   the ones used below for that codec setting. */
+
 	/* Build API_IE_CODEC_LIST infoElement with a single codec in our list*/
 	codecList.NegotiationIndicator = API_NI_POSSIBLE;
 	codecList.NoOfCodecs = 1;
-	codecList.Codec[0].Codec = API_CT_G711U; /*!< G.711 u-law PCM, information transfer rate 64 kbit/s */
+
+	codecList.Codec[0].Codec = API_CT_G726; /*!< G.726 ADPCM, information transfer rate 32 kbit/s */
 	/* codecList.Codec[0].Codec = API_CT_G722; /\* G.722, information transfer rate 64 kbit/s *\/ */
+
 	codecList.Codec[0].MacDlcService = API_MDS_1_MD; /* DLC service LU1, MAC service: In_minimum_delay */
 	codecList.Codec[0].CplaneRouting = API_CPR_CS; /* CS only */
-	codecList.Codec[0].SlotSize = API_SS_LS640; /* Long slot; j = 640 */
+
+	/* codecList.Codec[0].SlotSize = API_SS_LS640; Long slot; j = 640, use with G722 */
+	codecList.Codec[0].SlotSize = API_SS_FS; /* Full slot; */
 
 	IeBlockLength = 0;
 	ApiBuildInfoElement( &IeBlockPtr,
@@ -482,6 +497,12 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 
 	if( IeBlockPtr != NULL ) {
      
+		/* Process API_IE_CODEC_LIST if present */
+		if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) {
+			dectDumpHsetCodecList( IePtr );
+		}
+
+
 		/* Send connect request */
 		newMailSize = (sizeof(ApiFpCcConnectReqType)-1) + IeBlockLength;
 		newMailPtr = (unsigned char *) malloc( newMailSize );
@@ -620,6 +641,7 @@ static void dect_info_ind(unsigned char *MailPtr) {
 
 
 
+
 static void connect_cfm(unsigned char *buf) {  
 
 	ApiHandsetIdType handset;
@@ -658,14 +680,14 @@ static init_cfm(unsigned char *buf) {
 	/* Dect stack initialized */
 	/* Initialize dect procesing in enpoint driver */
 
-	for (i = 0; i < 4; i++) {
-		memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
-		memset( &endptState, 0, sizeof(endptState) );
-		endptState.lineId = i;
-		vrgEndptConsoleCmd( &endptState,
-				    EPCMD_DECT_START_BUFF_PROC,
-				    &consoleCmdParams );
-	}
+	/* for (i = 0; i < 4; i++) { */
+	memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
+	memset( &endptState, 0, sizeof(endptState) );
+	endptState.lineId = 0;
+	vrgEndptConsoleCmd( &endptState,
+			    EPCMD_DECT_START_BUFF_PROC,
+			    &consoleCmdParams );
+	/* } */
 
 }
 
@@ -732,7 +754,7 @@ static void handset_present_ind(unsigned char *mail)
 	int handset;
 
 	handset = ((ApiFpMmHandsetPresentIndType*) mail)->HandsetId;
-	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d) ", handset);
+	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d)\n", handset);
 
 	
 	/* Retrieve MANIC and MODIC from Info elements */
