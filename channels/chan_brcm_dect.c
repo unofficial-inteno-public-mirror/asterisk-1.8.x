@@ -1080,26 +1080,26 @@ void *brcm_monitor_dect(void *data) {
 		}
 
 		if (FD_ISSET(s, &rfds)) {
-    
-			len = read(s, buf, 2);
 
-			pkt_len = buf[0] << 8; // MSB
-			pkt_len |= buf[1];     // LSB
+                        struct dect_packet p;
+                        len = read(s, &p, sizeof(struct packet_header));
 
-			ast_verbose("packet len: %d\n", pkt_len);
-			len = read(s, buf, pkt_len);
+                        ast_verbose("packet len: %d\n", p.size);
+
+			if (p.size <= MAX_MAIL_SIZE)
+                                len = read(s, p.data, p.size);
 
 			if (len > 0) {
 
 				/* debug printout */
 				ast_verbose("\n[RDECT][%04d] - ", len);
 				for (i = 0; i < len; i++)
-					ast_verbose("%02x ", buf[i]);
+					ast_verbose("%02x ", p.data[i]);
 				ast_verbose("\n");
 
 			}
 
-			handle_data(buf);
+			handle_data(p.data);
 
 		}
 	}

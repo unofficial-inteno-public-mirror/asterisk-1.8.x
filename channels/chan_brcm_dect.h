@@ -13,6 +13,25 @@
 #define NBWB_CODECLIST_LENGTH           (SINGLE_CODECLIST_LENGTH + sizeof(ApiCodecInfoType))
 
 
+
+#define MAX_MAIL_SIZE 4098
+
+#define PACKET_HEADER \
+	uint32_t size; \
+	uint32_t type;
+
+struct dect_packet {
+	PACKET_HEADER
+	uint8_t data[MAX_MAIL_SIZE];
+};
+
+
+
+typedef struct packet_header {
+	PACKET_HEADER
+} packet_header_t;
+
+
 void *brcm_monitor_dect(void *data);
 
 EPSTATUS vrgEndptSendCasEvtToEndpt( ENDPT_STATE *endptState, CAS_CTL_EVENT_TYPE eventType, CAS_CTL_EVENT event );
