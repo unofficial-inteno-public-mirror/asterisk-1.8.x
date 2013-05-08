@@ -1035,6 +1035,16 @@ EPSTATUS vrgEndptConsoleCmd( ENDPT_STATE *endptState, EPCONSOLECMD cmd, EPCMD_PA
 
 
 
+int do_read(int fd, void *buf, int size) {
+
+	int count = 0;
+
+	while (count < size)
+		count += read(fd, buf + count, size - count);
+	return count;
+}
+
+
 void *brcm_monitor_dect(void *data) {
   
 	int len, i, res;
@@ -1082,12 +1092,10 @@ void *brcm_monitor_dect(void *data) {
 		if (FD_ISSET(s, &rfds)) {
 
                         struct dect_packet p;
-                        len = read(s, &p, sizeof(struct packet_header));
-
-                        ast_verbose("packet len: %d\n", p.size);
+                        len = do_read(s, &p, sizeof(struct packet_header));
 
 			if (p.size <= MAX_MAIL_SIZE)
-                                len = read(s, p.data, p.size);
+				len = do_read(s, p.data, p.size - sizeof(struct packet_header));
 
 			if (len > 0) {
 
