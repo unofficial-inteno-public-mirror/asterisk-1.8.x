@@ -187,6 +187,9 @@ AST_MUTEX_DEFINE_STATIC(iflock);
 AST_MUTEX_DEFINE_STATIC(monlock);
 AST_MUTEX_DEFINE_STATIC(ioctl_lock);
 
+static int load_settings(struct ast_config **cfg);
+static void load_endpoint_settings(struct ast_config *cfg);
+
 /* exported capabilities */
 static const struct ast_channel_tech brcm_tech = {
         .type = "BRCM",
@@ -2000,6 +2003,24 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 }
 
 
+static void brcm_lock_pvts(void)
+{
+	struct brcm_pvt *p = iflist;
+	while(p) {
+		ast_mutex_lock(&p->lock);
+		p = brcm_get_next_pvt(p);
+	}
+}
+
+static void brcm_unlock_pvts(void)
+{
+	struct brcm_pvt *p = iflist;
+	while(p) {
+		ast_mutex_unlock(&p->lock);
+		p = brcm_get_next_pvt(p);
+	}
+}
+
 /* parse gain value from config file */
 static int parse_gain_value(const char *gain_type, const char *value)
 {
@@ -2196,6 +2217,55 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 
 	/* print status for individual pvts */
 	brcm_show_pvts(a);
+
+	return CLI_SUCCESS;
+}
+
+/*! \brief CLI for reloading brcm config.
+ * Note that the contry setting will not be reloaded. In order to do that the following
+ * sequence must be carried out: vrgEndptDeinit(), vrgEndptDriverClose(), vrgEndptDriverOpen()
+ * and then vrgEndptInit(). This is the same actions as for unload_module() followed by
+ * load_module() which causes the instability that we're trying to avoid using the reolad feature.
+ */
+static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	struct ast_config *cfg = NULL;
+
+	if (cmd == CLI_INIT) {
+		e->command = "brcm reload";
+		e->usage =
+			"Usage: brcm reload\n"
+			"       Reload chan_brcm configuration.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE) {
+		return NULL;
+	}
+
+	ast_mutex_lock(&iflock);
+
+	/* Acquire locks for all pvt:s to prevent nasty things from happening */
+	brcm_lock_pvts();
+
+	/* Reload configuration */
+	if (load_settings(&cfg)) {
+		brcm_unlock_pvts();
+		ast_mutex_unlock(&iflock);
+		return CLI_FAILURE;
+	}
+
+	/* Provision endpoints */
+	load_endpoint_settings(cfg);
+	struct brcm_pvt *p = iflist;
+	while(p) {
+		brcm_fill_autodial(p);
+		brcm_initialize_pvt(p);
+		p = brcm_get_next_pvt(p);
+	}
+
+	brcm_unlock_pvts();
+	ast_mutex_unlock(&iflock);
+
+	ast_verbose("BRCM reload done\n");
 
 	return CLI_SUCCESS;
 }
@@ -2498,6 +2568,7 @@ static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_set_autodial_extension,  "Set chan_brcm autodial extension"),
 	AST_CLI_DEFINE(brcm_set_vad, "Set chan_brcm Voice Activity Detection"),
 	AST_CLI_DEFINE(brcm_set_cng, "Set chan_brcm Comfort Noice Generation"),
+	AST_CLI_DEFINE(brcm_reload, "Reload chan_brcm configuration"),
 };
 
 
@@ -2860,31 +2931,19 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 	}
 }
 
-static int load_module(void)
+static int load_settings(struct ast_config **cfg)
 {
-	struct ast_config *cfg;
 	struct ast_flags config_flags = { 0 };
 
-	/* Setup scheduler */
-	if (!(sched = sched_context_create())) {
-		ast_log(LOG_ERROR, "Unable to create scheduler context. Aborting.\n");
-		return AST_MODULE_LOAD_FAILURE;
-	}
-
-	if ((cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
+	if ((*cfg = ast_config_load(config, config_flags)) == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "Config file %s is in an invalid format.  Aborting.\n", config);
 		return AST_MODULE_LOAD_DECLINE;
 	}
 
 	/* We *must* have a config file otherwise stop immediately */
-	if (!cfg) {
+	if (!(*cfg)) {
 		ast_log(LOG_ERROR, "Unable to load config %s\n", config);
 		return AST_MODULE_LOAD_DECLINE;
-	}
-	if (ast_mutex_lock(&iflock)) {
-		/* It's a little silly to lock it, but we mind as well just to be sure */
-		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
-		return AST_MODULE_LOAD_FAILURE;
 	}
 
 	/* Load jitterbuffer defaults, Copy the default jb config over global_jbconf */
@@ -2892,7 +2951,7 @@ static int load_module(void)
 
 	/* Load global settings */
 	struct ast_variable *v;
-	v = ast_variable_browse(cfg, "default");
+	v = ast_variable_browse(*cfg, "default");
 
 	while(v) {
 		if (!ast_jb_read_conf(&global_jbconf, v->name, v->value)) {
@@ -2928,10 +2987,13 @@ static int load_module(void)
 
 		v = v->next;
 	}
-	
-	/* Initialize the endpoints */
-	endpt_init();
-	brcm_get_endpoints_count();
+
+	return 0;
+}
+
+static void load_endpoint_settings(struct ast_config *cfg)
+{
+	struct ast_variable *v;
 
 	/* Load endpoint settings */
 	int i;
@@ -2952,6 +3014,35 @@ static int load_module(void)
 	}
 
 	brcm_provision_endpoints();
+}
+
+static int load_module(void)
+{
+	struct ast_config *cfg;
+	int result;
+
+	/* Setup scheduler */
+	if (!(sched = sched_context_create())) {
+		ast_log(LOG_ERROR, "Unable to create scheduler context. Aborting.\n");
+		return AST_MODULE_LOAD_FAILURE;
+	}
+
+	if (ast_mutex_lock(&iflock)) {
+		/* It's a little silly to lock it, but we mind as well just to be sure */
+		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
+		return AST_MODULE_LOAD_FAILURE;
+	}
+
+	/* Load settings file and read default section */
+	if ((result = load_settings(&cfg)) != 0) {
+		return result;
+	}
+
+	/* Initialize the endpoints */
+	endpt_init();
+	brcm_get_endpoints_count();
+	load_endpoint_settings(cfg);
+
 	brcm_create_endpoints();
 	brcm_create_pvts(iflist, 0);
 	brcm_assign_line_id(iflist);
