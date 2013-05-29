@@ -91,7 +91,8 @@ endif
 endif
 
 # dect flags
-DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-4.12/4.12L.04/userspace/private/apps/dectd
+BRCM_DIR=bcmkernel-3.4-4.14/4.14
+DECTD_DIR=$(ASTTOPDIR)/../$(BRCM_DIR)/userspace/private/apps/dectd
 
 chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       	\
            -I$(DECTD_DIR)/inc                   		\
@@ -109,14 +110,14 @@ chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       
            -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/LasDb         	\
            -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Project       	\
            -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Types         	\
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/bcmdrivers/broadcom/include/bcm963xx/ \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/bcmdrivers/opensource/include/bcm963xx/ \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/endpt/inc/ \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/inc \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/codec \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/xchg_common/bos/publicInc/ \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/voice_res_gw/casCtl/inc/ \
-	-I$(BUILD_DIR)/bcmkernel-4.12/4.12L.04/xChange/dslx_common/xchg_drivers/inc \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/bcmdrivers/broadcom/include/bcm963xx/ \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/bcmdrivers/opensource/include/bcm963xx/ \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/endpt/inc/ \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/inc \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/codec \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/xchg_common/bos/publicInc/ \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/casCtl/inc/ \
+	-I$(BUILD_DIR)/$(BRCM_DIR)/xChange/dslx_common/xchg_drivers/inc \
 	-DBOS_OS_LINUXUSER -DBOS_CFG_TIME -DNTR_SUPPORT \
 
 
