@@ -111,6 +111,9 @@ struct sched_context *sched; // Scheduling context
 /* Call waiting */
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 
+/* Maximum allowed delay between early on and early off hook for detecting hookflash */
+static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
+
 /* Global jitterbuffer configuration */
 static struct ast_jb_conf global_jbconf;
 
@@ -1626,7 +1629,7 @@ static void *brcm_monitor_events(void *data)
 				ast_verbose("EPEVT_EARLY_OFFHOOK\n");
 				gettimeofday(&tim, NULL);
 				unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-				if (now - p->last_early_onhook_ts < MAX_HOOKFLASH_DELAY) {
+				if (now - p->last_early_onhook_ts < hfmaxdelay) {
 					p->last_early_onhook_ts = 0;
 					if (p->hf_detected == 1) {
 						p->hf_detected = 0;
@@ -2982,6 +2985,12 @@ static int load_settings(struct ast_config **cfg)
 			if (cwtimeout > 60 || cwtimeout < 0) {
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect cwtimeouty '%s', defaulting to '%d'\n", v->value, cwtimeout);
+			}
+		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
+			hfmaxdelay = atoi(v->value);
+			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
+				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
+				ast_log(LOG_WARNING, "Incorrect hfmaxdelay '%s', defaulting to '%d'\n", v->value, hfmaxdelay);
 			}
 		}
 

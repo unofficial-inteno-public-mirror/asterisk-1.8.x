@@ -208,7 +208,7 @@ static struct ast_jb_conf default_jbconf =
 
 #define DEFAULT_CALL_WAITING_TIMEOUT 24 // In seconds, Telia uses 24s
 
-#define MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook
+#define DEFAULT_MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook (in ms)
 
 
 /* function declaration */
