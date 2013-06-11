@@ -238,6 +238,7 @@ static int brcm_answer(struct ast_channel *ast);
 static struct ast_frame *brcm_read(struct ast_channel *ast);
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
 static int brcm_send_text(struct ast_channel *ast, const char *text);
+static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen);
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit);
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_get_endpoints_count(void);

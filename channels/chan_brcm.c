@@ -206,7 +206,28 @@ static const struct ast_channel_tech brcm_tech = {
 	.write = brcm_write,
 	.send_digit_begin = brcm_senddigit_begin,
 	.send_digit_end = brcm_senddigit_end,
+	.indicate = brcm_indicate,
 };
+
+static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
+{
+	struct brcm_subchannel *sub = ast->tech_pvt;
+	int res = 0;
+
+	ast_mutex_lock(&sub->parent->lock);
+	switch(condition) {
+	case AST_CONTROL_UNHOLD:
+		//Asterisk jitter buffer causes one way audio when going from unhold.
+		//This is a workaround until jitter buffer is handled by DSP.
+		ast_jb_destroy(sub->owner);
+		break;
+	default:
+		res = -1;
+		break;
+	}
+	ast_mutex_unlock(&sub->parent->lock);
+	return res;
+}
 
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
