@@ -304,9 +304,12 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	/* Alert dect handset of call. Not so pretty. 
 	   We should check some pvt parameter to determine
-	   pvt type. */
+	   pvt type. Also, it appears that caller id 
+	   should be handled as a separate event...
+	   No time for that right now. */
+	
 	if (sub->parent->line_id < 4)
-		dectRingHandSet(sub->parent->line_id + 1, sub->parent->line_id);
+		dectRingHandSet(sub->parent->line_id + 1, sub->parent->line_id, sub->owner->connected.id.number.str);
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
@@ -3367,6 +3370,7 @@ int brcm_signal_callerid(struct brcm_subchannel *sub)
 		clid_string.number_name[str_length++] = '\0';
 
 		ast_log(LOG_DEBUG, "CLID string: %s\n", (char *) &clid_string);
+
 		return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, EPSIG_CALLID, (int)&clid_string, -1, -1 , -1);
 	}
 
