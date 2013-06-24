@@ -39,7 +39,7 @@ EPSTATUS vrgEndptConsoleCmd( ENDPT_STATE *endptState, EPCONSOLECMD cmd, EPCMD_PA
 void dectSetupPingingCall(int handset);
 void dectDrvWrite(void *data, int size);
 
-void dectRingHandSet( int destHandset, int dspChannel);
+void dectRingHandSet( int destHandset, int dspChannel, char *cid);
 void dect_hangup(int handset);
 static void connect_cfm(unsigned char *buf);
 static void alert_ind(unsigned char *buf);

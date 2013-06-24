@@ -223,7 +223,7 @@ void dectSetupPingingCall(int handset)
 }
 
 
-void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId )
+void dectRingHandSet( int destHandset, int dspChannel, char *cid) //, int line, int cmCnxId )
 {
 
 	ApiCcBasicServiceType basicService;
@@ -233,6 +233,11 @@ void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId
 	int newMailSize;
 	ApiCodecListType* codecList = NULL;
 	unsigned char codecListLength;
+	unsigned char callingNumLength;
+	unsigned char callingNameLength;
+	ApiCallingNumberType * callingNum = NULL;
+	ApiCallingNameType * callingName  = NULL;
+
 
 	ast_verbose("dectRingHandSet\n");
 	
@@ -250,6 +255,36 @@ void dectRingHandSet( int destHandset, int dspChannel) //, int line, int cmCnxId
 		codecList = (ApiCodecListType *)&nbCodecList[0];
 		codecListLength = SINGLE_CODECLIST_LENGTH;
 	}
+
+
+	/* get lengths of calling name and number */
+	callingNumLength = strlen(cid);
+
+	/**************************************************                                                                          
+	 * create API_IE_CALLING_PARTY_NUMBER infoElement *                                                                          
+	 **************************************************/
+	callingNum = malloc( (sizeof(ApiCallingNumberType) - 1) + callingNumLength );
+
+	if( callingNum != NULL ) {
+
+		callingNum->NumberType        = ANT_NATIONAL;
+		callingNum->Npi               = ANPI_NATIONAL;
+		callingNum->PresentationInd   = API_PRESENTATION_ALLOWED;
+		callingNum->ScreeningInd      = API_USER_PROVIDED_VERIFIED_PASSED;
+		callingNum->NumberLength      = callingNumLength;
+		memcpy( &(callingNum->Number[0]), cid, callingNumLength);
+
+		/* Add to infoElement block */
+		ApiBuildInfoElement( &IeBlockPtr,
+				     &IeBlockLength,
+				     API_IE_CALLING_PARTY_NUMBER,
+				     (sizeof(ApiCallingNumberType) - 1) + callingNumLength ,
+				     (unsigned char*)callingNum);
+
+		/* free infoElement */
+		free(callingNum);
+	}
+
 
 	/* Build API_IE_LINE_ID infoElement with the selected line */
 	ApiLineIdListType lineIdIe;
