@@ -1,0 +1,6 @@
+*makeopts
+*moduleinfo
+*.o
+*.so
+*.d
+*.exports
