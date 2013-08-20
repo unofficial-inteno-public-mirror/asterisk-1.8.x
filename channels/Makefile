@@ -91,8 +91,8 @@ endif
 endif
 
 # dect flags
-BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/4.14
-DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/4.14/userspace/private/apps/dectd
+BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx
+DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx/userspace/private/apps/dectd
 
 chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       	\
            -I$(DECTD_DIR)/inc                   		\
