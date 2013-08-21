@@ -216,8 +216,9 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 
 	ast_mutex_lock(&sub->parent->lock);
 	switch(condition) {
+	case AST_CONTROL_SRCUPDATE:
 	case AST_CONTROL_UNHOLD:
-		//Asterisk jitter buffer causes one way audio when going from unhold.
+		//Asterisk (adaptive) jitter buffer causes one way audio
 		//This is a workaround until jitter buffer is handled by DSP.
 		ast_jb_destroy(sub->owner);
 		break;
