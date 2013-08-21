@@ -107,6 +107,8 @@ static int clip = 1; // Caller ID presentation
 static int cw = 1; // Call Waiting
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
 struct sched_context *sched; // Scheduling context
+static int pcmShimFile = -1;
+
 
 /* Call waiting */
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
@@ -3290,6 +3292,7 @@ static int load_module(void)
 
 	/* Initialize the endpoints */
 	endpt_init();
+
 	brcm_get_endpoints_count();
 	load_endpoint_settings(cfg);
 
@@ -3479,6 +3482,7 @@ int endpt_init(void)
 			   NULL,
 			   NULL );
 
+	
 	return 0;
 }
 
@@ -3682,33 +3686,49 @@ int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit)
 	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, signal, 0, -1, -1 , -1);
 }
 
+
 EPSTATUS vrgEndptDriverOpen(void)
 {
-	/* Open and initialize Endpoint driver */
-	if( ( endpoint_fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
-		{
-			printf( "%s: open error %d\n", __FUNCTION__, errno );
-			return ( EPSTATUS_DRIVER_ERROR );
-		}
-	else
-		{
-			printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
-		}
+   /* Open the pcmShim driver  */
+   if( ( pcmShimFile = open("/dev/pcmshim0", O_RDWR) ) == -1 )
+   {
+      printf("%s: pcmshim open error %d\n", __FUNCTION__, errno );
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
 
-	return ( EPSTATUS_SUCCESS );
+   /* Open and initialize Endpoint driver */
+   if( ( endpoint_fd = open("/dev/bcmendpoint0", O_RDWR) ) == -1 )
+   {
+      printf( "%s: open error %d\n", __FUNCTION__, errno );
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
+   else
+   {
+      printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
+   }
+
+   return ( EPSTATUS_SUCCESS );
 }
 
-EPSTATUS vrgEndptDriverClose(void)
+
+EPSTATUS vrgEndptDriverClose()
 {
-	if ( close( endpoint_fd ) == -1 )
-		{
-			printf("%s: close error %d", __FUNCTION__, errno);
-			return ( EPSTATUS_DRIVER_ERROR );
-		}
+   if ( close( endpoint_fd ) == -1 )
+   {
+      printf("%s: close error %d", __FUNCTION__, errno);
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
 
-	endpoint_fd = NOT_INITIALIZED;
+   if ( close( pcmShimFile ) == -1 )
+   {
+      printf("%s: close error %d", __FUNCTION__, errno);
+      return ( EPSTATUS_DRIVER_ERROR );
+   }
 
-	return( EPSTATUS_SUCCESS );
+   endpoint_fd = -1;
+   pcmShimFile = -1;
+
+   return( EPSTATUS_SUCCESS );
 }
 
 
@@ -3724,6 +3744,12 @@ EPSTATUS vrgEndptInit
  )
 {
 	ENDPOINTDRV_INIT_PARAM tStartupParam;
+
+	/* get the pcm dma pool address */
+	if( ioctl( pcmShimFile, PCMSHIMIOCTL_GETBUF_CMD, &(endptInitCfg->dma_pool_buffer) ) != IOCTL_STATUS_SUCCESS ) {
+		ast_verbose( "error getting dma pool buffers\n");
+		return (EPSTATUS_DRIVER_ERROR);
+	}
 
 	tStartupParam.endptInitCfg = endptInitCfg;
 	tStartupParam.epStatus     = EPSTATUS_DRIVER_ERROR;
