@@ -544,9 +544,9 @@ static int acf_curl_helper(struct ast_channel *chan, const char *cmd, char *info
 			while (fields && values && (piece = strsep(&remainder, "&"))) {
 				char *name = strsep(&piece, "=");
 				if (piece) {
-					ast_uri_decode(piece);
+					ast_uri_decode(piece, ast_uri_http);
 				}
-				ast_uri_decode(name);
+				ast_uri_decode(name, ast_uri_http);
 				ast_str_append(&fields, 0, "%s%s", rowcount ? "," : "", ast_str_set_escapecommas(&escapebuf, 0, name, INT_MAX));
 				ast_str_append(&values, 0, "%s%s", rowcount ? "," : "", ast_str_set_escapecommas(&escapebuf, 0, S_OR(piece, ""), INT_MAX));
 				rowcount++;
