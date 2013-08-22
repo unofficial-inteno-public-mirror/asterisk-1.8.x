@@ -328,10 +328,10 @@
 #define SIP_PAGE2_T38SUPPORT_UDPTL_FEC      (2 << 17)   /*!< GDP: T.38 Fax Support (FEC error correction) */
 #define SIP_PAGE2_T38SUPPORT_UDPTL_REDUNDANCY   (3 << 17)   /*!< GDP: T.38 Fax Support (redundancy error correction) */
 
-#define SIP_PAGE2_CALL_ONHOLD               (3 << 19)   /*!< D: Call hold states: */
-#define SIP_PAGE2_CALL_ONHOLD_ACTIVE        (1 << 19)   /*!< D: Active hold */
-#define SIP_PAGE2_CALL_ONHOLD_ONEDIR        (2 << 19)   /*!< D: One directional hold */
-#define SIP_PAGE2_CALL_ONHOLD_INACTIVE      (3 << 19)   /*!< D: Inactive hold */
+#define SIP_PAGE2_CALL_ONHOLD			(3 << 18)   /*!< D: Call hold states: Incoming hold */
+#define SIP_PAGE2_CALL_ONHOLD_ACTIVE		(1 << 18)   /*!< D: Active hold  Incoming hold*/
+#define SIP_PAGE2_CALL_ONHOLD_ONEDIR		(2 << 18)   /*!< D: One directional hold  Incoming hold*/
+#define SIP_PAGE2_CALL_ONHOLD_INACTIVE		(3 << 18)   /*!< D: Inactive hold  Incoming hold*/
 
 #define SIP_PAGE2_RFC2833_COMPENSATE        (1 << 21)   /*!< DP: Compensate for buggy RFC2833 implementations */
 #define SIP_PAGE2_BUGGY_MWI                 (1 << 22)   /*!< DP: Buggy CISCO MWI fix */
@@ -357,9 +357,12 @@
 
 
 #define SIP_PAGE3_SNOM_AOC               (1 << 0)  /*!< DPG: Allow snom aoc messages */
+#define SIP_PAGE3_REMOTE_HOLD           (1 << 15)  /*!< DPG: Do not generate hold music, send remote hold (config)*/
+#define SIP_PAGE3_REMOTE_HOLD_STATUS    (1 << 16)  /*!< D: True if dialog is put on hold by pbx core */
+
 
 #define SIP_PAGE3_FLAGS_TO_COPY \
-	(SIP_PAGE3_SNOM_AOC)
+	(SIP_PAGE3_SNOM_AOC | SIP_PAGE3_REMOTE_HOLD)
 
 /*@}*/
 

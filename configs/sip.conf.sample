@@ -312,6 +312,11 @@ srvlookup=yes                   ; Enable DNS SRV lookups on outbound calls
 ; a per-user or per-peer basis.
 ;
 ;mohsuggest=default
+
+; Instead of playing moh for a device on hold, Asterisk can forward the hold
+; and use SIP to put the device on hold. This setting is available on a device
+; level too. Defaults to no - off.
+; remotehold=yes
 ;
 ;parkinglot=plaza               ; Sets the default parking lot for call parking
                                 ; This may also be set for individual users/peers
