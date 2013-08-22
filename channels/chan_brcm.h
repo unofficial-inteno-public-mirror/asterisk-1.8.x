@@ -42,6 +42,8 @@ enum channel_state {
 	RINGING,
 	CALLWAITING,
 	ONHOLD,
+	TRANSFERING,
+	RINGBACK,
 };
 
 enum endpoint_type {
@@ -70,7 +72,8 @@ struct brcm_subchannel {
 	unsigned int ssrc;		/* Endpoint RTP synchronization source */
 	int codec;			/* Used codec */
 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
-	int timer_id;			/* Current timer id, -1 if no active timer*/
+	int cw_timer_id;			/* Current call waiting timer id, -1 if no active timer */
+	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
 };
 
 struct brcm_pvt {
@@ -181,6 +184,7 @@ typedef struct {
 	VRG_UINT32 jitterMin;
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
+	int hangup_xfer;
 } line_settings;
 
 
@@ -208,6 +212,7 @@ static struct ast_jb_conf default_jbconf =
 
 #define DEFAULT_CALL_WAITING_TIMEOUT 24 // In seconds, Telia uses 24s
 
+#define DEFAULT_R4_HANGUP_TIMEOUT 5000 // In milliseconds
 #define DEFAULT_MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook (in ms)
 
 
@@ -220,6 +225,7 @@ EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int 
 EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 
 static int cwtimeout_cb(const void *data);
+static int r4hanguptimeout_cb(const void *data);
 static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
 int brcm_create_connection(struct brcm_subchannel *p);
 static int brcm_mute_connection(struct brcm_subchannel *p);
@@ -227,6 +233,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *p);
 static int brcm_close_connection(struct brcm_subchannel *p);
 static int brcm_create_conference(struct brcm_pvt *p);
 static int brcm_stop_conference(struct brcm_subchannel *p);
+static int brcm_finish_transfer(struct brcm_subchannel *p, int result);
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
@@ -261,6 +268,8 @@ static int brcm_in_onhold(const struct brcm_pvt *p);
 struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
 struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
 static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
+static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const sub);
+static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub);
 

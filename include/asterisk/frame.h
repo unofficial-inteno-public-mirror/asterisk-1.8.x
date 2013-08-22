@@ -40,6 +40,14 @@ struct ast_codec_pref {
 	int framing[64]; /*!< Magic numbers are bad, but this just needs to be bigger than ARRAY_LEN(AST_FORMAT_LIST) */
 };
 
+/*
+ * For use with AST_CONTROL_TRANSFER_REMOTE
+ */
+struct ast_transfer_remote_data {
+	char exten[80]; /* extension to transfer to. TODO This should use AST_MAX_EXTENSION */
+	char replaces[AST_CHANNEL_NAME]; /* name of channel that is being replaced (if any) */
+};
+
 /*!
  * \page Def_Frame AST Multimedia and signalling frames
  * \section Def_AstFrame What is an ast_frame ?
@@ -336,6 +344,7 @@ enum ast_control_frame_type {
 	AST_CONTROL_END_OF_Q = 29,		/*!< Indicate that this position was the end of the channel queue for a softhangup. */
 	AST_CONTROL_INCOMPLETE = 30,	/*!< Indication that the extension dialed is incomplete */
 	AST_CONTROL_UPDATE_RTP_PEER = 31, /*!< Interrupt the bridge and have it update the peer */
+	AST_CONTROL_TRANSFER_REMOTE = 32, /*!< Indicate that network should transfer call (e.g. sip refer) */
 };
 
 enum ast_frame_read_action {

@@ -4287,6 +4287,7 @@ static int attribute_const is_visible_indication(enum ast_control_frame_type con
 	case AST_CONTROL_CONNECTED_LINE:
 	case AST_CONTROL_REDIRECTING:
 	case AST_CONTROL_TRANSFER:
+	case AST_CONTROL_TRANSFER_REMOTE:
 	case AST_CONTROL_T38_PARAMETERS:
 	case _XXX_AST_CONTROL_T38:
 	case AST_CONTROL_CC:
@@ -7098,6 +7099,8 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 			case AST_CONTROL_SRCUPDATE:
 			case AST_CONTROL_SRCCHANGE:
 			case AST_CONTROL_T38_PARAMETERS:
+			case AST_CONTROL_TRANSFER_REMOTE:
+			case AST_CONTROL_TRANSFER:
 				ast_indicate_data(other, f->subclass.integer, f->data.ptr, f->datalen);
 				if (jb_in_use) {
 					ast_jb_empty_and_reset(c0, c1);

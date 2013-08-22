@@ -1260,7 +1260,7 @@ static int transmit_info_with_aoc(struct sip_pvt *p, struct ast_aoc_decoded *dec
 static int transmit_info_with_digit(struct sip_pvt *p, const char digit, unsigned int duration);
 static int transmit_info_with_vidupdate(struct sip_pvt *p);
 static int transmit_message_with_text(struct sip_pvt *p, const char *text);
-static int transmit_refer(struct sip_pvt *p, const char *dest);
+static int transmit_refer(struct sip_pvt *p, const char *dest, const char *replaces);
 static int transmit_notify_with_mwi(struct sip_pvt *p, int newmsgs, int oldmsgs, const char *vmexten);
 static int transmit_notify_with_sipfrag(struct sip_pvt *p, int cseq, char *message, int terminate);
 static int transmit_cc_notify(struct ast_cc_agent *agent, struct sip_pvt *subscription, enum sip_cc_notify_state state);
@@ -6690,7 +6690,7 @@ static int sip_transfer(struct ast_channel *ast, const char *dest)
 	if (ast->_state == AST_STATE_RING)
 		res = sip_sipredirect(p, dest);
 	else
-		res = transmit_refer(p, dest);
+		res = transmit_refer(p, dest, NULL);
 	sip_pvt_unlock(p);
 	return res;
 }
@@ -7014,6 +7014,64 @@ static int sip_indicate(struct ast_channel *ast, int condition, const void *data
 		}
 		break;
 	case AST_CONTROL_UPDATE_RTP_PEER: /* Absorb this since it is handled by the bridge */
+		break;
+	case AST_CONTROL_TRANSFER_REMOTE:
+		if (datalen != sizeof(struct ast_transfer_remote_data)) {
+			ast_log(LOG_ERROR, "Invalid datalen for AST_CONTROL_TRANSFER_REMOTE. Expected %d, got %d\n", (int) sizeof(struct ast_transfer_remote_data), (int) datalen);
+			res = -1;
+		} else {
+			/* Construct replaces parameter to be added to Refer-To header */
+			const struct ast_transfer_remote_data *parameters = data;
+			//SIPBUFSIZE for callid. Half a SIPBUFSIZE for each tag and SIPBUFSIZE for parameter names (Replaces, to-tag, from-tag)
+			char replaces[SIPBUFSIZE + SIPBUFSIZE + SIPBUFSIZE];
+			replaces[0] = '\0';
+			if (parameters->replaces && strlen(parameters->replaces)) {
+				struct ast_channel *replaces_chan; //The channel that has the call that we're going to remotely replace
+				replaces_chan = ast_channel_get_by_name(parameters->replaces);
+				if (replaces_chan == NULL) {
+					ast_log(LOG_NOTICE, "Unable to fetch channel (%s) to be replaced. Refer-To header will be missing replaces-parameter\n", parameters->replaces);
+				} else {
+					ast_channel_lock(replaces_chan);
+
+					//Make sure this is a SIP channel too
+					if (!strcmp(replaces_chan->tech->type, ast->tech->type)) {
+
+						//Get info from SIP-dialog that we want to replace
+						struct sip_pvt *other_pvt = replaces_chan->tech_pvt;
+						if (other_pvt) {
+
+							//Get callid and tags from SIP dialog to replace
+							const char *callid = other_pvt->callid;
+							const char *totag;
+							const char *fromtag;
+
+							if (ast_test_flag(&other_pvt->flags[0], SIP_OUTGOING)) {
+								totag = other_pvt->theirtag;
+								fromtag = other_pvt->tag;
+							} else {
+								totag = other_pvt->theirtag;
+								fromtag = other_pvt->tag;
+							}
+
+							//Create uri encoded replaces parameter
+							//?Replaces=<callid>;to-tag=<totag>;from-tag=<fromtag>
+							char tmp[SIPBUFSIZE + SIPBUFSIZE + SIPBUFSIZE];
+							snprintf(replaces, sizeof(replaces), "%s;to-tag=%s;from-tag=%s", callid, totag, fromtag);
+							ast_uri_encode(replaces, tmp, sizeof(tmp), ast_uri_http);
+							snprintf(replaces, sizeof(replaces), "?Replaces=%s", tmp);
+						} else {
+							ast_log(LOG_WARNING, "Failed to get tech_pvt of replaces channel\n");
+						}
+					} else {
+						ast_log(LOG_NOTICE, "Asked to replace a call on channel type %s\n", replaces_chan->tech->type);
+					}
+					ast_channel_unlock(replaces_chan);
+				}
+			}
+
+			ast_log(LOG_DEBUG, "Transmitting refer\n");
+			res = transmit_refer(p, parameters->exten, replaces);
+		}
 		break;
 	case -1:
 		res = -1;
@@ -13548,7 +13606,7 @@ static int sip_notify_allocate(struct sip_pvt *p)
 	engine whether a transfer succeeds or fails.
 	\todo Fix the transfer() dialplan function so that a transfer may fail
 */
-static int transmit_refer(struct sip_pvt *p, const char *dest)
+static int transmit_refer(struct sip_pvt *p, const char *dest, const char *replaces)
 {
 	struct sip_request req = {
 		.headers = 0,	
@@ -13588,9 +13646,9 @@ static int transmit_refer(struct sip_pvt *p, const char *dest)
 		*c++ = '\0';
 	}
 	if (c) {
-		snprintf(referto, sizeof(referto), "<sip%s:%s@%s>", use_tls ? "s" : "", dest, c);
+		snprintf(referto, sizeof(referto), "<sip%s:%s@%s%s>", use_tls ? "s" : "", dest, c, replaces ? replaces : "");
 	} else {
-		snprintf(referto, sizeof(referto), "<sip%s:%s>", use_tls ? "s" : "", dest);
+		snprintf(referto, sizeof(referto), "<sip%s:%s%s>", use_tls ? "s" : "", dest, replaces ? replaces : "");
 	}
 
 	/* save in case we get 407 challenge */
@@ -18187,6 +18245,7 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 		ast_cli(a->fd, "  SIP realtime:           Enabled\n" );
 	ast_cli(a->fd, "  Qualify Freq :          %d ms\n", global_qualifyfreq);
 	ast_cli(a->fd, "  Q.850 Reason header:    %s\n", AST_CLI_YESNO(ast_test_flag(&global_flags[1], SIP_PAGE2_Q850_REASON)));
+	ast_cli(a->fd, "  REFER await NOTIFY:     %s\n", AST_CLI_YESNO(sip_cfg.refer_await_notify));
 	ast_cli(a->fd, "  Store SIP_CAUSE:        %s\n", AST_CLI_YESNO(global_store_sip_cause));
 	ast_cli(a->fd, "\nNetwork QoS Settings:\n");
 	ast_cli(a->fd, "---------------------------\n");
@@ -20605,6 +20664,15 @@ static void handle_response_refer(struct sip_pvt *p, int resp, const char *rest,
 		/* Now wait for next message */
 		ast_debug(3, "Got 202 accepted on transfer\n");
 		/* We should hang along, waiting for NOTIFY's here */
+
+		/* Some systems does not seem to send NOTIFY's, they just send BYE on dialog(s) after accepting the REFER */
+		if (!sip_cfg.refer_await_notify) {
+			if (p->owner) {
+				message = AST_TRANSFER_SUCCESS;
+				ast_queue_control_data(p->owner, AST_CONTROL_TRANSFER, &message, sizeof(message));
+				pvt_set_needdestroy(p, "received 202 response");
+			}
+		}
 		break;
 
 	case 401:   /* Not www-authorized on SIP method */
@@ -28152,6 +28220,7 @@ static int reload_config(enum channelreloadreason reason)
 	sip_cfg.peer_rtupdate = TRUE;
 	global_dynamic_exclude_static = 0;	/* Exclude static peers */
 	sip_cfg.tcp_enabled = FALSE;
+	sip_cfg.refer_await_notify = DEFAULT_REFERAWAITNOTIFY;
 
 	/* Session-Timers */
 	global_st_mode = SESSION_TIMER_MODE_ACCEPT;
@@ -28710,6 +28779,12 @@ static int reload_config(enum channelreloadreason reason)
 			ast_set2_flag(&global_flags[2], ast_true(v->value), SIP_PAGE3_SNOM_AOC);
 		} else if (!strcasecmp(v->name, "parkinglot")) {
 			ast_copy_string(default_parkinglot, v->value, sizeof(default_parkinglot));
+		} else if (!strcasecmp(v->name, "referawaitnotify")) {
+			if (ast_true(v->value)) {
+				sip_cfg.refer_await_notify = TRUE;
+			} else {
+				sip_cfg.refer_await_notify = FALSE;
+			}
 		}
 	}
 

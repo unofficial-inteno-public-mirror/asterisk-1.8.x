@@ -111,6 +111,9 @@ struct sched_context *sched; // Scheduling context
 /* Call waiting */
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 
+/* R4 transfer */
+static int r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
+
 /* Maximum allowed delay between early on and early off hook for detecting hookflash */
 static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 
@@ -192,6 +195,7 @@ AST_MUTEX_DEFINE_STATIC(ioctl_lock);
 
 static int load_settings(struct ast_config **cfg);
 static void load_endpoint_settings(struct ast_config *cfg);
+static char *state2str(enum channel_state state);
 
 /* exported capabilities */
 static const struct ast_channel_tech brcm_tech = {
@@ -222,12 +226,83 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		//This is a workaround until jitter buffer is handled by DSP.
 		ast_jb_destroy(sub->owner);
 		break;
+	case AST_CONTROL_RINGING:
+		brcm_subchannel_set_state(sub, RINGBACK);
+		res = 1; //We still want asterisk core to play tone
+		break;
+	case AST_CONTROL_TRANSFER:
+		res = -1;
+		if (datalen != sizeof(enum ast_control_transfer)) {
+			ast_log(LOG_ERROR, "Invalid datalen for AST_CONTROL_TRANSFER. Expected %d, got %d\n", (int) sizeof(enum ast_control_transfer), (int) datalen);
+		} else {
+			enum ast_control_transfer *message = data;
+			brcm_finish_transfer(sub, *message);
+		}
+		break;
 	default:
 		res = -1;
 		break;
 	}
 	ast_mutex_unlock(&sub->parent->lock);
 	return res;
+}
+
+static int brcm_finish_transfer(struct brcm_subchannel *p, int result)
+{
+	struct brcm_subchannel* peer_sub;
+	/*
+	 * We have received the result of a transfer operation.
+	 * This could be:
+	 * - Result of a Transfer-On-Hangup (Remote Transfer), in which case
+	 *   we should hangup the subchannel, no matter the result
+	 * - Result of a R4 Attended Transfer (Remote Transfer), in which case
+	 *   we should wait for hangup on both subchannels, or resume calls if failed
+	 *   Hangup should be received immediately, but we start a timer to hangup
+	 *   everythin ourselfs just to be sure.
+	 * - Probably nothing else - the builtin transfer should never let this
+	 *   control frame propagate to here
+	 */
+
+	if (p->channel_state != TRANSFERING) {
+		ast_log(LOG_WARNING, "Received AST_CONTROL_TRANSFER while in state %s\n", state2str(p->channel_state));
+		return -1;
+	}
+
+	peer_sub = brcm_subchannel_get_peer(p);
+	if (!peer_sub) {
+		ast_log(LOG_ERROR, "Failed to get peer subchannel\n");
+		return -1;
+	}
+
+	// In the case of Transfer-On-Hangup peer sub should be a idle
+	if (brcm_subchannel_is_idle(peer_sub)) {
+		if (result == AST_TRANSFER_SUCCESS) {
+			ast_log(LOG_NOTICE, "Remote transfer completed successfully, hanging up\n");
+		}
+		else {
+			ast_log(LOG_NOTICE, "Remote transfer failed, hanging up\n");
+		}
+
+		ast_queue_control(p->owner, AST_CONTROL_HANGUP);
+		brcm_subchannel_set_state(p, CALLENDED);
+
+	// In the case of R4 transfer peer sub should be on hold
+	} else if (peer_sub->channel_state == ONHOLD) {
+		if (result == AST_TRANSFER_SUCCESS) {
+			ast_log(LOG_NOTICE, "Remote transfer completed successfully, wait for remote hangup\n");
+			p->r4_hangup_timer_id = ast_sched_add(sched, r4hanguptimeout, r4hanguptimeout_cb, p);
+		} else {
+			//Do nothing. Let calls be up as they were before R4 was attempted (first call on hold, second call active)
+			ast_log(LOG_NOTICE, "Remote transfer failed\n");
+			brcm_subchannel_set_state(p, INCALL);
+		}
+
+	} else {
+		ast_log(LOG_WARNING, "AST_CONTROL_TRANSFER received in unexpected state\n");
+		return -1;
+	}
+
+	return 0;
 }
 
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
@@ -325,7 +400,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		brcm_subchannel_set_state(sub, CALLWAITING);
 		brcm_signal_callwaiting(p);
 		int cwtimeout_ms = cwtimeout * 1000;
-		sub->timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
+		sub->cw_timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
 	} else {
 		ast_log(LOG_WARNING, "Not call waiting\n");
 		brcm_subchannel_set_state(sub, RINGING);
@@ -368,10 +443,10 @@ static int brcm_hangup(struct ast_channel *ast)
 	if (sub->channel_state == CALLWAITING) {
 		ast_log(LOG_DEBUG, "stop Call waiting\n");
 		brcm_stop_callwaiting(p);
-		if (ast_sched_del(sched, sub->timer_id)) {
+		if (ast_sched_del(sched, sub->cw_timer_id)) {
 			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer");
 		}
-		sub->timer_id = -1;
+		sub->cw_timer_id = -1;
 	} else {
 		ast_log(LOG_DEBUG, "Not call waiting\n");
 		if (!clip) {
@@ -379,6 +454,13 @@ static int brcm_hangup(struct ast_channel *ast)
 		} else {
 			brcm_stop_ringing_callerid_pending(p);
 		}
+	}
+
+	if(sub->r4_hangup_timer_id != -1) {
+		if (ast_sched_del(sched, sub->r4_hangup_timer_id)) {
+			ast_log(LOG_WARNING, "Failed to remove scheduled r4 hangup timer");
+		}
+		sub->r4_hangup_timer_id = -1;
 	}
 	ast_setstate(ast, AST_STATE_DOWN);
 
@@ -649,8 +731,25 @@ static char *state2str(enum channel_state state)
 	case RINGING:		return "RINGING";
 	case CALLWAITING:	return "CALLWAITING";
 	case ONHOLD:		return "ONHOLD";
+	case TRANSFERING:	return "TRANSFERING";
+	case RINGBACK:		return "RINGBACK";
 	default:			return "UNKNOWN";
 	}
+}
+
+static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const sub)
+{
+	if (sub->channel_state == ONHOOK || sub->channel_state == CALLENDED) {
+		return 1;
+	}
+	return 0;
+}
+
+static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub)
+{
+	struct brcm_subchannel *peer_sub;
+	peer_sub = sub->parent->sub[0] == sub ? sub->parent->sub[1] : sub->parent->sub[0];
+	return peer_sub;
 }
 
 /*
@@ -806,6 +905,8 @@ struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
 			case CALLING:
 			case OFFHOOK:
 			case RINGING:
+			case TRANSFERING:
+			case RINGBACK:
 				sub = p->sub[i];
 				return sub;
 			case CALLWAITING:
@@ -862,9 +963,36 @@ static int cwtimeout_cb(const void *data)
 
 	sub = (struct brcm_subchannel *) data;
 	ast_mutex_lock(&sub->parent->lock);
-	sub->timer_id = -1;
+	sub->cw_timer_id = -1;
 	sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
 	ast_queue_control(sub->owner, AST_CONTROL_BUSY);
+	ast_mutex_unlock(&sub->parent->lock);
+
+	return 0;
+}
+
+/* Hangup calls if not done by remote after R4 transfer */
+static int r4hanguptimeout_cb(const void *data)
+{
+	struct brcm_subchannel *sub;
+	struct brcm_subchannel *peer_sub;
+
+	ast_log(LOG_DEBUG, "No hangup from remote after remote transfer using R4, hanging up\n");
+
+	sub = (struct brcm_subchannel *) data;
+	ast_mutex_lock(&sub->parent->lock);
+	sub->r4_hangup_timer_id = -1;
+	if (sub->owner) {
+		ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
+	}
+	peer_sub = brcm_subchannel_get_peer(sub);
+	if (peer_sub) {
+		if (peer_sub->owner) {
+			ast_queue_control(peer_sub->owner, AST_CONTROL_HANGUP);
+		}
+		brcm_subchannel_set_state(peer_sub, CALLENDED);
+	}
+	brcm_subchannel_set_state(sub, CALLENDED);
 	ast_mutex_unlock(&sub->parent->lock);
 
 	return 0;
@@ -1101,10 +1229,10 @@ static void handle_hookflash(struct brcm_pvt *p)
 					ast_log(LOG_WARNING, "Failed to get vall waiting subchannel\n");
 					break;
 				}
-				if (ast_sched_del(sched, sub->timer_id)) {
+				if (ast_sched_del(sched, sub->cw_timer_id)) {
 					ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 				}
-				sub->timer_id = -1;
+				sub->cw_timer_id = -1;
 
 				sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
 				ast_queue_control(sub->owner, AST_CONTROL_BUSY);
@@ -1140,10 +1268,10 @@ static void handle_hookflash(struct brcm_pvt *p)
 						ast_log(LOG_WARNING, "Failed to get call waiting subchannel\n");
 						break;
 					}
-					if (ast_sched_del(sched, sub->timer_id)) {
+					if (ast_sched_del(sched, sub->cw_timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
-					sub->timer_id = -1;
+					sub->cw_timer_id = -1;
 
 					/* Pick up call waiting */
 					if (!sub->connection_init) {
@@ -1200,10 +1328,10 @@ static void handle_hookflash(struct brcm_pvt *p)
 						ast_log(LOG_WARNING, "Failed to get call waiting subchannel\n");
 						break;
 					}
-					if (ast_sched_del(sched, sub->timer_id)) {
+					if (ast_sched_del(sched, sub->cw_timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
-					sub->timer_id = -1;
+					sub->cw_timer_id = -1;
 
 					/* Pick up call waiting */
 					if (!sub->connection_init) {
@@ -1268,6 +1396,38 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 				/* Switch all connections to conferencing mode */
 				brcm_create_conference(p);
+			}
+			break;
+
+		/* Remote transfer held call to active call */
+		case '4':
+			ast_log(LOG_DEBUG, "R4 Transfer\n");
+			if (brcm_in_call(p) && brcm_in_onhold(p)) {
+
+				active_sub = brcm_get_active_subchannel(p);
+				if (active_sub && active_sub->owner) {
+
+					struct ast_channel *bridged_chan;
+					struct ast_transfer_remote_data data;
+					sub = brcm_subchannel_get_peer(active_sub);
+
+					if (sub && sub->owner) {
+						bridged_chan = ast_bridged_channel(sub->owner);
+						if (bridged_chan) {
+							ast_verbose("Performing R4 transfer to %s, replacing call on %s\n", active_sub->parent->ext, bridged_chan->name);
+
+							strcpy(data.exten, active_sub->parent->ext);
+							strcpy(data.replaces, bridged_chan->name);
+
+							ast_queue_control_data(active_sub->owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
+							brcm_subchannel_set_state(active_sub, TRANSFERING);
+						} else {
+							ast_log(LOG_ERROR, "Failed to fetch bridged channel\n");
+						}
+					} else {
+						ast_log(LOG_ERROR, "Failed to fetch peer sub or peer sub had no owner\n");
+					}
+				}
 			}
 			break;
 
@@ -1583,9 +1743,16 @@ static void *brcm_monitor_events(void *data)
 				gettimeofday(&tim, NULL);
 				p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
+				int perform_remote_transfer = 0;
+
 				if (sub->channel_state == OFFHOOK) {
 					/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
 					brcm_stop_dialtone(p);
+				}
+				else if (sub->channel_state == RINGBACK) {
+					line_settings *s = &line_config[sub->parent->line_id];
+					ast_log(LOG_DEBUG, "Semi-attended transfer active\n");
+					perform_remote_transfer = s->hangup_xfer;
 				}
 
 				brcm_subchannel_set_state(sub, ONHOOK);
@@ -1603,13 +1770,30 @@ static void *brcm_monitor_events(void *data)
 					ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
 				}
 
-				/* Hangup peer subchannels in call, on hold or in call waiting */
 				struct brcm_subchannel *peer_sub;
+				//TRANSFER_REMOTE
+				if (perform_remote_transfer) {
+					peer_sub = brcm_get_onhold_subchannel(sub->parent);
+					if (peer_sub && peer_sub->owner) {
+						ast_verbose("Performing transfer-on-hangup to %s\n", peer_sub->parent->ext);
+
+						struct ast_transfer_remote_data data;
+						strcpy(data.exten, peer_sub->parent->ext);
+						data.replaces[0] = '\0'; //Not replacing any call
+
+						ast_queue_control_data(peer_sub->owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
+						brcm_subchannel_set_state(peer_sub, TRANSFERING);
+					}
+				}
+
+				//TODO: possible bug below - we don't change the channel_state when hanging up
+
+				/* Hangup peer subchannels in call, on hold or in call waiting */
 				if ((peer_sub = brcm_get_callwaiting_subchannel(sub->parent)) != NULL) {
 					if (ast_sched_del(sched, peer_sub->timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
-					peer_sub->timer_id = -1;
+					peer_sub->cw_timer_id = -1;
 
 					if (peer_sub->owner) {
 						peer_sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
@@ -1617,9 +1801,11 @@ static void *brcm_monitor_events(void *data)
 					}
 				}
 				if ((peer_sub = brcm_get_onhold_subchannel(sub->parent)) != NULL || (peer_sub = brcm_get_active_subchannel(sub->parent)) != NULL) {
-					ast_log(LOG_DEBUG, "should hangup call on hold or incall\n");
-					if (peer_sub->owner) {
-						ast_queue_control(peer_sub->owner, AST_CONTROL_HANGUP);
+					if (peer_sub->channel_state != TRANSFERING) {
+						ast_log(LOG_DEBUG, "should hangup call on hold or incall\n");
+						if (peer_sub->owner) {
+							ast_queue_control(peer_sub->owner, AST_CONTROL_HANGUP);
+						}
 					}
 				}
 				break;
@@ -1813,7 +1999,8 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 				sub->ssrc = 0;
 				sub->codec = -1;
 				sub->parent = tmp;
-				sub->timer_id = -1;
+				sub->cw_timer_id = -1;
+				sub->r4_hangup_timer_id = -1;
 				tmp->sub[i] = sub;
 				ast_log(LOG_DEBUG, "subchannel created\n");
 			} else {
@@ -2100,7 +2287,8 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "  RTP sequence number : %d\n", sub->sequence_number);
 		ast_cli(a->fd, "  RTP SSRC            : %d\n", sub->ssrc);
 		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
-		ast_cli(a->fd, "  Timer id            : %d\n", sub->timer_id);
+		ast_cli(a->fd, "  CW Timer id         : %d\n", sub->cw_timer_id);
+		ast_cli(a->fd, "  R4 Hangup Timer id  : %d\n", sub->r4_hangup_timer_id);
 	}
 }
 
@@ -2831,6 +3019,7 @@ static line_settings line_settings_create(void)
 		.jitterMin = 0,
 		.jitterMax = 0,
 		.jitterTarget = 0,
+		.hangup_xfer = 0,
 	};
 	return line_conf;
 }
@@ -2951,6 +3140,9 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 		else if (!strcasecmp(v->name, "jitter_target")) {
 			line_config->jitterTarget = strtoul(v->value, NULL, 0);
 		}
+		else if (!strcasecmp(v->name, "hangup_xfer")) {
+			line_config->hangup_xfer = ast_true(v->value)?1:0;
+		}
 
 		if (config_codecs > 0)
 			line_config->codec_nr = config_codecs;
@@ -3009,13 +3201,19 @@ static int load_settings(struct ast_config **cfg)
 			cwtimeout = atoi(v->value);
 			if (cwtimeout > 60 || cwtimeout < 0) {
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
-				ast_log(LOG_WARNING, "Incorrect cwtimeouty '%s', defaulting to '%d'\n", v->value, cwtimeout);
+				ast_log(LOG_WARNING, "Incorrect cwtimeout '%s', defaulting to '%d'\n", v->value, cwtimeout);
 			}
 		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
 			hfmaxdelay = atoi(v->value);
 			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
 				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 				ast_log(LOG_WARNING, "Incorrect hfmaxdelay '%s', defaulting to '%d'\n", v->value, hfmaxdelay);
+			}
+		} else if (!strcasecmp(v->name, "r4hanguptimeout")) {
+			r4hanguptimeout = atoi(v->value);
+			if (r4hanguptimeout > 30000 || r4hanguptimeout < 0) {
+				r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
+				ast_log(LOG_WARNING, "Incorrect r4hanguptimeout '%s', defaulting to '%d'\n", v->value, r4hanguptimeout);
 			}
 		}
 
