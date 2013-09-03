@@ -1824,6 +1824,10 @@ static void *brcm_monitor_events(void *data)
 			case EPEVT_DTMF7:
 			case EPEVT_DTMF8:
 			case EPEVT_DTMF9:
+			case EPEVT_DTMFA:
+			case EPEVT_DTMFB:
+			case EPEVT_DTMFC:
+			case EPEVT_DTMFD:
 			case EPEVT_DTMFS:
 			case EPEVT_DTMFH:
 			{
