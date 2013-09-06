@@ -713,6 +713,7 @@ static int global_rtptimeout;       /*!< Time out call if no RTP */
 static int global_rtpholdtimeout;   /*!< Time out call if no RTP during hold */
 static int global_rtpkeepalive;     /*!< Send RTP keepalives */
 static int global_reg_timeout;      /*!< Global time between attempts for outbound registrations */
+static int global_reg_forb_timeout; /*!< Global time between attempts for outbound registrations, if 403 Forbidden was received */
 static int global_regattempts_max;  /*!< Registration attempts before giving up */
 static int global_shrinkcallerid;   /*!< enable or disable shrinking of caller id  */
 static int global_callcounter;      /*!< Enable call counters for all devices. This is currently enabled by setting the peer
@@ -18317,6 +18318,7 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 	ast_cli(a->fd, "  Reg. default duration:  %d secs\n", default_expiry);
 	ast_cli(a->fd, "  Outbound reg. timeout:  %d secs\n", global_reg_timeout);
 	ast_cli(a->fd, "  Outbound reg. attempts: %d\n", global_regattempts_max);
+	ast_cli(a->fd, "  Outbound reg. forb. timeout: %d %s\n", global_reg_forb_timeout, global_reg_forb_timeout ? "" : "(Disabled)");
 	ast_cli(a->fd, "  Notify ringing state:   %s\n", AST_CLI_YESNO(sip_cfg.notifyringing));
 	if (sip_cfg.notifyringing) {
 		ast_cli(a->fd, "    Include CID:          %s%s\n",
@@ -20775,6 +20777,11 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 		AST_SCHED_DEL_UNREF(sched, r->timeout, registry_unref(r, "reg ptr unref from handle_response_register 403"));
 		r->regstate = REG_STATE_NOAUTH;
 		pvt_set_needdestroy(p, "received 403 response");
+		if (global_reg_forb_timeout > 0) {
+			ast_log(LOG_DEBUG, "Forbidden - retrying in %d secs\n");
+			r->timeout = ast_sched_add(sched, global_reg_forb_timeout * 1000, sip_reg_timeout, registry_addref(r, "reg ptr reffed from handle_response_register_403"));
+			ast_debug(1, "Scheduled a 403 registration timeout for %s id #%d \n", r->hostname, r->timeout);
+		}
 		break;
 	case 404:	/* Not found */
 		ast_log(LOG_WARNING, "Got 404 Not found on SIP register to service %s@%s, giving up\n", p->registry->username, p->registry->hostname);
@@ -28203,6 +28210,7 @@ static int reload_config(enum channelreloadreason reason)
 	ast_copy_string(default_mwi_from, DEFAULT_MWI_FROM, sizeof(default_mwi_from));
 	sip_cfg.compactheaders = DEFAULT_COMPACTHEADERS;
 	global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
+	global_reg_forb_timeout = DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT;
 	global_regattempts_max = 0;
 	sip_cfg.pedanticsipchecking = DEFAULT_PEDANTIC;
 	sip_cfg.autocreatepeer = DEFAULT_AUTOCREATEPEER;
@@ -28555,6 +28563,11 @@ static int reload_config(enum channelreloadreason reason)
 			global_reg_timeout = atoi(v->value);
 			if (global_reg_timeout < 1) {
 				global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
+			}
+		} else if (!strcasecmp(v->name, "register403timeout")) {
+			global_reg_forb_timeout = atoi(v->value);
+			if (global_reg_forb_timeout < 0) {
+				global_reg_forb_timeout = DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT;
 			}
 		} else if (!strcasecmp(v->name, "registerattempts")) {
 			global_regattempts_max = atoi(v->value);
