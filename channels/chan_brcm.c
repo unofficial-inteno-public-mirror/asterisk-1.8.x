@@ -1471,16 +1471,7 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 		p->dtmf_first = dtmf_button;
 		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 		ast_debug(9,"Pressed DTMF %s\n", dtmfMap->name);
-		if (p->hf_detected == 0 && (sub->channel_state == INCALL || sub->channel_state == CALLING)) { //Send directly to Asterisk
-			ast_channel_lock(sub->owner);
-			struct ast_frame f = { 0, };
-			f.frametype = AST_FRAME_DTMF;
-			f.subclass.integer = dtmfMap->c;
-			f.src = "BRCM";
-			f.frametype = AST_FRAME_DTMF_BEGIN;
-			ast_queue_frame(sub->owner, &f);
-			ast_channel_unlock(sub->owner);
-		}
+		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
 	else if (p->dtmf_first == dtmf_button) {
 		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);

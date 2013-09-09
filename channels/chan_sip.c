@@ -6639,7 +6639,7 @@ static int sip_senddigit_begin(struct ast_channel *ast, char digit)
 	sip_pvt_lock(p);
 	switch (ast_test_flag(&p->flags[0], SIP_DTMF)) {
 	case SIP_DTMF_INBAND:
-		res = -1; /* Tell Asterisk to generate inband indications */
+		/* Rely on other channel to send inband DTMF */
 		break;
 	case SIP_DTMF_RFC2833:
 		if (p->rtp)
@@ -6671,7 +6671,7 @@ static int sip_senddigit_end(struct ast_channel *ast, char digit, unsigned int d
 			ast_rtp_instance_dtmf_end_with_duration(p->rtp, digit, duration);
 		break;
 	case SIP_DTMF_INBAND:
-		res = -1; /* Tell Asterisk to stop inband indications */
+		/* Rely on other channel to send inband DTMF */
 		break;
 	}
 	sip_pvt_unlock(p);
