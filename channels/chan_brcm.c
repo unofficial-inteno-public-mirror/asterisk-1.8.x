@@ -1620,6 +1620,10 @@ static void *brcm_monitor_packets(void *data)
 					}
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
+				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
+				ast_mutex_unlock(&p->parent->lock);
+				continue;
+
 				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
 
 				if (dtmf_short) {
@@ -2971,6 +2975,14 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 		epCnxParms.cnxParmList.send.numCodecs					= 1;
 		epCnxParms.cnxParmList.send.period[0]					= s->period; //Use same packetization period for all codecs TODO: bad idea?
 	}
+
+	/* Add Named Telephone Events codec. Without this codec RTP events will not be sent. 
+	 * It's not really needed now since we only use inband between DSP and Asterisk.
+	 * Keeping it since it may be needed in the future with a less buggy
+	 * DTMF-implemntation in Asterisk */
+	epCnxParms.cnxParmList.send.codecs[1].type              = CODEC_NTE;
+	epCnxParms.cnxParmList.send.numCodecs			= 2;
+	epCnxParms.namedPhoneEvts = CODEC_NTE_DTMF;
 
 	/* Configure endpoint receiving, should be able to receive any of our supported formats */
 	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr;
