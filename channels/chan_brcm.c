@@ -2727,6 +2727,9 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
 		s->dtmf_relay = EPDTMFRFC2833_SUBTRACT;
 	}
 
+	/* Force inband mode, since this is what seems to be working best with Asterisk */
+	s->dtmf_relay = EPDTMFRFC2833_DISABLED;
+
 	return CLI_SUCCESS;
 }
 
@@ -3089,6 +3092,8 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 			} else {
 				line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 			}
+			/* Force inband mode, since this is what seems to be working best with Asterisk */
+			line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			line_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "allow")) {
