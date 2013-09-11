@@ -3019,7 +3019,7 @@ static line_settings line_settings_create(void)
 		.echocancel = 1,
 		.txgain = GAIN_DEFAULT,
 		.rxgain = GAIN_DEFAULT,
-		.dtmf_relay = EPDTMFRFC2833_ENABLED,
+		.dtmf_relay = EPDTMFRFC2833_DISABLED,
 		.dtmf_short = 1,
 		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
 		.codec_nr = 2,
