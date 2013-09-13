@@ -747,6 +747,7 @@ static init_cfm(unsigned char *buf) {
 	ENDPT_STATE    endptState;
 	EPCMD_PARMS    consoleCmdParams;
 	int i;
+	unsigned char o_buf[3];
 
 	/* Dect stack initialized */
 	/* Initialize dect procesing in enpoint driver */
@@ -760,6 +761,14 @@ static init_cfm(unsigned char *buf) {
 			    &consoleCmdParams );
 	/* } */
 
+
+	/* write endpoint id to device */
+	*(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8);
+	*(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0);
+	*(o_buf + 2) = 0;
+
+	ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n");
+	dectDrvWrite(o_buf, 3);
 }
 
 
@@ -920,6 +929,10 @@ static void handle_data(unsigned char *buf) {
 	case API_FP_LINUX_NVS_UPDATE_IND:
 		ast_verbose("API_FP_LINUX_NVS_UPDATE_IND\n");
 		nvs_update_ind(buf);
+		break;
+
+	case API_FP_MM_GET_REGISTRATION_COUNT_CFM:
+		ast_verbose("API_FP_MM_GET_REGISTRATION_COUNT_CFM\n");
 		break;
 
 	default:
