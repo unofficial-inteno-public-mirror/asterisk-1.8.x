@@ -2473,7 +2473,9 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	}
 
 	/* Provision endpoints */
+	brcm_destroy_endpoints();
 	load_endpoint_settings(cfg);
+	brcm_create_endpoints();
 	struct brcm_pvt *p = iflist;
 	while(p) {
 		brcm_fill_autodial(p);
@@ -3445,6 +3447,16 @@ static void brcm_create_endpoints(void)
 	}
 }
 
+
+static void brcm_destroy_endpoints(void)
+{
+	int i, rc;
+
+	for ( i = 0; i < num_endpoints; i++ )
+	{
+		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i]);
+	}
+}
 
 int endpt_init(void)
 {
