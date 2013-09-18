@@ -1,0 +1,9 @@
+*.so
+*.exports
+*.o_a
+*.tar.gz.*
+*.a
+
+config.log
+config.status
+.built
