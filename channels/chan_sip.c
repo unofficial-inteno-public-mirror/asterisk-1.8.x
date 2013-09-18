@@ -8882,7 +8882,7 @@ static int sockaddr_is_null_or_any(const struct ast_sockaddr *addr)
 	return ast_sockaddr_isnull(addr) || ast_sockaddr_is_any(addr);
 }
 
-+/*! \brief Process SIP SDP offer/answer, select formats and activate media channels
+/*! \brief Process SIP SDP offer/answer, select formats and activate media channels
 	If offer is rejected, we will not change any properties of the call
  	Return 0 on success, a negative value on errors.
 	Must be called after find_sdp().

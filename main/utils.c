@@ -464,35 +464,6 @@ void ast_uri_decode(char *s, struct ast_flags spec)
 	*o = '\0';
 }
 
-char *ast_escape_quoted(const char *string, char *outbuf, int buflen)
-{
-	const char *ptr  = string;
-	char *out = outbuf;
-	char *allow = "\t\v !"; /* allow LWS (minus \r and \n) and "!" */
-
-	while (*ptr && out - outbuf < buflen - 1) {
-		if (!(strchr(allow, *ptr))
-			&& !(*ptr >= '#' && *ptr <= '[') /* %x23 - %x5b */
-			&& !(*ptr >= ']' && *ptr <= '~') /* %x5d - %x7e */
-			&& !(*ptr > 0x7f)) {             /* UTF8-nonascii */
-
-			if (out - outbuf >= buflen - 2) {
-				break;
-			}
-			out += sprintf(out, "\\%c", (unsigned char) *ptr);
-		} else {
-			*out = *ptr;
-			out++;
-		}
-		ptr++;
-	}
-
-	if (buflen) {
-		*out = '\0';
-	}
-
-	return outbuf;
-}
 /*! \brief  ast_inet_ntoa: Recursive thread safe replacement of inet_ntoa */
 const char *ast_inet_ntoa(struct in_addr ia)
 {

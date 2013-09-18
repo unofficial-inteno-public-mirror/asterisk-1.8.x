@@ -1791,7 +1791,7 @@ static void *brcm_monitor_events(void *data)
 
 				/* Hangup peer subchannels in call, on hold or in call waiting */
 				if ((peer_sub = brcm_get_callwaiting_subchannel(sub->parent)) != NULL) {
-					if (ast_sched_del(sched, peer_sub->timer_id)) {
+					if (ast_sched_del(sched, peer_sub->cw_timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
 					peer_sub->cw_timer_id = -1;
