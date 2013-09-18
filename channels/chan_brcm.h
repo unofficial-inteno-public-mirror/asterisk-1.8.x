@@ -2,7 +2,6 @@
 #define CHAN_BRCM_H
 
 #include <endpointdrv.h>
-#include <pcmshimdrv.h>
 
 /* Change this value when needed */
 #define CHANNEL_VERSION "1.2"
