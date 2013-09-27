@@ -47,6 +47,17 @@ extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
 
 
+int dect_signal_ringing(struct brcm_pvt *p)
+{
+	ast_verbose("dect_signal_ringing\n");
+
+	const char nr[] = "123";
+	ast_verbose("line_id: %d\n", p->line_id); 
+	dectRingHandSet(p->line_id + 1, p->line_id, nr);   //p->sub->owner->connected.id.number.str);
+	return 0;
+}
+
+
 ApiInfoElementType* ApiGetNextInfoElement(ApiInfoElementType *IeBlockPtr,
                                           rsuint16 IeBlockLength,
                                           ApiInfoElementType *IePtr)
@@ -240,7 +251,7 @@ void dectRingHandSet( int destHandset, int dspChannel, char *cid) //, int line, 
 
 
 	ast_verbose("dectRingHandSet\n");
-	
+
 	/* Initialize block variables */
 	IeBlockPtr    = NULL;
 	IeBlockLength = 0;
@@ -933,6 +944,10 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_MM_GET_REGISTRATION_COUNT_CFM:
 		ast_verbose("API_FP_MM_GET_REGISTRATION_COUNT_CFM\n");
+		break;
+
+	case API_FP_MM_GET_HANDSET_IPUI_CFM:
+		ast_verbose("API_FP_MM_GET_HANDSET_IPUI_CFM\n");
 		break;
 
 	default:

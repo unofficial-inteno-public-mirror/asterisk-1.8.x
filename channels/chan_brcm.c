@@ -371,6 +371,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 	return res;
 }
 
+
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 {
 	struct brcm_pvt *p;
@@ -378,20 +379,11 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
-
+	
 	sub = ast->tech_pvt;
 
 	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", sub->parent->line_id);
 	ast_localtime(&UtcTime, &tm, NULL);
-
-	/* Alert dect handset of call. Not so pretty. 
-	   We should check some pvt parameter to determine
-	   pvt type. Also, it appears that caller id 
-	   should be handled as a separate event...
-	   No time for that right now. */
-	
-	if (sub->parent->line_id < 4)
-		dectRingHandSet(sub->parent->line_id + 1, sub->parent->line_id, sub->owner->connected.id.number.str);
 
 	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
@@ -411,10 +403,17 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		ast_log(LOG_WARNING, "Not call waiting\n");
 		brcm_subchannel_set_state(sub, RINGING);
 		if (!clip) {
-			brcm_signal_ringing(p);
+			if (sub->parent->line_id < 4)
+				dect_signal_ringing(p);
+			else
+				brcm_signal_ringing(p);
 		} else {
-			brcm_signal_ringing_callerid_pending(p);
-			brcm_signal_callerid(sub);
+			if (sub->parent->line_id < 4) {
+				dect_signal_ringing(p);
+			} else {
+				brcm_signal_ringing_callerid_pending(p);
+				brcm_signal_callerid(sub);
+			}
 		}
 	}
 	ast_mutex_unlock(&sub->parent->lock);
@@ -3498,6 +3497,7 @@ int brcm_stop_callwaiting(const struct brcm_pvt *p)
 	ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_CALLWT, 0, -1, -1, -1);
 	return 0;
 }
+
 
 
 int brcm_signal_ringing(struct brcm_pvt *p)

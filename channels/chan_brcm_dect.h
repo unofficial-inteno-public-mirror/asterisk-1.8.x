@@ -41,6 +41,7 @@ void dectDrvWrite(void *data, int size);
 
 void dectRingHandSet( int destHandset, int dspChannel, char *cid);
 void dect_hangup(int handset);
+int dect_signal_ringing(struct brcm_pvt *p);
 static void connect_cfm(unsigned char *buf);
 static void alert_ind(unsigned char *buf);
 static void connect_ind(unsigned char *buf);
