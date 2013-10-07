@@ -13262,8 +13262,17 @@ static int sip_reg_timeout(const void *data)
 	}
 
 	if (r->dnsmgr) {
+		struct sip_peer *peer;
 		/* If the registration has timed out, maybe the IP changed.  Force a refresh. */
 		ast_dnsmgr_refresh(r->dnsmgr);
+		/* If we are resolving a peer, we have to make sure the refreshed address gets copied */
+		if ((peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0))) {
+			ast_sockaddr_copy(&peer->addr, &r->us);
+			if (r->portno) {
+				ast_sockaddr_set_port(&peer->addr, r->portno);
+			}
+			peer = unref_peer(peer, "unref after find_peer");
+		}
 	}
 
 	/* If the initial tranmission failed, we may not have an existing dialog,
@@ -13400,6 +13409,10 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 			 * ast_dnsmgr_lookup_cb() above, then we call the same function that dnsmgr would
 			 * call if it was updating a peer's address */
 			if ((peer = find_peer(S_OR(r->peername, r->hostname), NULL, TRUE, FINDPEERS, FALSE, 0))) {
+				if (peer->outboundproxy) {
+					proxy_update(peer->outboundproxy);
+				}
+
 				if (ast_sockaddr_cmp(&peer->addr, &r->us)) {
 					on_dns_update_peer(&peer->addr, &r->us, peer);
 				}
