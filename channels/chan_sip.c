@@ -20791,7 +20791,7 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 		r->regstate = REG_STATE_NOAUTH;
 		pvt_set_needdestroy(p, "received 403 response");
 		if (global_reg_forb_timeout > 0) {
-			ast_log(LOG_DEBUG, "Forbidden - retrying in %d secs\n");
+			ast_log(LOG_DEBUG, "Forbidden - retrying in %d secs\n", global_reg_forb_timeout);
 			r->timeout = ast_sched_add(sched, global_reg_forb_timeout * 1000, sip_reg_timeout, registry_addref(r, "reg ptr reffed from handle_response_register_403"));
 			ast_debug(1, "Scheduled a 403 registration timeout for %s id #%d \n", r->hostname, r->timeout);
 		}
