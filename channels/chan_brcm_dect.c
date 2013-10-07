@@ -66,10 +66,12 @@ int dect_signal_callerid(struct brcm_subchannel *s) {
 }
 
 int dect_stop_ringing(struct brcm_pvt *p) {
+	dect_hangup(p->line_id + 1);
 	return 0;
 }
 
 int dect_stop_ringing_callerid_pending(struct brcm_pvt *p) {
+	dect_hangup(p->line_id + 1);
 	return 0;
 }
 
