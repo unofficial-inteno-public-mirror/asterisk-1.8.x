@@ -191,6 +191,8 @@ static COUNTRY_MAP country_map[] =
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
 
+extern struct brcm_channel_tech dect_tech;
+
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
 
@@ -218,6 +220,19 @@ static const struct ast_channel_tech brcm_tech = {
 	.send_digit_end = brcm_senddigit_end,
 	.indicate = brcm_indicate,
 };
+
+
+static struct brcm_channel_tech fxs_tech = {
+	.signal_ringing = brcm_signal_ringing,
+	.signal_ringing_callerid_pending = brcm_signal_ringing_callerid_pending,
+	.signal_callerid = brcm_signal_callerid,
+	.stop_ringing = brcm_stop_ringing,
+	.stop_ringing_callerid_pending = brcm_stop_ringing_callerid_pending,
+};
+
+
+
+
 
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
 {
@@ -403,17 +418,10 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		ast_log(LOG_WARNING, "Not call waiting\n");
 		brcm_subchannel_set_state(sub, RINGING);
 		if (!clip) {
-			if (sub->parent->line_id < 4)
-				dect_signal_ringing(p);
-			else
-				brcm_signal_ringing(p);
+			p->tech->signal_ringing(p);
 		} else {
-			if (sub->parent->line_id < 4) {
-				dect_signal_ringing(p);
-			} else {
-				brcm_signal_ringing_callerid_pending(p);
-				brcm_signal_callerid(sub);
-			}
+			p->tech->signal_ringing_callerid_pending(p);
+			p->tech->signal_callerid(sub);
 		}
 	}
 	ast_mutex_unlock(&sub->parent->lock);
@@ -2022,6 +2030,13 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->last_early_onhook_ts = 0;
 		tmp->endpoint_type = endpoint_type;
 		tmp->dialtone = DIALTONE_UNKNOWN;
+		
+		/* Low level signaling */
+		if (endpoint_type == FXS) {
+			tmp->tech = &fxs_tech;
+		} else if (endpoint_type == DECT) {
+			tmp->tech = &dect_tech;
+		}
 	}
 	return tmp;
 }
@@ -2032,8 +2047,8 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 	struct brcm_pvt *tmp = iflist;
 	struct brcm_pvt *tmp_next;
 
-	for (i=0 ; i<num_endpoints ; i++) {
-		tmp_next = brcm_allocate_pvt("", FXS);
+	for (i=0 ; i<num_dect_endpoints ; i++) {
+		tmp_next = brcm_allocate_pvt("", DECT);
 		if (tmp == NULL) {
 			iflist = tmp_next; //First loop round, set iflist to point at first pvt
 			tmp    = tmp_next;
@@ -2043,6 +2058,13 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 			tmp_next->next = NULL;
 			tmp = tmp_next;
 		}
+	}
+
+	for (i=0; i<num_fxs_endpoints ; i++) {
+		tmp_next = brcm_allocate_pvt("", FXS);
+		tmp->next = tmp_next;
+		tmp_next->next = NULL;
+		tmp = tmp_next;
 	}
 }
 

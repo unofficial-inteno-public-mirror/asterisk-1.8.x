@@ -46,6 +46,34 @@ extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
 
+const struct brcm_channel_tech dect_tech = {
+	.signal_ringing = dect_signal_ringing,
+	.signal_ringing_callerid_pending = dect_signal_ringing_callerid_pending,
+	.signal_callerid = dect_signal_callerid,
+	.stop_ringing = dect_stop_ringing,
+	.stop_ringing_callerid_pending = dect_stop_ringing_callerid_pending,
+};
+
+
+
+int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
+	dect_signal_ringing(p);
+	return 0;
+}
+
+int dect_signal_callerid(struct brcm_subchannel *s) {
+	return 0;
+}
+
+int dect_stop_ringing(struct brcm_pvt *p) {
+	return 0;
+}
+
+int dect_stop_ringing_callerid_pending(struct brcm_pvt *p) {
+	return 0;
+}
+
+
 
 int dect_signal_ringing(struct brcm_pvt *p)
 {

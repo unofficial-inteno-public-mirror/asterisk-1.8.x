@@ -77,6 +77,16 @@ struct brcm_subchannel {
 	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
 };
 
+
+struct brcm_channel_tech {
+	int (* signal_ringing)(struct brcm_pvt *p);
+	int (* signal_ringing_callerid_pending)(struct brcm_pvt *p);
+	int (* signal_callerid)(struct brcm_subchannel *s);
+	int (* stop_ringing)(struct brcm_pvt *p);
+	int (* stop_ringing_callerid_pending)(struct brcm_pvt *p);
+};
+
+
 struct brcm_pvt {
 	ast_mutex_t lock;
 	int fd;							/* Raw file descriptor for this device */
@@ -107,6 +117,7 @@ struct brcm_pvt {
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
 	dialtone_state dialtone;		/* Set by manager command */
+	struct brcm_channel_tech *tech;
 };
 
 enum rtp_type {
