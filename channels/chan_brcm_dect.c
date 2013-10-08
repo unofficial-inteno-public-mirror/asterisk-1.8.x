@@ -45,6 +45,15 @@ char wbCodecList[]={0x01, 0x01, 0x03, 0x00, 0x00, 0x01};
 extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
+#define CID_MAX_LEN 40
+
+struct dect_handset {
+	enum channel_state state;
+	char cid[CID_MAX_LEN];
+};
+
+struct dect_handset handsets[10];
+
 
 const struct brcm_channel_tech dect_tech = {
 	.signal_ringing = dect_signal_ringing,
@@ -62,6 +71,12 @@ int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 }
 
 int dect_signal_callerid(struct brcm_subchannel *s) {
+	
+	int handset = s->parent->line_id + 1;
+	ast_verbose("Caller id: %s\n", s->owner->connected.id.number.str);
+	
+	strncpy(handsets[handset].cid, s->owner->connected.id.number.str, CID_MAX_LEN);
+
 	return 0;
 }
 
@@ -83,7 +98,7 @@ int dect_signal_ringing(struct brcm_pvt *p)
 
 	const char nr[] = "123";
 	ast_verbose("line_id: %d\n", p->line_id); 
-	dectRingHandSet(p->line_id + 1, p->line_id, nr);   //p->sub->owner->connected.id.number.str);
+	dectRingHandSet(p->line_id + 1, p->line_id);
 	return 0;
 }
 
@@ -264,7 +279,94 @@ void dectSetupPingingCall(int handset)
 }
 
 
-void dectRingHandSet( int destHandset, int dspChannel, char *cid) //, int line, int cmCnxId )
+void dectSendClip(char* cid, int handset)
+{
+	unsigned char callingNumLength;
+	unsigned char callingNameLength;
+	ApiCallingNumberType * callingNum = NULL;	
+	unsigned short clipMailLength = 0;
+	ApiFpCcInfoReqType * clipMailPtr = NULL;
+	ApiInfoElementType *clipIeBlockPtr = NULL;
+	unsigned short clipIeBlockLength = 0;
+	unsigned char *queuePtr;
+
+	ast_verbose("dectSendClip:cid %s handset: %d\n", cid, handset);
+
+	/* get lengths of calling name and number */
+	callingNumLength = strlen(cid);
+
+	/**************************************************                                                                          
+	 * create API_IE_CALLING_PARTY_NUMBER infoElement *                                                                          
+	 **************************************************/
+	callingNum = malloc( (sizeof(ApiCallingNumberType) - 1) + callingNumLength );
+
+	if( callingNum != NULL ) {
+
+		callingNum->NumberType        = ANT_NATIONAL;
+		callingNum->Npi               = ANPI_NATIONAL;
+		callingNum->PresentationInd   = API_PRESENTATION_ALLOWED;
+		callingNum->ScreeningInd      = API_USER_PROVIDED_VERIFIED_PASSED;
+		callingNum->NumberLength      = callingNumLength;
+		memcpy( &(callingNum->Number[0]), cid, callingNumLength);
+
+		/* Add to infoElement block */
+		ApiBuildInfoElement( &clipIeBlockPtr,
+				     &clipIeBlockLength,
+				     API_IE_CALLING_PARTY_NUMBER,
+				     (sizeof(ApiCallingNumberType) - 1) + callingNumLength ,
+				     (unsigned char*)callingNum);
+
+		/* free infoElement */
+		free(callingNum);
+	}
+	
+
+	/*****************************************************
+	 * create API_FP_CC_INFO_REQ mail queue element *
+	 *****************************************************/
+	
+	/* Allocate memory for queue element */
+	clipMailLength = ((sizeof(ApiFpCcInfoReqType)-1) + clipIeBlockLength );
+	queuePtr = (unsigned char *) malloc( 2 + clipMailLength );
+
+
+	if (queuePtr != NULL) {
+
+		memset(queuePtr, 0, 2 + clipMailLength);
+		queuePtr[0] = (unsigned char)(clipMailLength >>8);
+		queuePtr[1] = (unsigned char)(clipMailLength & 0x00FF);
+
+		/* Assign mail pointer */
+		clipMailPtr = (ApiFpCcInfoReqType *) (queuePtr + 2);
+		
+
+
+		/* Fillout mail contents */
+		((ApiFpCcInfoReqType *) clipMailPtr)->Primitive                 = API_FP_CC_INFO_REQ;
+		((ApiFpCcInfoReqType *) clipMailPtr)->CallReference.HandsetId   = handset;
+		((ApiFpCcInfoReqType *) clipMailPtr)->ProgressInd = API_PROGRESS_INVALID;
+		((ApiFpCcInfoReqType *) clipMailPtr)->Signal = API_CC_SIGNAL_CUSTOM_NONE;
+
+		/* Copy over infoElements */
+		memcpy( &(((ApiFpCcInfoReqType *) clipMailPtr)->InfoElement[0]), clipIeBlockPtr, clipIeBlockLength );
+
+		ApiFreeInfoElement( &clipIeBlockPtr );
+
+
+		/* Size must be in little endian  */
+		((ApiFpCcInfoReqType *) clipMailPtr)->InfoElementLength = clipIeBlockLength;
+
+		/* Send mail */
+		ast_verbose("OUTPUT: API_FP_CC_INFO_REQ");
+
+		dectDrvWrite(clipMailPtr, clipMailLength);
+		
+		ast_free(queuePtr);
+	}
+}
+
+
+void dectRingHandSet( int destHandset, int dspChannel)
 {
 
 	ApiCcBasicServiceType basicService;
@@ -295,35 +397,6 @@ void dectRingHandSet( int destHandset, int dspChannel, char *cid) //, int line, 
 		basicService = API_BASIC_SPEECH;
 		codecList = (ApiCodecListType *)&nbCodecList[0];
 		codecListLength = SINGLE_CODECLIST_LENGTH;
-	}
-
-
-	/* get lengths of calling name and number */
-	callingNumLength = strlen(cid);
-
-	/**************************************************                                                                          
-	 * create API_IE_CALLING_PARTY_NUMBER infoElement *                                                                          
-	 **************************************************/
-	callingNum = malloc( (sizeof(ApiCallingNumberType) - 1) + callingNumLength );
-
-	if( callingNum != NULL ) {
-
-		callingNum->NumberType        = ANT_NATIONAL;
-		callingNum->Npi               = ANPI_NATIONAL;
-		callingNum->PresentationInd   = API_PRESENTATION_ALLOWED;
-		callingNum->ScreeningInd      = API_USER_PROVIDED_VERIFIED_PASSED;
-		callingNum->NumberLength      = callingNumLength;
-		memcpy( &(callingNum->Number[0]), cid, callingNumLength);
-
-		/* Add to infoElement block */
-		ApiBuildInfoElement( &IeBlockPtr,
-				     &IeBlockLength,
-				     API_IE_CALLING_PARTY_NUMBER,
-				     (sizeof(ApiCallingNumberType) - 1) + callingNumLength ,
-				     (unsigned char*)callingNum);
-
-		/* free infoElement */
-		free(callingNum);
 	}
 
 
@@ -769,19 +842,24 @@ static void alert_ind(unsigned char *buf) {
   
 	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
 	ast_verbose("handset %d ringing\n", handset );
-	
-	/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
-	ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
-	ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
-	ringCcInfoReq->CallReference.HandsetId   = handset;
-	ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
-	ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
-	ringCcInfoReq->InfoElementLength         = 0;
-	dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType));
-	ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n");
 
+	if (handsets[handset].cid[0] != '\0')  {
+		ast_verbose("Signal cid: %s\n", handsets[handset].cid);
+		dectSendClip(handsets[handset].cid, handset);
+		handsets[handset].cid[0] = '\0';
+	} else {
+
+		/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
+		ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
+		ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
+		ringCcInfoReq->CallReference.HandsetId   = handset;
+		ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
+		ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
+		ringCcInfoReq->InfoElementLength         = 0;
+		dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType));
+		ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n");
+	}
 }
-
 
 static init_cfm(unsigned char *buf) {
 
