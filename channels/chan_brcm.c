@@ -3977,6 +3977,9 @@ int brcm_create_connection(struct brcm_subchannel *p) {
 
 static int brcm_mute_connection(struct brcm_subchannel *sub)
 {
+	/* Workaround for AA. Unmuting is not working. Throw away packets in packets thread instead */
+	return 0;
+
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
 	ast_verbose("Mute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
@@ -3997,6 +4000,9 @@ static int brcm_mute_connection(struct brcm_subchannel *sub)
 
 static int brcm_unmute_connection(struct brcm_subchannel *sub)
 {
+	/* Workaround for AA. Unmuting is not working. Throw away packets in packets thread instead */
+	return 0;
+
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
 	ast_verbose("Unmute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
