@@ -17060,6 +17060,7 @@ static const struct _map_x_s dtmfstr[] = {
 	{ SIP_DTMF_SHORTINFO,   "shortinfo" },
 	{ SIP_DTMF_INBAND,      "inband" },
 	{ SIP_DTMF_AUTO,        "auto" },
+	{ SIP_DTMF_COMPAT,	"compatibility" },
 	{ -1,                   NULL }, /* terminator */
 };
 
@@ -26885,6 +26886,8 @@ static int handle_common_options(struct ast_flags *flags, struct ast_flags *mask
 			ast_set_flag(&flags[0], SIP_DTMF_SHORTINFO);
 		else if (!strcasecmp(v->value, "auto"))
 			ast_set_flag(&flags[0], SIP_DTMF_AUTO);
+		else if (!strcasecmp(v->value, "compatibility"))
+			ast_set_flag(&flags[0], SIP_DTMF_COMPAT);
 		else {
 			ast_log(LOG_WARNING, "Unknown dtmf mode '%s' on line %d, using rfc2833\n", v->value, v->lineno);
 			ast_set_flag(&flags[0], SIP_DTMF_RFC2833);

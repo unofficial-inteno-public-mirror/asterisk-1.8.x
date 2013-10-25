@@ -255,12 +255,13 @@
 #define SIP_USECLIENTCODE   (1 << 14) /*!< DP: Trust X-ClientCode info message */
 
 /* DTMF flags - see str2dtmfmode() and dtmfmode2str() */
-#define SIP_DTMF            (7 << 15) /*!< DP: DTMF Support: five settings, uses three bits */
+#define SIP_DTMF            (7 << 15) /*!< DP: DTMF Support: six settings, uses three bits */
 #define SIP_DTMF_RFC2833    (0 << 15) /*!< DP: DTMF Support: RTP DTMF - "rfc2833" */
 #define SIP_DTMF_INBAND     (1 << 15) /*!< DP: DTMF Support: Inband audio, only for ULAW/ALAW - "inband" */
 #define SIP_DTMF_INFO       (2 << 15) /*!< DP: DTMF Support: SIP Info messages - "info" */
 #define SIP_DTMF_AUTO       (3 << 15) /*!< DP: DTMF Support: AUTO switch between rfc2833 and in-band DTMF */
 #define SIP_DTMF_SHORTINFO  (4 << 15) /*!< DP: DTMF Support: SIP Info messages - "info" - short variant */
+#define SIP_DTMF_COMPAT	    (5 << 15) /*!< DP: DTMF Support: Inband passthrough mode */
 
 /* NAT settings */
 #define SIP_NAT_FORCE_RPORT     (1 << 18) /*!< DP: Force rport even if not present in the request */
