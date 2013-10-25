@@ -184,6 +184,7 @@ typedef struct {
 	int rxgain;
 	int dtmf_relay;
 	int dtmf_short;
+	int dtmf_compatibility;
 	int codec_list[6];
 	int codec_nr;
 	format_t capability;

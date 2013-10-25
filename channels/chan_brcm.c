@@ -1491,13 +1491,16 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 					brcm_in_onhold(p));
 			}
 		} else if (sub->channel_state == INCALL || sub->channel_state == CALLING) {
-			ast_channel_lock(sub->owner);
-			struct ast_frame f = { 0, };
-			f.subclass.integer = dtmf_button;
-			f.src = "BRCM";
-			f.frametype = AST_FRAME_DTMF_END;
-			ast_queue_frame(sub->owner, &f);
-			ast_channel_unlock(sub->owner);
+			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
+			if (!dtmf_compatibility) {
+				ast_channel_lock(sub->owner);
+				struct ast_frame f = { 0, };
+				f.subclass.integer = dtmf_button;
+				f.src = "BRCM";
+				f.frametype = AST_FRAME_DTMF_END;
+				ast_queue_frame(sub->owner, &f);
+				ast_channel_unlock(sub->owner);
+			}
 			p->dtmf_first = -1;
 		}
 		else {
@@ -2339,6 +2342,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
 		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
 		ast_cli(a->fd, "DTMF short          : %s\n", s->dtmf_short ? "on" : "off");
+		ast_cli(a->fd, "DTMF compatibility  : %s\n", s->dtmf_compatibility ? "on" : "off");
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
 
 		ast_cli(a->fd, "DTMF relay          : ");
@@ -3039,6 +3043,7 @@ static line_settings line_settings_create(void)
 		.rxgain = GAIN_DEFAULT,
 		.dtmf_relay = EPDTMFRFC2833_DISABLED,
 		.dtmf_short = 1,
+		.dtmf_compatibility = 1,
 		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
 		.codec_nr = 2,
 		.rtp_payload_list = {RTP_PAYLOAD_PCMA, RTP_PAYLOAD_PCMU, -1, -1, -1, -1},
@@ -3105,6 +3110,8 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 			line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			line_config->dtmf_short = ast_true(v->value)?1:0;
+		} else if (!strcasecmp(v->name, "dtmfcompatibility")) {
+			line_config->dtmf_compatibility = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "allow")) {
 			if (!capability_set) {
 				line_config->capability = 0; //Clear default capability
