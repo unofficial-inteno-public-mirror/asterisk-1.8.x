@@ -94,6 +94,7 @@ endif
 BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx
 
 
+
 chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= \
 	-I$(STAGING_DIR)/usr/include/natalie-dect/ \
 	-I$(STAGING_DIR)/usr/include/natalie-dect/Phoenix  \

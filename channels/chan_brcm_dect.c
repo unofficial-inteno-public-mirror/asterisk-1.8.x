@@ -27,14 +27,37 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/manager.h"
 #include "asterisk/sched.h"
 
-#include <ApiFpProject.h>
-#include <dectUtils.h>
+/* #include <ApiFpProject.h> */
+/* #include <dectUtils.h> */
 #include <dectshimdrv.h>
-#include <dectNvsCtl.h>
+/* #include <dectNvsCtl.h> */
+
+#include <Api/CodecList/ApiCodecList.h>
+#include <Api/FpCc/ApiFpCc.h>
+//#include <Api/FpFwu/ApiFpFwu.h>
+#include <Api/FpMm/ApiFpMm.h>
+#include <Api/FpNoEmission/ApiFpNoEmission.h>
+#include <Api/GenEveNot/ApiGenEveNot.h>
+#include <Api/Las/ApiLas.h>
+#include <Api/Linux/ApiLinux.h>
+//#include <Api/Project/ApiProject.h>
+
 
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
+
+#define DECT_NVS_SIZE 4096
+#define API_LINUX_MAX_MAIL_SIZE 0x100
+
+
+typedef struct
+{
+	unsigned short offset;
+	unsigned short nvsDataLength;
+	unsigned char* nvsDataPtr;
+
+} DECT_NVS_DATA;
 
 int s;
 
@@ -244,10 +267,10 @@ void dectSetupPingingCall(int handset)
 				{
 					/* Fillout mail contents */
 					((ApiFpCcSetupReqType *) pingMailPtr)->Primitive    = API_FP_CC_SETUP_REQ;
-					((ApiFpCcSetupReqType *) pingMailPtr)->CallReference.HandsetId = handset;
+					((ApiFpCcSetupReqType *) pingMailPtr)->TerminalId = handset;
 					((ApiFpCcSetupReqType *) pingMailPtr)->BasicService = API_BASIC_SPEECH;
 					((ApiFpCcSetupReqType *) pingMailPtr)->CallClass    = API_CC_NORMAL;
-					((ApiFpCcSetupReqType *) pingMailPtr)->SourceId     = 0; /* 0 is the base station id */
+					((ApiFpCcSetupReqType *) pingMailPtr)->AudioId.SourceTerminalId     = 0; /* 0 is the base station id */
 					((ApiFpCcSetupReqType *) pingMailPtr)->Signal       = API_CC_SIGNAL_ALERT_ON_PATTERN_2;
 
 					/* Copy over infoElements */
@@ -289,6 +312,26 @@ void dectSendClip(char* cid, int handset)
 	ApiInfoElementType *clipIeBlockPtr = NULL;
 	unsigned short clipIeBlockLength = 0;
 	unsigned char *queuePtr;
+	ApiCallingNumberType * callingNum = NULL;
+
+
+	ast_verbose("dectRingHandSet\n");
+	
+	/* Initialize block variables */
+	IeBlockPtr    = NULL;
+	IeBlockLength = 0;
+   
+
+	if (1) {
+		basicService = API_WIDEBAND_SPEECH;
+		codecList = (ApiCodecListType *)&nbwbCodecList[0];
+		codecListLength = NBWB_CODECLIST_LENGTH;
+	} else 	{
+		basicService = API_BASIC_SPEECH;
+		codecList = (ApiCodecListType *)&nbCodecList[0];
+		codecListLength = SINGLE_CODECLIST_LENGTH;
+	}
+
 
 	ast_verbose("dectSendClip:cid %s handset: %d\n", cid, handset);
 
@@ -437,10 +480,10 @@ void dectRingHandSet( int destHandset, int dspChannel)
 
 		if(newMailPtr != NULL) {
 			((ApiFpCcSetupReqType *) newMailPtr)->Primitive = API_FP_CC_SETUP_REQ;
-			((ApiFpCcSetupReqType *) newMailPtr)->CallReference.HandsetId  = destHandset;
+			((ApiFpCcSetupReqType *) newMailPtr)->TerminalId = destHandset;
 			((ApiFpCcSetupReqType *) newMailPtr)->BasicService = basicService;
 			((ApiFpCcSetupReqType *) newMailPtr)->CallClass = API_CC_NORMAL;
-			((ApiFpCcSetupReqType *) newMailPtr)->SourceId = dspChannel;
+			((ApiFpCcSetupReqType *) newMailPtr)->AudioId.SourceTerminalId = dspChannel;
 			((ApiFpCcSetupReqType *) newMailPtr)->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
 
 		/* Copy over infoElements */
@@ -573,13 +616,13 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 	int newMailSize;
 	ApiCalledNumberType * calledNumber;
 	ApiSystemCallIdType *callIdPtr;
-	ApiHandsetIdType handset;
+	int handset;
 	int endpt_id;
 
 
 	IeBlockPtr = (ApiInfoElementType *)&(((ApiFpCcSetupIndType*) MailPtr)->InfoElement[0]);
 	ast_verbose("DECT: API_FP_CC_SETUP_IND\n");
-	handset = ((ApiFpCcSetupIndType*) MailPtr)->CallReference.HandsetId;
+	handset = ((ApiFpCcSetupIndType*) MailPtr)->TerminalId;
 	ast_verbose("handset: %d\n", (int) handset);
 	
 	/* Quick fix */
@@ -659,7 +702,6 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 		if (newMailPtr != NULL) {
 
 			((ApiFpCcConnectReqType *) newMailPtr)->Primitive = API_FP_CC_CONNECT_REQ;
-			((ApiFpCcConnectReqType *) newMailPtr)->CallReference.HandsetId = handset;
 	 
 			/* Copy over infoElements */
 			memcpy( &(((ApiFpCcConnectReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength );
@@ -679,13 +721,13 @@ static void dect_setup_ind(unsigned char *MailPtr) {
 
 static void dect_release_ind(unsigned char *buf) {
 
-	ApiHandsetIdType handset;
+	int handset;
 	unsigned char o_buf[5];
   
 	ast_verbose("DECT: API_FP_CC_RELEASE_IND\n");
 
 	/* Signal onhook to endpoint */
-	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 
 	/* write endpoint id to device */
@@ -704,13 +746,12 @@ static void dect_release_ind(unsigned char *buf) {
 
 static void dect_release_cfm(unsigned char *buf) {
 
-	ApiHandsetIdType handset;
+	int handset;
 	unsigned char o_buf[5];
   
 	ast_verbose("DECT: API_FP_CC_RELEASE_CFM\n");
 
 	/* Signal onhook to endpoint */
-	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 
 }
@@ -801,17 +842,15 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 
 static void dect_info_ind(unsigned char *MailPtr) {
 	
-	ApiHandsetIdType handset;
+	int handset;
 	ApiInfoElementType *ccInfoInd_IeBlockPtr  = (ApiInfoElementType *)&(((ApiFpCcInfoIndType*) MailPtr)->InfoElement[0]);
 	unsigned short ccInfoInd_IeBlockLength    = ((ApiFpCcInfoIndType*) MailPtr)->InfoElementLength;
 	ApiInfoElementType* ccInfoInd_IePtr       = NULL;
 
 
-	ast_verbose("INPUT: API_FP_CC_INFO_IND:\n");
+	ast_verbose("INPUT: API_FP_CC_INFO_IND\n");
 
-
-
-	handset = ((ApiFpCcInfoIndType*) MailPtr)->CallReference.HandsetId;
+	/* handset = ((ApiFpCcInfoIndType*) MailPtr)->CallReference.HandsetId; */
 
 	if( (((ApiFpCcInfoIndType*) MailPtr)->InfoElementLength > 0) ) {
 
@@ -829,19 +868,30 @@ static void dect_info_ind(unsigned char *MailPtr) {
 
 static void connect_cfm(unsigned char *buf) {  
 
-	ApiHandsetIdType handset;
+	int handset;
   
-	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 	ast_verbose("Connected to handset %d\n", handset );
 }
 
 
 static void alert_ind(unsigned char *buf) {
 
-	ApiHandsetIdType handset;
+	int handset;
   
-	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 	ast_verbose("handset %d ringing\n", handset );
+	
+	/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
+	ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
+	ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
+	/* ringCcInfoReq->TerminalId;               = handset; */
+	ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
+	ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
+	ringCcInfoReq->InfoElementLength         = 0;
+	dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType));
+	ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n");
+
 
 	if (handsets[handset].cid[0] != '\0')  {
 		ast_verbose("Signal cid: %s\n", handsets[handset].cid);
@@ -893,12 +943,12 @@ static init_cfm(unsigned char *buf) {
 
 static void connect_ind(unsigned char *buf) {
 
-	ApiHandsetIdType handset;
+	int handset;
   	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	unsigned char o_buf[5];
 
-	handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId;
+	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 
 	/* Signal offhook to endpoint */
 	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
@@ -952,7 +1002,7 @@ static void handset_present_ind(unsigned char *mail)
 	
 	int handset;
 
-	handset = ((ApiFpMmHandsetPresentIndType*) mail)->HandsetId;
+	handset = ((ApiFpMmHandsetPresentIndType*) mail)->TerminalId;
 	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d)\n", handset);
 
 	
@@ -984,7 +1034,7 @@ static void handle_data(unsigned char *buf) {
 
 	RosPrimitiveType primitive;
 	
-	primitive = ((recDataType *) buf)->PrimitiveIdentifier;
+	primitive = ((ApifpccEmptySignalType *) buf)->Primitive;
 
 	switch (primitive) {
 
@@ -1035,8 +1085,8 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_MM_REGISTRATION_COMPLETE_IND\n");
 		break;
 
-	case API_FP_LINUX_INIT_CFM:
-		ast_verbose("API_FP_LINUX_INIT_CFM\n");
+	case API_LINUX_INIT_CFM:
+		ast_verbose("API_LINUX_INIT_CFM\n");
 		init_cfm(buf);
 		break;
 
@@ -1045,7 +1095,7 @@ static void handle_data(unsigned char *buf) {
 		alert_ind(buf);
 		break;
 
-	case API_FP_LINUX_NVS_UPDATE_IND:
+	case API_LINUX_NVS_UPDATE_IND:
 		ast_verbose("API_FP_LINUX_NVS_UPDATE_IND\n");
 		nvs_update_ind(buf);
 		break;
@@ -1073,12 +1123,12 @@ static void handle_data(unsigned char *buf) {
 static void nvs_update_ind(unsigned char *mail)
 {
 	int fd, ret;
-	unsigned char buf[API_FP_LINUX_NVS_SIZE];
+	unsigned char buf[DECT_NVS_SIZE];
 	DECT_NVS_DATA nvs;
 
-	nvs.offset = ((ApiFpLinuxNvsUpdateIndType *) mail)->NvsOffset;
-	nvs.nvsDataLength = ((ApiFpLinuxNvsUpdateIndType *) mail)->NvsDataLength;
-	nvs.nvsDataPtr = (unsigned char *)&((ApiFpLinuxNvsUpdateIndType *) mail)->NvsData;
+	nvs.offset = ((ApiLinuxNvsUpdateIndType *) mail)->NvsOffset;
+	nvs.nvsDataLength = ((ApiLinuxNvsUpdateIndType *) mail)->NvsDataLength;
+	nvs.nvsDataPtr = (unsigned char *)&((ApiLinuxNvsUpdateIndType *) mail)->NvsData;
 
 	fd = open("/etc/dect/nvs", O_RDWR);
 	if (fd == -1) {
@@ -1086,7 +1136,7 @@ static void nvs_update_ind(unsigned char *mail)
 		exit(EXIT_FAILURE);
 	}
 
-	if (nvs.offset + nvs.nvsDataLength > API_FP_LINUX_NVS_SIZE) {
+	if (nvs.offset + nvs.nvsDataLength > DECT_NVS_SIZE) {
 		ast_verbose("Error: Invalid nvs update packet\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1128,7 +1178,7 @@ static void nvs_get_data( unsigned char *pNvsData )
 		exit(EXIT_FAILURE);
 	}
 
-	ret = read(fd, pNvsData, API_FP_LINUX_NVS_SIZE);
+	ret = read(fd, pNvsData, DECT_NVS_SIZE);
 	if (ret == -1) {
 		perror("read");
 		exit(EXIT_FAILURE);
@@ -1148,7 +1198,7 @@ static void nvs_get_data( unsigned char *pNvsData )
 static int dect_init(void)
 {
 	int fd, r;
-	ApiFpLinuxInitReqType *t = NULL;
+	ApiLinuxInitReqType *t = NULL;
 	DECTSHIMDRV_INIT_PARAM parm;
 
 
@@ -1167,14 +1217,14 @@ static int dect_init(void)
 
 	close(fd);
   
-	ast_verbose("sizeof(ApiFpLinuxInitReqType): %d\n", sizeof(ApiFpLinuxInitReqType));
+	ast_verbose("sizeof(ApiLinuxInitReqType): %d\n", sizeof(ApiLinuxInitReqType));
 
 	/* download the eeprom values to the DECT driver*/
-	t = (ApiFpLinuxInitReqType*) malloc(sizeof(ApiFpLinuxInitReqType));
-	t->Primitive = API_FP_LINUX_INIT_REQ;
-	nvs_get_data(t->NvsData);
+	t = (ApiLinuxInitReqType*) malloc(sizeof(ApiLinuxInitReqType));
+	t->Primitive = API_LINUX_INIT_REQ;
+	nvs_get_data(t->Data);
 
-	dectDrvWrite(t, sizeof(ApiFpLinuxInitReqType));
+	dectDrvWrite(t, sizeof(ApiLinuxInitReqType));
 	
 
 	return r;
@@ -1220,7 +1270,7 @@ void *brcm_monitor_dect(void *data) {
   
 	int len, i, res;
 	struct sockaddr_in remote_addr;
-	unsigned char buf[API_FP_LINUX_MAX_MAIL_SIZE];
+	unsigned char buf[API_LINUX_MAX_MAIL_SIZE];
 	int fdmax, pkt_len;
 	fd_set rd_fdset;
 	fd_set rfds;
