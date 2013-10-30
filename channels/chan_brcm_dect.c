@@ -1201,7 +1201,7 @@ static int dect_init(void)
 	ApiLinuxInitReqType *t = NULL;
 	DECTSHIMDRV_INIT_PARAM parm;
 
-
+	
 	fd = open("/dev/dectshim", O_RDWR);
   
 	if (fd == -1) {
@@ -1220,11 +1220,12 @@ static int dect_init(void)
 	ast_verbose("sizeof(ApiLinuxInitReqType): %d\n", sizeof(ApiLinuxInitReqType));
 
 	/* download the eeprom values to the DECT driver*/
-	t = (ApiLinuxInitReqType*) malloc(sizeof(ApiLinuxInitReqType));
+	t = (ApiLinuxInitReqType*) malloc(RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE);
 	t->Primitive = API_LINUX_INIT_REQ;
+	t->LengthOfData = DECT_NVS_SIZE;
 	nvs_get_data(t->Data);
 
-	dectDrvWrite(t, sizeof(ApiLinuxInitReqType));
+	dectDrvWrite(t, RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE);
 	
 
 	return r;
