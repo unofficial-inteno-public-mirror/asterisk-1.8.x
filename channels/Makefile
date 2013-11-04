@@ -95,9 +95,11 @@ BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx
 
 
 
+
 chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= \
 	-I$(STAGING_DIR)/usr/include/natalie-dect/ \
 	-I$(STAGING_DIR)/usr/include/natalie-dect/Phoenix  \
+	-DRS_ENDIAN_TYPE=RS_BIG_ENDIAN \
 	-I$(BRCM_DIR)/bcmdrivers/broadcom/include/bcm963xx/ \
 	-I$(BRCM_DIR)/bcmdrivers/opensource/include/bcm963xx/ \
 	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/endpt/inc/ \

@@ -46,6 +46,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
+void dectSendClip(char* cid, int handset);
 
 #define DECT_NVS_SIZE 4096
 #define API_LINUX_MAX_MAIL_SIZE 0x100
@@ -306,13 +307,17 @@ void dectSendClip(char* cid, int handset)
 {
 	unsigned char callingNumLength;
 	unsigned char callingNameLength;
-	ApiCallingNumberType * callingNum = NULL;	
 	unsigned short clipMailLength = 0;
 	ApiFpCcInfoReqType * clipMailPtr = NULL;
 	ApiInfoElementType *clipIeBlockPtr = NULL;
 	unsigned short clipIeBlockLength = 0;
 	unsigned char *queuePtr;
 	ApiCallingNumberType * callingNum = NULL;
+	ApiCodecListType* codecList = NULL;
+	ApiInfoElementType *IeBlockPtr;
+	unsigned char codecListLength;
+	unsigned short IeBlockLength;
+	ApiCcBasicServiceType basicService;
 
 
 	ast_verbose("dectRingHandSet\n");
@@ -386,7 +391,7 @@ void dectSendClip(char* cid, int handset)
 
 		/* Fillout mail contents */
 		((ApiFpCcInfoReqType *) clipMailPtr)->Primitive                 = API_FP_CC_INFO_REQ;
-		((ApiFpCcInfoReqType *) clipMailPtr)->CallReference.HandsetId   = handset;
+		/* ((ApiFpCcInfoReqType *) clipMailPtr)->TerminalId   = handset; */
 		((ApiFpCcInfoReqType *) clipMailPtr)->ProgressInd = API_PROGRESS_INVALID;
 		((ApiFpCcInfoReqType *) clipMailPtr)->Signal = API_CC_SIGNAL_CUSTOM_NONE;
 
@@ -902,7 +907,7 @@ static void alert_ind(unsigned char *buf) {
 		/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
 		ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
 		ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
-		ringCcInfoReq->CallReference.HandsetId   = handset;
+		/* ringCcInfoReq->CallReference.HandsetId   = handset; */
 		ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
 		ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
 		ringCcInfoReq->InfoElementLength         = 0;
@@ -917,6 +922,8 @@ static init_cfm(unsigned char *buf) {
 	EPCMD_PARMS    consoleCmdParams;
 	int i;
 	unsigned char o_buf[3];
+	
+	ApiFpCcFeaturesReqType *t = NULL;
 
 	/* Dect stack initialized */
 	/* Initialize dect procesing in enpoint driver */
@@ -931,13 +938,22 @@ static init_cfm(unsigned char *buf) {
 	/* } */
 
 
-	/* write endpoint id to device */
-	*(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0);
-	*(o_buf + 2) = 0;
+	t = (ApiFpCcFeaturesReqType*) malloc(sizeof(ApiFpCcFeaturesReqType));
 
-	ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n");
-	dectDrvWrite(o_buf, 3);
+	t->Primitive = API_FP_CC_FEATURES_REQ;
+	t->ApiFpCcFeature = API_FP_CC_EXTENDED_TERMINAL_ID_SUPPORT;
+
+	dectDrvWrite(t, sizeof(ApiFpCcFeaturesReqType));
+	free(t);
+
+
+	/* write endpoint id to device */
+	/* *(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8); */
+	/* *(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0); */
+	/* *(o_buf + 2) = 0; */
+
+	/* ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n"); */
+	/* dectDrvWrite(o_buf, 3); */
 }
 
 
@@ -996,9 +1012,24 @@ static void connect_ind(unsigned char *buf) {
 
 }
 
+static void features_cfm(void)
+{
+	unsigned char o_buf[3];
+
+
+	*(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8);
+	*(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0);
+	*(o_buf + 2) = 0;
+
+	ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n");
+	dectDrvWrite(o_buf, 3);
+
+}
+
 
 static void handset_present_ind(unsigned char *mail)
 {
+	ApiFpMmHandsetPresentIndType *t = NULL;
 	
 	int handset;
 
@@ -1017,14 +1048,6 @@ static void handset_present_ind(unsigned char *mail)
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) {
 		dectDumpHsetCodecList( IePtr );
 	}
-
-
-
-
-
-
-
-
 
 }
 
@@ -1107,6 +1130,12 @@ static void handle_data(unsigned char *buf) {
 	case API_FP_MM_GET_HANDSET_IPUI_CFM:
 		ast_verbose("API_FP_MM_GET_HANDSET_IPUI_CFM\n");
 		break;
+
+	case API_FP_CC_FEATURES_CFM:
+		ast_verbose("API_FP_CC_FEATURES_CFM\n");
+		features_cfm();
+		break;
+
 
 	default:
 		ast_verbose("dect event unknown\n");
