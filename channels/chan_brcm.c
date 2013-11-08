@@ -1225,14 +1225,14 @@ static void handle_hookflash(struct brcm_pvt *p)
 	struct brcm_subchannel* active_sub;
 	struct brcm_subchannel* sub;
 	switch (p->dtmf_first) {
-		/* Force busy on waiting call*/
+		/* Force busy on waiting call or hang up call on hold */
 		case '0':
 			if (brcm_in_call(p) && brcm_in_callwaiting(p)) {
 				ast_log(LOG_DEBUG, "Sending busy to waiting call\n");
 
 				sub = brcm_get_callwaiting_subchannel(p);
 				if (!sub) {
-					ast_log(LOG_WARNING, "Failed to get vall waiting subchannel\n");
+					ast_log(LOG_WARNING, "Failed to get call waiting subchannel\n");
 					break;
 				}
 				if (ast_sched_del(sched, sub->cw_timer_id)) {
@@ -1242,6 +1242,20 @@ static void handle_hookflash(struct brcm_pvt *p)
 
 				sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
 				ast_queue_control(sub->owner, AST_CONTROL_BUSY);
+			} else if (brcm_in_call(p) && brcm_in_onhold(p)) {
+				ast_log(LOG_DEBUG, "Hanging up call on hold\n");
+
+				sub = brcm_get_onhold_subchannel(p);
+				if (!sub) {
+					ast_log(LOG_WARNING, "Failed to get on hold subchannel}n");
+					break;
+				}
+
+				brcm_close_connection(sub);
+				if (sub->owner) {
+					ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
+				}
+				brcm_subchannel_set_state(sub, CALLENDED);
 			}
 			break;
 
