@@ -316,6 +316,10 @@ static int brcm_finish_transfer(struct brcm_subchannel *p, int result)
 			//Do nothing. Let calls be up as they were before R4 was attempted (first call on hold, second call active)
 			ast_log(LOG_NOTICE, "Remote transfer failed\n");
 			brcm_subchannel_set_state(p, INCALL);
+
+			//Asterisk jitter buffer causes one way audio when going from unhold.
+			//This is a workaround until jitter buffer is handled by DSP.
+			ast_jb_destroy(p->owner);
 		}
 
 	} else {
