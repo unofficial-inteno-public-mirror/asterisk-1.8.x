@@ -66,6 +66,8 @@ char nbwbCodecList[NBWB_CODECLIST_LENGTH]={0x01, 0x02, 0x03, 0x00, 0x00, 0x01, 0
 char nbCodecList[]={0x01, 0x01, 0x02, 0x00, 0x00, 0x04};
 char wbCodecList[]={0x01, 0x01, 0x03, 0x00, 0x00, 0x01};
 
+
+
 extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
@@ -74,6 +76,7 @@ extern struct brcm_pvt *iflist;
 struct dect_handset {
 	enum channel_state state;
 	char cid[CID_MAX_LEN];
+	ApiCallReferenceType CallReference;
 };
 
 struct dect_handset handsets[10];
@@ -728,22 +731,33 @@ static void dect_release_ind(unsigned char *buf) {
 
 	int handset;
 	unsigned char o_buf[5];
-  
+	
+	ApiFpCcReleaseIndType *m = (ApiFpCcReleaseIndType *)buf;
+	
+	ApiFpCcReleaseResType* r = (ApiFpCcReleaseResType*) malloc(sizeof(ApiFpCcReleaseResType));
+
+
+	r->Primitive = API_FP_CC_RELEASE_RES;
+	r->CallReference = m->CallReference;
+	r->Status = RSS_SUCCESS;
+	r->InfoElementLength = 0;
+	r->InfoElement[1] = NULL;
+
 	ast_verbose("DECT: API_FP_CC_RELEASE_IND\n");
 
 	/* Signal onhook to endpoint */
 	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
-	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
+	//vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 
 	/* write endpoint id to device */
-	*(o_buf + 0) = ((API_FP_CC_RELEASE_RES & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_CC_RELEASE_RES & 0x00ff) >> 0);
-	*(o_buf + 2) = handset;
-	*(o_buf + 3) = 0;
-	*(o_buf + 4) = 0;
+	/* *(o_buf + 0) = ((API_FP_CC_RELEASE_RES & 0xff00) >> 8); */
+	/* *(o_buf + 1) = ((API_FP_CC_RELEASE_RES & 0x00ff) >> 0); */
+	/* *(o_buf + 2) = handset; */
+	/* *(o_buf + 3) = 0; */
+	/* *(o_buf + 4) = 0; */
 
-	printf("API_FP_CC_RELEASE_RES\n");
-	dectDrvWrite(o_buf, 5);
+	ast_verbose("API_FP_CC_RELEASE_RES\n");
+	dectDrvWrite(r, sizeof(ApiFpCcReleaseResType));
 
 }
 
@@ -869,6 +883,16 @@ static void dect_info_ind(unsigned char *MailPtr) {
 
 
 
+static void setup_cfm(unsigned char *buf) {
+
+	ApiFpCcSetupResType *m = (ApiFpCcSetupResType *)buf;
+	int handset = m->CallReference.Instance.Fp;
+
+	ast_verbose("handset %d\n",  handset);
+	
+	handsets[handset].CallReference = m->CallReference;
+}
+
 
 
 static void connect_cfm(unsigned char *buf) {  
@@ -963,27 +987,47 @@ static void connect_ind(unsigned char *buf) {
   	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	unsigned char o_buf[5];
+	ApiFpCcConnectIndType *m;
+	ApiCallReferenceType CallReference;
+	ApiFpCcConnectResType *r;
 
+	m = (ApiFpCcConnectIndType*) buf;
+	CallReference = m->CallReference;
+	handset = CallReference.Instance.Fp;
+	
 	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 
 	/* Signal offhook to endpoint */
-	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	//vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 
-	ast_verbose("Handset %d answered\n", handset);
+	ast_verbose("ndset %d answered\n", handset);
 
 	//cmsLog_notice("OUTPUT: API_FP_CC_CONNECT_RES");                                                                                             
 	//BUSM_SendMailP2NoInfoElements(0, USER_TASK, API_FP_CC_CONNECT_RES, handset , RSS_SUCCESS); 
+	
+	ast_verbose("CallReference.Instance.Fp: %d\n", CallReference.Instance.Fp);
+	ast_verbose("CallReference.Instance.Host: %d\n", CallReference.Instance.Host);
+
+
+	r = (ApiFpCcConnectResType *) malloc(sizeof(ApiFpCcConnectResType));
+	r->Primitive = API_FP_CC_CONNECT_RES;
+	r->CallReference = CallReference;
+	r->Status = RSS_SUCCESS;
+	r->InfoElementLength = 0;
+	r->InfoElement[1] = NULL;
+
+					     
 
 
 	/* write endpoint id to device */
-	*(o_buf + 0) = ((API_FP_CC_CONNECT_RES & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_CC_CONNECT_RES & 0x00ff) >> 0);
-	*(o_buf + 2) = handset;
-	*(o_buf + 3) = 0;
-	*(o_buf + 4) = handset - 1; /* endpoint id */
+	/* *(o_buf + 0) = ((API_FP_CC_CONNECT_RES & 0xff00) >> 8); */
+	/* *(o_buf + 1) = ((API_FP_CC_CONNECT_RES & 0x00ff) >> 0); */
+	/* *(o_buf + 2) = handset; */
+	/* *(o_buf + 3) = 0; */
+	/* *(o_buf + 4) = handset - 1; /\* endpoint id *\/ */
 
 	ast_verbose("API_FP_CC_CONNECT_RES\n");
-	dectDrvWrite(o_buf, 5);
+	dectDrvWrite(r, sizeof(ApiFpCcConnectResType));
 
 	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
 	if (!p)
@@ -1108,6 +1152,11 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_MM_REGISTRATION_COMPLETE_IND\n");
 		break;
 
+	case API_FP_CC_SETUP_CFM:
+		ast_verbose("API_FP_CC_SETUP_CFM\n");
+		setup_cfm(buf);
+		break;
+
 	case API_LINUX_INIT_CFM:
 		ast_verbose("API_LINUX_INIT_CFM\n");
 		init_cfm(buf);
@@ -1115,7 +1164,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_ALERT_IND:
 		ast_verbose("API_FP_CC_ALERT_IND\n");
-		alert_ind(buf);
+		//alert_ind(buf);
 		break;
 
 	case API_LINUX_NVS_UPDATE_IND:
