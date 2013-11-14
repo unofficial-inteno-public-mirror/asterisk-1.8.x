@@ -586,8 +586,9 @@ ApiGetInfoElement(ApiInfoElementType *IeBlockPtr,
 	   list while all arguments to function are in bigEndian */
 	ApiInfoElementType *pIe = NULL;
 	rsuint16 targetIe = Ie;  
-
+	ast_verbose("ApiGetInfoElement\n");
 	while (NULL != (pIe = ApiGetNextInfoElement(IeBlockPtr, IeBlockLength, pIe))) {
+		ast_verbose("Ie: %x\n", pIe->Ie);
 		if (pIe->Ie == targetIe) {
 			/* Return the pointer to the info element found */
 			return pIe; 
@@ -675,6 +676,11 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 
 	ast_verbose("dectconf: int call reference %x\n", CallReferenceInitiating.Value);
 	ast_verbose("dectconf: int call from %x\n", TerminalIdInitiating);
+
+	ast_verbose("CallReferenceReceiving.Instance.Host: %d\n", CallReferenceInitiating.Instance.Host);
+	ast_verbose("CallReferenceReceiving.Instance.Fp: %d\n", CallReferenceInitiating.Instance.Fp);
+	
+	CallReferenceInitiating.Instance.Fp = handset;
 
 	
 	/* Quick fix */
@@ -866,7 +872,7 @@ void dect_hangup(int handset) {
 
 
 static void 
-dectProcessCCKeyPadInfo(unsigned char handset,
+process_keypad_info(unsigned char handset,
 			ApiInfoElementType* IeBlockPtr,
 			unsigned short IeBlockLength )
 {
@@ -877,6 +883,7 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
    
+	
 	if ((IeBlockPtr == NULL) || (IeBlockLength == 0))
 		return;
 
@@ -889,7 +896,6 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 		/* no keypad info, should not come in here */
 		return;
 	}
-
 	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
 
 	for (i = 0; i < keyPadLen; i++) {
@@ -907,7 +913,6 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 
 		ast_mutex_lock(&p->lock);
 		sub = brcm_get_active_subchannel(p);
-
 		if (!sub) {
 			ast_mutex_unlock(&p->lock);
 		} else {
@@ -927,25 +932,22 @@ dectProcessCCKeyPadInfo(unsigned char handset,
 	}
 }
 
-static void dect_info_ind(unsigned char *MailPtr) {
+static void dect_info_ind(ApiFpCcInfoIndType *m) {
 	
-	int handset;
-	ApiInfoElementType *ccInfoInd_IeBlockPtr  = (ApiInfoElementType *)&(((ApiFpCcInfoIndType*) MailPtr)->InfoElement[0]);
-	unsigned short ccInfoInd_IeBlockLength    = ((ApiFpCcInfoIndType*) MailPtr)->InfoElementLength;
-	ApiInfoElementType* ccInfoInd_IePtr       = NULL;
 
+	ApiInfoElementType* info;
+	int handset = m->CallReference.Instance.Fp;
+	ApiInfoElementType *ie_blk  = (ApiInfoElementType *)m->InfoElement;
+	unsigned short ie_blk_len    = m->InfoElementLength;
 
 	ast_verbose("INPUT: API_FP_CC_INFO_IND\n");
-	return;
-	/* handset = ((ApiFpCcInfoIndType*) MailPtr)->CallReference.HandsetId; */
 
-	if( (((ApiFpCcInfoIndType*) MailPtr)->InfoElementLength > 0) ) {
-
-		ccInfoInd_IePtr = ApiGetInfoElement(ccInfoInd_IeBlockPtr, ccInfoInd_IeBlockLength, API_IE_MULTIKEYPAD);
-
+	if( (ie_blk_len > 0) ) {
+		info = ApiGetInfoElement(ie_blk, ie_blk_len, API_IE_MULTIKEYPAD);
+		
 		/* Process API_IE_MULTIKEYPAD if present */
-		if(ccInfoInd_IePtr && ccInfoInd_IePtr->IeLength != 0)
-			dectProcessCCKeyPadInfo(handset, ccInfoInd_IeBlockPtr, ccInfoInd_IeBlockLength);
+		if(info && info->IeLength != 0)
+			process_keypad_info(handset, ie_blk, ie_blk_len);
 	}
 }
 
@@ -963,12 +965,12 @@ static void setup_cfm(unsigned char *buf) {
 
 
 
-static void connect_cfm(unsigned char *buf) {  
+static void connect_cfm(ApiFpCcConnectCfmType *m) {  
 
 	int handset;
   
 	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
-	ast_verbose("Connected to handset %d\n", handset );
+	ast_verbose("Connected to handset %d\n", m->CallReference.Instance.Fp );
 }
 
 
@@ -1190,7 +1192,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_INFO_IND:
 		ast_verbose("API_FP_CC_INFO_IND\n");
-		dect_info_ind(buf);
+		dect_info_ind((ApiFpCcInfoIndType *)buf);
 		break;
       
 	case API_FP_CC_REJECT_IND:
@@ -1199,7 +1201,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_CONNECT_CFM:
 		ast_verbose("API_FP_CC_CONNECT_CFM\n");
-		connect_cfm(buf);
+		connect_cfm((ApiFpCcConnectCfmType *)buf);
 		break;
 
 	case API_FP_CC_CONNECT_IND:
