@@ -704,7 +704,7 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 
 
 	/* Signal offhook to endpoint */
-	//vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt_id]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt_id]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 
 	//IeBlockPtr = NULL;
 
@@ -801,15 +801,10 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 }
 
 
-static void dect_release_ind(unsigned char *buf) {
+static void dect_release_ind(ApiFpCcReleaseIndType *m) {
 
-	int handset;
-	unsigned char o_buf[5];
-	
-	ApiFpCcReleaseIndType *m = (ApiFpCcReleaseIndType *)buf;
-	
+	int handset = m->CallReference.Instance.Fp;
 	ApiFpCcReleaseResType* r = (ApiFpCcReleaseResType*) malloc(sizeof(ApiFpCcReleaseResType));
-
 
 	r->Primitive = API_FP_CC_RELEASE_RES;
 	r->CallReference = m->CallReference;
@@ -817,18 +812,9 @@ static void dect_release_ind(unsigned char *buf) {
 	r->InfoElementLength = 0;
 	r->InfoElement[1] = NULL;
 
-	ast_verbose("DECT: API_FP_CC_RELEASE_IND\n");
 
 	/* Signal onhook to endpoint */
-	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
-	//vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
-
-	/* write endpoint id to device */
-	/* *(o_buf + 0) = ((API_FP_CC_RELEASE_RES & 0xff00) >> 8); */
-	/* *(o_buf + 1) = ((API_FP_CC_RELEASE_RES & 0x00ff) >> 0); */
-	/* *(o_buf + 2) = handset; */
-	/* *(o_buf + 3) = 0; */
-	/* *(o_buf + 4) = 0; */
+	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 
 	ast_verbose("API_FP_CC_RELEASE_RES\n");
 	dectDrvWrite(r, sizeof(ApiFpCcReleaseResType));
@@ -837,16 +823,12 @@ static void dect_release_ind(unsigned char *buf) {
 
 
 
-static void dect_release_cfm(unsigned char *buf) {
+static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 
-	int handset;
-	unsigned char o_buf[5];
+	int handset = m->CallReference.Instance.Fp;
   
-	ast_verbose("DECT: API_FP_CC_RELEASE_CFM\n");
-
 	/* Signal onhook to endpoint */
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
-
 }
 
 
@@ -1051,33 +1033,19 @@ static init_cfm(unsigned char *buf) {
 }
 
 
-static void connect_ind(unsigned char *buf) {
+static void connect_ind(ApiFpCcConnectIndType *m) {
 
-	int handset;
+	int handset = m->CallReference.Instance.Fp;
   	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	unsigned char o_buf[5];
-	ApiFpCcConnectIndType *m;
-	ApiCallReferenceType CallReference;
+	ApiCallReferenceType CallReference = m->CallReference;
 	ApiFpCcConnectResType *r;
 
-	m = (ApiFpCcConnectIndType*) buf;
-	CallReference = m->CallReference;
-	handset = CallReference.Instance.Fp;
-	
-	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
 
 	/* Signal offhook to endpoint */
-	//vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
-
-	ast_verbose("ndset %d answered\n", handset);
-
-	//cmsLog_notice("OUTPUT: API_FP_CC_CONNECT_RES");                                                                                             
-	//BUSM_SendMailP2NoInfoElements(0, USER_TASK, API_FP_CC_CONNECT_RES, handset , RSS_SUCCESS); 
-	
-	ast_verbose("CallReference.Instance.Fp: %d\n", CallReference.Instance.Fp);
-	ast_verbose("CallReference.Instance.Host: %d\n", CallReference.Instance.Host);
-
+	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	ast_verbose("handset %d answered\n", handset);
 
 	r = (ApiFpCcConnectResType *) malloc(sizeof(ApiFpCcConnectResType));
 	r->Primitive = API_FP_CC_CONNECT_RES;
@@ -1087,8 +1055,6 @@ static void connect_ind(unsigned char *buf) {
 	r->InfoElement[1] = NULL;
 
 					     
-
-
 	/* write endpoint id to device */
 	/* *(o_buf + 0) = ((API_FP_CC_CONNECT_RES & 0xff00) >> 8); */
 	/* *(o_buf + 1) = ((API_FP_CC_CONNECT_RES & 0x00ff) >> 0); */
@@ -1141,22 +1107,18 @@ static void features_cfm(void)
 }
 
 
-static void handset_present_ind(unsigned char *mail)
+static void handset_present_ind(ApiFpMmHandsetPresentIndType *m)
 {
 	ApiFpMmHandsetPresentIndType *t = NULL;
-	
-	int handset;
+	int handset = m->TerminalId;
 
-	handset = ((ApiFpMmHandsetPresentIndType*) mail)->TerminalId;
 	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d)\n", handset);
 
 	
 	/* Retrieve MANIC and MODIC from Info elements */
-	ApiInfoElementType *IeBlockPtr = (ApiInfoElementType *)&(((ApiFpMmHandsetPresentIndType*) mail)->InfoElement[0]);
-	unsigned short IeBlockLength = ((ApiFpMmHandsetPresentIndType*) mail)->InfoElementLength;
+	ApiInfoElementType *IeBlockPtr = (ApiInfoElementType *)m->InfoElement;
+	unsigned short IeBlockLength = m->InfoElementLength;
 	ApiInfoElementType* IePtr = NULL;
-
-
 
 	/* Process API_IE_CODEC_LIST if present */
 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) {
@@ -1177,12 +1139,12 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_RELEASE_IND:
 		ast_verbose("API_FP_CC_RELEASE_IND\n");
-		dect_release_ind(buf);
+		dect_release_ind((ApiFpCcReleaseIndType *)buf);
 		break;
 
 	case API_FP_CC_RELEASE_CFM:
 		ast_verbose("API_FP_CC_RELEASE_CFM\n");
-		dect_release_cfm(buf);
+		dect_release_cfm((ApiFpCcReleaseCfmType *)buf);
 		break;
 
 	case API_FP_CC_SETUP_IND:
@@ -1206,12 +1168,12 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_CONNECT_IND:
 		ast_verbose("API_FP_CC_CONNECT_IND\n");
-		connect_ind(buf);
+		connect_ind((ApiFpCcConnectIndType *)buf);
 		break;
 
 	case API_FP_MM_HANDSET_PRESENT_IND:
 		ast_verbose("API_FP_MM_HANDSET_PRESENT_IND\n");
-		handset_present_ind(buf);
+		handset_present_ind((ApiFpMmHandsetPresentIndType *)buf);
 		break;
 
 	case API_FP_MM_SET_REGISTRATION_MODE_CFM:

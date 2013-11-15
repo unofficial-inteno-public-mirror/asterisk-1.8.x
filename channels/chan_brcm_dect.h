@@ -47,10 +47,6 @@ int dect_signal_callerid(struct brcm_subchannel *s);
 int dect_stop_ringing(struct brcm_pvt *p);
 int dect_stop_ringing_callerid_pending(struct brcm_pvt *p);
 
-static void alert_ind(unsigned char *buf);
-static void connect_ind(unsigned char *buf);
 static void nvs_update_ind(unsigned char *mail);
-static void nvs_get_data( unsigned char *pNvsData);
-
 
 #endif /* CHAN_BRCM_DECT_H */
