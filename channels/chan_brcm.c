@@ -104,13 +104,13 @@ static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
-static int cw = 1; // Call Waiting
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
 struct sched_context *sched; // Scheduling context
 static int pcmShimFile = -1;
 
 
 /* Call waiting */
+static int cw = 1;
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 
 /* R4 transfer */
@@ -418,7 +418,14 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		brcm_signal_callwaiting(p);
 		int cwtimeout_ms = cwtimeout * 1000;
 		sub->cw_timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
-	} else {
+	  	ast_setstate(ast, AST_STATE_RINGING);
+		ast_queue_control(ast, AST_CONTROL_RINGING);
+	}
+	else if (brcm_in_call(p)) {
+		ast_log(LOG_WARNING, "Line is busy\n");
+		ast_queue_control(ast, AST_CONTROL_BUSY);
+	}
+	else {
 		ast_log(LOG_WARNING, "Not call waiting\n");
 		brcm_subchannel_set_state(sub, RINGING);
 		if (!clip) {
@@ -427,11 +434,11 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 			p->tech->signal_ringing_callerid_pending(p);
 			p->tech->signal_callerid(sub);
 		}
+	  	ast_setstate(ast, AST_STATE_RINGING);
+		ast_queue_control(ast, AST_CONTROL_RINGING);
 	}
 	ast_mutex_unlock(&sub->parent->lock);
 
-  	ast_setstate(ast, AST_STATE_RINGING);
-	ast_queue_control(ast, AST_CONTROL_RINGING);
 	return 0;
 }
 
@@ -3262,7 +3269,11 @@ static int load_settings(struct ast_config **cfg)
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect cwtimeout '%s', defaulting to '%d'\n", v->value, cwtimeout);
 			}
-		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
+		} else if (!strcasecmp(v->name, "cw_enable")) {
+			ast_log(LOG_DEBUG, "Setting call waiting enabled to %s\n", v->value);
+			cw = ast_true(v->value)?1:0;
+		}
+		else if (!strcasecmp(v->name, "hfmaxdelay")) {
 			hfmaxdelay = atoi(v->value);
 			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
 				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
