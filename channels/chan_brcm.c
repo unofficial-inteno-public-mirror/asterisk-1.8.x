@@ -423,6 +423,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	}
 	else if (brcm_in_call(p)) {
 		ast_log(LOG_WARNING, "Line is busy\n");
+		sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
 		ast_queue_control(ast, AST_CONTROL_BUSY);
 	}
 	else {
