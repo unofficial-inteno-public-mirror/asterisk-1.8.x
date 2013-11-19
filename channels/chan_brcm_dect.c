@@ -41,7 +41,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <Api/Las/ApiLas.h>
 #include <Api/Linux/ApiLinux.h>
 //#include <Api/Project/ApiProject.h>
-
+#include <Api/FpAudio/ApiFpAudio.h>
 
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
@@ -134,7 +134,8 @@ int dect_signal_ringing(struct brcm_pvt *p)
 
 	const char nr[] = "123";
 	ast_verbose("line_id: %d\n", p->line_id); 
-	dectRingHandSet(p->line_id + 1, p->line_id);
+	//	dectRingHandSet(p->line_id + 1, p->line_id);
+	dect_ring_handset(p->line_id + 1);
 	return 0;
 }
 
@@ -426,101 +427,135 @@ void dectSendClip(char* cid, int handset)
 }
 
 
-void dectRingHandSet( int destHandset, int dspChannel)
-{
+void dect_ring_handset(int handset) {
 
-	ApiCcBasicServiceType basicService;
-	ApiInfoElementType *IeBlockPtr;
-	unsigned short IeBlockLength;
-	unsigned char *newMailPtr;
-	int newMailSize;
-	ApiCodecListType* codecList = NULL;
-	unsigned char codecListLength;
-	unsigned char callingNumLength;
-	unsigned char callingNameLength;
-	ApiCallingNumberType * callingNum = NULL;
-	ApiCallingNameType * callingName  = NULL;
+        ApiFpCcSetupReqType* m;
+	ApiFpCcAudioIdType Audio;
+	ApiCallReferenceType CallReference;
+
+	ast_verbose("dect_ring_handset: %d\n", handset);
 
 
-	ast_verbose("dectRingHandSet\n");
+        m = (ApiFpCcSetupReqType*) malloc(sizeof(ApiFpCcSetupReqType));
 
-	/* Initialize block variables */
-	IeBlockPtr    = NULL;
-	IeBlockLength = 0;
+	CallReference.Value = 0;
+        CallReference.Instance.Host = 0;
+	CallReference.Instance.Fp = handset;
+
+        Audio.IntExtAudio = API_IEA_EXT;
+	Audio.AudioEndPointId = handset - 1;
+
+        m->Primitive = API_FP_CC_SETUP_REQ;
+	m->CallReference = CallReference;
+	m->TerminalId = handset;
+        m->AudioId = Audio;
+	m->BasicService = API_BASIC_SPEECH;
+        m->CallClass = API_CC_NORMAL;
+        m->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_2;
+	m->InfoElementLength = 0;
+
+        _write_dect(m, sizeof(ApiFpCcSetupReqType));
+	free(m);
+
+}
+
+
+
+/* void dectRingHandSet( int destHandset, int dspChannel) */
+/* { */
+
+/* 	ApiCcBasicServiceType basicService; */
+/* 	ApiInfoElementType *IeBlockPtr; */
+/* 	unsigned short IeBlockLength; */
+/* 	unsigned char *newMailPtr; */
+/* 	int newMailSize; */
+/* 	ApiCodecListType* codecList = NULL; */
+/* 	unsigned char codecListLength; */
+/* 	unsigned char callingNumLength; */
+/* 	unsigned char callingNameLength; */
+/* 	ApiCallingNumberType * callingNum = NULL; */
+/* 	ApiCallingNameType * callingName  = NULL; */
+
+
+/* 	ast_verbose("dectRingHandSet\n"); */
+
+/* 	/\* Initialize block variables *\/ */
+/* 	IeBlockPtr    = NULL; */
+/* 	IeBlockLength = 0; */
    
 
-	if (1) {
-		basicService = API_WIDEBAND_SPEECH;
-		codecList = (ApiCodecListType *)&nbwbCodecList[0];
-		codecListLength = NBWB_CODECLIST_LENGTH;
-	} else 	{
-		basicService = API_BASIC_SPEECH;
-		codecList = (ApiCodecListType *)&nbCodecList[0];
-		codecListLength = SINGLE_CODECLIST_LENGTH;
-	}
+/* 	if (1) { */
+/* 		basicService = API_WIDEBAND_SPEECH; */
+/* 		codecList = (ApiCodecListType *)&nbwbCodecList[0]; */
+/* 		codecListLength = NBWB_CODECLIST_LENGTH; */
+/* 	} else 	{ */
+/* 		basicService = API_BASIC_SPEECH; */
+/* 		codecList = (ApiCodecListType *)&nbCodecList[0]; */
+/* 		codecListLength = SINGLE_CODECLIST_LENGTH; */
+/* 	} */
 
 
-	/* Build API_IE_LINE_ID infoElement with the selected line */
-	ApiLineIdListType lineIdIe;
-	ApiCallStatusListType callStatus;
-	lineIdIe.ApiLineId[0].ApiSubId = API_SUB_LINE_ID_EXT_LINE_ID;
-	lineIdIe.ApiLineId[0].ApiLineValue.Info = 0x01; /* Significant delay in network + 2ndcalls use common parallel scenarios */
-	lineIdIe.ApiLineId[0].ApiLineValue.Value = 0; //line;
+/* 	/\* Build API_IE_LINE_ID infoElement with the selected line *\/ */
+/* 	ApiLineIdListType lineIdIe; */
+/* 	ApiCallStatusListType callStatus; */
+/* 	lineIdIe.ApiLineId[0].ApiSubId = API_SUB_LINE_ID_EXT_LINE_ID; */
+/* 	lineIdIe.ApiLineId[0].ApiLineValue.Info = 0x01; /\* Significant delay in network + 2ndcalls use common parallel scenarios *\/ */
+/* 	lineIdIe.ApiLineId[0].ApiLineValue.Value = 0; //line; */
 
-	callStatus.ApiCallStatus[0].CallStatusSubId = API_SUB_CALL_STATUS;
-	callStatus.ApiCallStatus[0].CallStatusValue.State  = API_CSS_CALL_SETUP;
+/* 	callStatus.ApiCallStatus[0].CallStatusSubId = API_SUB_CALL_STATUS; */
+/* 	callStatus.ApiCallStatus[0].CallStatusValue.State  = API_CSS_CALL_SETUP; */
 
-	ApiBuildInfoElement( &IeBlockPtr,
-			     &IeBlockLength,
-			     API_IE_LINE_ID,
-			     sizeof(ApiLineIdType),
-			     (unsigned char*)&lineIdIe);
+/* 	ApiBuildInfoElement( &IeBlockPtr, */
+/* 			     &IeBlockLength, */
+/* 			     API_IE_LINE_ID, */
+/* 			     sizeof(ApiLineIdType), */
+/* 			     (unsigned char*)&lineIdIe); */
 
-	/* Build API_IE_CODEC_LIST infoElement with all of our codecs */
-	ApiBuildInfoElement( &IeBlockPtr,
-			     &IeBlockLength,
-			     API_IE_CODEC_LIST,
-			     codecListLength,
-			     (unsigned char*)codecList);
+/* 	/\* Build API_IE_CODEC_LIST infoElement with all of our codecs *\/ */
+/* 	ApiBuildInfoElement( &IeBlockPtr, */
+/* 			     &IeBlockLength, */
+/* 			     API_IE_CODEC_LIST, */
+/* 			     codecListLength, */
+/* 			     (unsigned char*)codecList); */
 
-	/* Add to cc call status to infoElement block */
-	ApiBuildInfoElement( &IeBlockPtr,
-			     &IeBlockLength,
-			     API_IE_CALL_STATUS,
-			     sizeof(ApiCallStatusListType),
-			     (unsigned char*)&callStatus);
+/* 	/\* Add to cc call status to infoElement block *\/ */
+/* 	ApiBuildInfoElement( &IeBlockPtr, */
+/* 			     &IeBlockLength, */
+/* 			     API_IE_CALL_STATUS, */
+/* 			     sizeof(ApiCallStatusListType), */
+/* 			     (unsigned char*)&callStatus); */
 
-	if( IeBlockPtr != NULL ) {
-		/* Send connect request */
-		newMailSize = (sizeof(ApiFpCcSetupReqType)-1) + IeBlockLength ;
-		newMailPtr = (unsigned char *) malloc(newMailSize);
+/* 	if( IeBlockPtr != NULL ) { */
+/* 		/\* Send connect request *\/ */
+/* 		newMailSize = (sizeof(ApiFpCcSetupReqType)-1) + IeBlockLength ; */
+/* 		newMailPtr = (unsigned char *) malloc(newMailSize); */
 
-		if(newMailPtr != NULL) {
-			((ApiFpCcSetupReqType *) newMailPtr)->Primitive = API_FP_CC_SETUP_REQ;
-			((ApiFpCcSetupReqType *) newMailPtr)->TerminalId = destHandset;
-			((ApiFpCcSetupReqType *) newMailPtr)->BasicService = basicService;
-			((ApiFpCcSetupReqType *) newMailPtr)->CallClass = API_CC_NORMAL;
-			((ApiFpCcSetupReqType *) newMailPtr)->AudioId.SourceTerminalId = dspChannel;
-			((ApiFpCcSetupReqType *) newMailPtr)->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
+/* 		if(newMailPtr != NULL) { */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->Primitive = API_FP_CC_SETUP_REQ; */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->TerminalId = destHandset; */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->BasicService = basicService; */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->CallClass = API_CC_NORMAL; */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->AudioId.SourceTerminalId = dspChannel; */
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_1; */
 
-		/* Copy over infoElements */
-			memcpy( &(((ApiFpCcSetupReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength );
-			ApiFreeInfoElement( &IeBlockPtr );
+/* 		/\* Copy over infoElements *\/ */
+/* 			memcpy( &(((ApiFpCcSetupReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength ); */
+/* 			ApiFreeInfoElement( &IeBlockPtr ); */
 
-			((ApiFpCcSetupReqType *) newMailPtr)->InfoElementLength = IeBlockLength;
+/* 			((ApiFpCcSetupReqType *) newMailPtr)->InfoElementLength = IeBlockLength; */
 
-			/* Send mail */
-			ast_verbose("OUTPUT: API_FP_CC_SETUP_REQ");
-			dectDrvWrite(newMailPtr, newMailSize);
-			ast_free(newMailPtr);
+/* 			/\* Send mail *\/ */
+/* 			ast_verbose("OUTPUT: API_FP_CC_SETUP_REQ"); */
+/* 			dectDrvWrite(newMailPtr, newMailSize); */
+/* 			ast_free(newMailPtr); */
 
-		} else 	{
-			ast_verbose("Failed to allocate mail API_FP_CC_SETUP_REQ!!!");
-		}
-	} else {
-		ast_verbose("Failed to allocate info Element API_IE_CODEC_LIST!!!");
-	}
-}
+/* 		} else 	{ */
+/* 			ast_verbose("Failed to allocate mail API_FP_CC_SETUP_REQ!!!"); */
+/* 		} */
+/* 	} else { */
+/* 		ast_verbose("Failed to allocate info Element API_IE_CODEC_LIST!!!"); */
+/* 	} */
+/* } */
 
 
 void dectDrvWrite(void *data, int size)
@@ -653,7 +688,7 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 
 	ApiInfoElementType *IePtr;
 	ApiInfoElementType *IeBlockPtr;
-	//unsigned short IeBlockLength = ((ApiFpCcSetupIndType*) MailPtr)->InfoElementLength;
+	unsigned short IeBlockLength;
 	unsigned char o_buf[5];
 	ApiCodecListType codecList;
 	unsigned char *newMailPtr;
@@ -664,63 +699,38 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	int endpt_id;
 	ApiCallReferenceType CallReferenceInitiating;
 	ApiTerminalIdType TerminalIdInitiating;
-	ApiFpCcAudioIdType AudioIdInitiating;
+	ApiFpCcAudioIdType Audio;
 	ApiFpCcConnectReqType* req;	
 	
 	CallReferenceInitiating = m->CallReference;
 	TerminalIdInitiating = m->TerminalId;
 
-	//IeBlockPtr = (ApiInfoElementType *)&(((ApiFpCcSetupIndType*) MailPtr)->InfoElement[0]);
 	handset = m->TerminalId;
 	ast_verbose("handset: %d\n", (int) handset);
 
-	ast_verbose("dectconf: int call reference %x\n", CallReferenceInitiating.Value);
-	ast_verbose("dectconf: int call from %x\n", TerminalIdInitiating);
-
-	ast_verbose("CallReferenceReceiving.Instance.Host: %d\n", CallReferenceInitiating.Instance.Host);
-	ast_verbose("CallReferenceReceiving.Instance.Fp: %d\n", CallReferenceInitiating.Instance.Fp);
-	
 	CallReferenceInitiating.Instance.Fp = handset;
-
 	
-	/* Quick fix */
+
 	endpt_id = handset - 1;
-	
-	/* Process API_IE_SYSTEM_CALL_ID if present */
-	/* if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_SYSTEM_CALL_ID)) ) { */
-	/* 	callIdPtr = (ApiSystemCallIdType*)&(IePtr->IeData[0]); */
-	/* 	ast_verbose("dectSetupOutgoingCall: SYSTEM_CALL_ID (%d) in IE\n", callIdPtr->ApiSystemCallId); */
-	/* } */
-
-	/* /\* Process API_IE_CALLED_NUMBER if present *\/ */
-	/* if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CALLED_NUMBER)) ) */
-	/* 	calledNumber = ((ApiCalledNumberType*)&(IePtr->IeData[0])); */
-
-     
-	/* /\* Process API_IE_CODEC_LIST if present *\/ */
-	/* if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) { */
-	/* 	dectDumpHsetCodecList( IePtr ); */
-	/* } */
+        Audio.IntExtAudio = API_IEA_EXT;
+	Audio.AudioEndPointId = endpt_id;
 
 
 	/* Signal offhook to endpoint */
 	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt_id]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
-
-	//IeBlockPtr = NULL;
 
 	ApiFpCcSetupResType* r = (ApiFpCcSetupResType*) malloc(sizeof(ApiFpCcSetupResType));
 
 	r->Primitive = API_FP_CC_SETUP_RES;
 	r->CallReference = CallReferenceInitiating;
 	r->Status = RSS_SUCCESS;
-	r->AudioId = AudioIdInitiating;
+	r->AudioId = Audio;
 	
 	ast_verbose("API_FP_CC_SETUP_RES\n");
 	dectDrvWrite(r, sizeof(ApiFpCcSetupResType));
 	free(r);
 
 
-	ast_verbose("NarrowBandCodecIeLen: %d\n", NarrowBandCodecIeLen);
 	req = (ApiFpCcConnectReqType*) malloc((sizeof(ApiFpCcConnectReqType) - 1 + NarrowBandCodecIeLen));
 
 	req->Primitive = API_FP_CC_CONNECT_REQ;
@@ -732,72 +742,17 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	dectDrvWrite(req, sizeof(ApiFpCcConnectReqType) - 1 + NarrowBandCodecIeLen);
 	free(req);
 
-	return;
-
-	/* write endpoint id to device */
-	/* *(o_buf + 0) = ((API_FP_CC_SETUP_RES & 0xff00) >> 8); */
-	/* *(o_buf + 1) = ((API_FP_CC_SETUP_RES & 0x00ff) >> 0); */
-	/* *(o_buf + 2) = handset; */
-	/* *(o_buf + 3) = 0; */
-	/* *(o_buf + 4) = endpt_id; */
-
 	
+	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
+	aud_req->Primitive = API_FP_SET_AUDIO_FORMAT_REQ;
+	aud_req->DestinationId = endpt_id;
+	aud_req->AudioDataFormat = AP_DATA_FORMAT_LINEAR_8kHz;
 
-	/* If the handset supports wideband audio we should probably use that.
-	   However, all handsets seem to like the settings below. That includes
-	   the handsets that don't explicily inform us of the codec parameters
-	   they like. It's not clear if the mac & cplane values will always be
-	   the ones used below for that codec setting. */
+	ast_verbose("API_FP_SET_AUDIO_FORMAT_REQ\n");
+	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
+	free(aud_req);
 
-	/* /\* Build API_IE_CODEC_LIST infoElement with a single codec in our list*\/ */
-	/* codecList.NegotiationIndicator = API_NI_POSSIBLE; */
-	/* codecList.NoOfCodecs = 1; */
-
-	/* codecList.Codec[0].Codec = API_CT_G726; /\*!< G.726 ADPCM, information transfer rate 32 kbit/s *\/ */
-	/* /\* codecList.Codec[0].Codec = API_CT_G722; /\\* G.722, information transfer rate 64 kbit/s *\\/ *\/ */
-
-	/* codecList.Codec[0].MacDlcService = API_MDS_1_MD; /\* DLC service LU1, MAC service: In_minimum_delay *\/ */
-	/* codecList.Codec[0].CplaneRouting = API_CPR_CS; /\* CS only *\/ */
-
-	/* /\* codecList.Codec[0].SlotSize = API_SS_LS640; Long slot; j = 640, use with G722 *\/ */
-	/* codecList.Codec[0].SlotSize = API_SS_FS; /\* Full slot; *\/ */
-
-	/* IeBlockLength = 0; */
-	/* ApiBuildInfoElement( &IeBlockPtr, */
-	/* 		     &IeBlockLength, */
-	/* 		     API_IE_CODEC_LIST, */
-	/* 		     sizeof(ApiCodecListType), */
-	/* 		     (unsigned char*)(&codecList)); */
-
-	/* if( IeBlockPtr != NULL ) { */
-     
-	/* 	/\* Process API_IE_CODEC_LIST if present *\/ */
-	/* 	if( (IePtr =  ApiGetInfoElement(IeBlockPtr, IeBlockLength, API_IE_CODEC_LIST)) ) { */
-	/* 		dectDumpHsetCodecList( IePtr ); */
-	/* 	} */
-
-
-	/* 	/\* Send connect request *\/ */
-	/* 	newMailSize = (sizeof(ApiFpCcConnectReqType)-1) + IeBlockLength; */
-	/* 	newMailPtr = (unsigned char *) malloc( newMailSize ); */
-
-	/* 	if (newMailPtr != NULL) { */
-
-	/* 		((ApiFpCcConnectReqType *) newMailPtr)->Primitive = API_FP_CC_CONNECT_REQ; */
-	 
-	/* 		/\* Copy over infoElements *\/ */
-	/* 		memcpy( &(((ApiFpCcConnectReqType *) newMailPtr)->InfoElement[0]), IeBlockPtr, IeBlockLength ); */
-	/* 		ApiFreeInfoElement( &IeBlockPtr ); */
-
-	/* 		((ApiFpCcConnectReqType *) newMailPtr)->InfoElementLength = IeBlockLength; */
-
-	/* 		/\* Send mail *\/ */
-	/* 		ast_verbose("OUTPUT: API_FP_CC_CONNECT_REQ\n"); */
-	/* 		dectDrvWrite(newMailPtr, newMailSize); */
-
-	/* 		ast_free(newMailPtr); */
-	/* 	} */
-	/* } */
+	return;
 }
 
 

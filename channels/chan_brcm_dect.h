@@ -48,5 +48,6 @@ int dect_stop_ringing(struct brcm_pvt *p);
 int dect_stop_ringing_callerid_pending(struct brcm_pvt *p);
 
 static void nvs_update_ind(unsigned char *mail);
+void dect_ring_handset(int handset);
 
 #endif /* CHAN_BRCM_DECT_H */
