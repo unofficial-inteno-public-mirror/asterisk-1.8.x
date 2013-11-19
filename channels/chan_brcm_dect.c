@@ -742,7 +742,8 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	dectDrvWrite(req, sizeof(ApiFpCcConnectReqType) - 1 + NarrowBandCodecIeLen);
 	free(req);
 
-	
+
+
 	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
 	aud_req->Primitive = API_FP_SET_AUDIO_FORMAT_REQ;
 	aud_req->DestinationId = endpt_id;
@@ -752,7 +753,17 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
 	free(aud_req);
 
+
+
 	return;
+}
+
+
+
+static void audio_format_cfm(ApiFpSetAudioFormatCfmType * m) {
+
+	ast_verbose("audio_format_cfm\n");
+
 }
 
 
@@ -1171,6 +1182,15 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_CC_FEATURES_CFM\n");
 		features_cfm();
 		break;
+
+	case API_FP_SET_AUDIO_FORMAT_CFM:
+		ast_verbose("API_FP_SET_AUDIO_FORMAT_CFM\n");
+		audio_format_cfm((ApiFpSetAudioFormatCfmType *) buf);
+		break;
+
+
+
+
 
 
 	default:
