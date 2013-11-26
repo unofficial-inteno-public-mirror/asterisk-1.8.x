@@ -76,6 +76,9 @@ const rsuint16 NarrowBandCodecIeLen = (RSOFFSETOF(ApiInfoElementType, IeData) + 
 ApiInfoElementType *WideBandCodecIe = (ApiInfoElementType*) WideCodecArr;
 const rsuint16 WideBandCodecIeLen = (RSOFFSETOF(ApiInfoElementType, IeData) + 6);
 
+ApiFpCcAudioIdType OutAudio;
+ApiCallReferenceType OutCallReference;
+
 
 extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
@@ -111,7 +114,7 @@ int dect_signal_callerid(struct brcm_subchannel *s) {
 	int handset = s->parent->line_id + 1;
 	ast_verbose("Caller id: %s\n", s->owner->connected.id.number.str);
 	
-	strncpy(handsets[handset].cid, s->owner->connected.id.number.str, CID_MAX_LEN);
+	//strncpy(handsets[handset].cid, s->owner->connected.id.number.str, CID_MAX_LEN);
 
 	return 0;
 }
@@ -430,31 +433,29 @@ void dectSendClip(char* cid, int handset)
 void dect_ring_handset(int handset) {
 
         ApiFpCcSetupReqType* m;
-	ApiFpCcAudioIdType Audio;
-	ApiCallReferenceType CallReference;
 
 	ast_verbose("dect_ring_handset: %d\n", handset);
 
 
         m = (ApiFpCcSetupReqType*) malloc(sizeof(ApiFpCcSetupReqType));
 
-	CallReference.Value = 0;
-        CallReference.Instance.Host = 0;
-	CallReference.Instance.Fp = handset;
+	OutCallReference.Value = 0;
+        OutCallReference.Instance.Host = 0;
+	OutCallReference.Instance.Fp = handset;
 
-        Audio.IntExtAudio = API_IEA_EXT;
-	Audio.AudioEndPointId = handset - 1;
+        OutAudio.IntExtAudio = API_IEA_EXT;
+	OutAudio.AudioEndPointId = handset - 1;
 
         m->Primitive = API_FP_CC_SETUP_REQ;
-	m->CallReference = CallReference;
+	m->CallReference = OutCallReference;
 	m->TerminalId = handset;
-        m->AudioId = Audio;
+        m->AudioId = OutAudio;
 	m->BasicService = API_BASIC_SPEECH;
         m->CallClass = API_CC_NORMAL;
         m->Signal = API_CC_SIGNAL_ALERT_ON_PATTERN_2;
 	m->InfoElementLength = 0;
 
-        _write_dect(m, sizeof(ApiFpCcSetupReqType));
+	dectDrvWrite(m, sizeof(ApiFpCcSetupReqType));
 	free(m);
 
 }
@@ -903,12 +904,12 @@ static void dect_info_ind(ApiFpCcInfoIndType *m) {
 
 static void setup_cfm(unsigned char *buf) {
 
-	ApiFpCcSetupResType *m = (ApiFpCcSetupResType *)buf;
-	int handset = m->CallReference.Instance.Fp;
+	/* ApiFpCcSetupResType *m = (ApiFpCcSetupResType *)buf; */
+	/* int handset = m->CallReference.Instance.Fp; */
 
-	ast_verbose("handset %d\n",  handset);
+	/* ast_verbose("handset %d\n",  handset); */
 	
-	handsets[handset].CallReference = m->CallReference;
+	/* handsets[handset].CallReference = m->CallReference; */
 }
 
 
@@ -924,38 +925,38 @@ static void connect_cfm(ApiFpCcConnectCfmType *m) {
 
 static void alert_ind(unsigned char *buf) {
 
-	int handset;
+	/* int handset; */
   
-	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
-	ast_verbose("handset %d ringing\n", handset );
+	/* /\* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; *\/ */
+	/* ast_verbose("handset %d ringing\n", handset ); */
 	
-	/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
-	ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
-	ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
-	/* ringCcInfoReq->TerminalId;               = handset; */
-	ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
-	ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
-	ringCcInfoReq->InfoElementLength         = 0;
-	dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType));
-	ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n");
+	/* /\* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  *\/ */
+	/* ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) ); */
+	/* ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ; */
+	/* /\* ringCcInfoReq->TerminalId;               = handset; *\/ */
+	/* ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE; */
+	/* ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1; */
+	/* ringCcInfoReq->InfoElementLength         = 0; */
+	/* dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType)); */
+	/* ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n"); */
 
 
-	if (handsets[handset].cid[0] != '\0')  {
-		ast_verbose("Signal cid: %s\n", handsets[handset].cid);
-		dectSendClip(handsets[handset].cid, handset);
-		handsets[handset].cid[0] = '\0';
-	} else {
+	/* if (handsets[handset].cid[0] != '\0')  { */
+	/* 	ast_verbose("Signal cid: %s\n", handsets[handset].cid); */
+	/* 	dectSendClip(handsets[handset].cid, handset); */
+	/* 	handsets[handset].cid[0] = '\0'; */
+	/* } else { */
 
-		/* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  */
-		ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) );
-		ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ;
-		/* ringCcInfoReq->CallReference.HandsetId   = handset; */
-		ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE;
-		ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1;
-		ringCcInfoReq->InfoElementLength         = 0;
-		dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType));
-		ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n");
-	}
+	/* 	/\* No CLIP, just send API_FP_CC_INFO_REQ with ring signal  *\/ */
+	/* 	ApiFpCcInfoReqType * ringCcInfoReq =  malloc( sizeof(ApiFpCcInfoReqType) ); */
+	/* 	ringCcInfoReq->Primitive                 = API_FP_CC_INFO_REQ; */
+	/* 	/\* ringCcInfoReq->CallReference.HandsetId   = handset; *\/ */
+	/* 	ringCcInfoReq->ProgressInd               = API_IN_BAND_AVAILABLE; */
+	/* 	ringCcInfoReq->Signal                    = API_CC_SIGNAL_ALERT_ON_PATTERN_1; */
+	/* 	ringCcInfoReq->InfoElementLength         = 0; */
+	/* 	dectDrvWrite((unsigned char *)ringCcInfoReq, sizeof(ApiFpCcInfoReqType)); */
+	/* 	ast_verbose("OUTPUT: API_FP_CC_INFO_REQ Ring on\n"); */
+	/* } */
 }
 
 static init_cfm(unsigned char *buf) {
