@@ -1012,6 +1012,7 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 	ast_verbose("handset %d answered\n", handset);
 
+
 	r = (ApiFpCcConnectResType *) malloc(sizeof(ApiFpCcConnectResType));
 	r->Primitive = API_FP_CC_CONNECT_RES;
 	r->CallReference = CallReference;
@@ -1029,6 +1030,19 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 
 	ast_verbose("API_FP_CC_CONNECT_RES\n");
 	dectDrvWrite(r, sizeof(ApiFpCcConnectResType));
+
+
+
+	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
+	aud_req->Primitive = API_FP_SET_AUDIO_FORMAT_REQ;
+	aud_req->DestinationId = handset - 1;
+	aud_req->AudioDataFormat = AP_DATA_FORMAT_LINEAR_8kHz;
+
+	ast_verbose("API_FP_SET_AUDIO_FORMAT_REQ\n");
+	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
+	free(aud_req);
+
+
 
 	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
 	if (!p)
