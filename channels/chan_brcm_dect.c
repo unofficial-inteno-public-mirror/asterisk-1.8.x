@@ -564,7 +564,7 @@ void dectDrvWrite(void *data, int size)
 	int i;
 	unsigned char* cdata = (unsigned char*)data;
 
-	ast_verbose("\n[WDECT][%04d] - ",size);
+	ast_verbose("[WDECT][%04d] - ",size);
 	for (i=0 ; i<size ; i++) {
 		ast_verbose("%02x ",cdata[i]);
 	}
@@ -804,18 +804,16 @@ static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 
 void dect_hangup(int handset) {
 
-	unsigned char o_buf[5];
-  
-
-	/* write endpoint id to device */
-	*(o_buf + 0) = ((API_FP_CC_RELEASE_REQ & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_CC_RELEASE_REQ & 0x00ff) >> 0);
-	*(o_buf + 2) = handset;
-	*(o_buf + 3) = 0;
-	*(o_buf + 4) = 0;
+	ApiFpCcReleaseReqType *m = malloc(sizeof(ApiFpCcReleaseReqType));
+	
+	m->Primitive = API_FP_CC_RELEASE_REQ;
+	m->CallReference = handsets[handset].CallReference;
+	m->Reason = API_RR_UNEXPECTED_MESSAGE;
+	m->InfoElementLength = 0;
 
 	printf("API_FP_CC_RELEASE_REQ\n");
-	dectDrvWrite(o_buf, 5);
+	dectDrvWrite(m, sizeof(ApiFpCcReleaseReqType));
+	free(m);
 
 }
 
@@ -902,14 +900,14 @@ static void dect_info_ind(ApiFpCcInfoIndType *m) {
 
 
 
-static void setup_cfm(unsigned char *buf) {
+static void setup_cfm(ApiFpCcSetupCfmType *m) {
 
 	/* ApiFpCcSetupResType *m = (ApiFpCcSetupResType *)buf; */
-	/* int handset = m->CallReference.Instance.Fp; */
+	int handset = m->CallReference.Instance.Fp;
 
 	/* ast_verbose("handset %d\n",  handset); */
 	
-	/* handsets[handset].CallReference = m->CallReference; */
+	handsets[handset].CallReference = m->CallReference;
 }
 
 
@@ -1153,7 +1151,7 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_SETUP_CFM:
 		ast_verbose("API_FP_CC_SETUP_CFM\n");
-		setup_cfm(buf);
+		setup_cfm((ApiFpCcSetupCfmType *)buf);
 		break;
 
 	case API_LINUX_INIT_CFM:
