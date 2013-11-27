@@ -711,6 +711,7 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 
 	CallReferenceInitiating.Instance.Fp = handset;
 	
+	handsets[handset].CallReference = CallReferenceInitiating;
 
 	endpt_id = handset - 1;
         Audio.IntExtAudio = API_IEA_EXT;
