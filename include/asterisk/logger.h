@@ -181,7 +181,19 @@ void ast_console_toggle_loglevel(int fd, int level, int state);
 #endif
 #define AST_LOG_DTMF    __LOG_DTMF, _A_
 
-#define NUMLOGLEVELS 7
+#ifdef LOG_CQR
+#undef LOG_CQR
+#endif
+#define __LOG_CQR  7
+#define LOG_CQR    __LOG_CQR, _A_
+
+#ifdef AST_LOG_CQR
+#undef AST_LOG_CQR
+#endif
+#define AST_LOG_CQR    __LOG_CQR, _A_
+
+#define NUMLOGLEVELS 64
+
 
 /*!
  * \brief Get the debug level for a module

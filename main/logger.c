@@ -170,6 +170,7 @@ static char *levels[32] = {
 	"ERROR",
 	"VERBOSE",
 	"DTMF",
+	"CQR",
 };
 
 /*! \brief Colors used in the console for logging */
@@ -181,7 +182,7 @@ static const int colors[32] = {
 	COLOR_RED,
 	COLOR_GREEN,
 	COLOR_BRGREEN,
-	0,
+	COLOR_BRBLUE,
 	0,
 	0,
 	0,

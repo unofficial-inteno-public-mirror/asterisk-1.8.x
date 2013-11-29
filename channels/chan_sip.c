@@ -275,6 +275,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 357264 $")
 #include "asterisk/xml.h"
 #include "sip/include/dialog.h"
 #include "sip/include/dialplan_functions.h"
+#include "sip/include/rtcp.h"
 
 
 /*** DOCUMENTATION
@@ -669,7 +670,6 @@ static const struct sip_reasons {
 	{ AST_REDIRECTING_REASON_AWAY, "away" },
 	{ AST_REDIRECTING_REASON_CALL_FWD_DTE, "unknown"}
 };
-
 
 /*! \name DefaultSettings
 	Default setttings are used as a channel setting and as a default when
@@ -5805,6 +5805,21 @@ void __sip_destroy(struct sip_pvt *p, int lockowner, int lockdialoglist)
 
 	if (dumphistory)
 		sip_dump_history(p);
+       AST_SCHED_DEL(sched, p->rtcpeventid);
+
+       if (p->audioqual) {
+               /* We have a quality report to write to realtime before we leave this world. */
+               qos_write_realtime(p, p->audioqual);
+               free(p->audioqual);
+               p->audioqual = NULL;
+       }
+       if (p->videoqual) {
+               /* We have a quality report to write to realtime before we leave this world. */
+               qos_write_realtime(p, p->videoqual);
+               free(p->videoqual);
+               p->videoqual = NULL;
+       }
+
 
 	if (p->options)
 		ast_free(p->options);
@@ -6492,6 +6507,7 @@ static int sip_answer(struct ast_channel *ast)
 		ast_rtp_instance_update_source(p->rtp);
 		res = transmit_response_with_sdp(p, "200 OK", &p->initreq, XMIT_CRITICAL, FALSE, TRUE);
 		ast_set_flag(&p->flags[1], SIP_PAGE2_DIALOG_ESTABLISHED);
+		start_rtcp_events(p, sched);
 	}
 	sip_pvt_unlock(p);
 	return res;
@@ -7786,8 +7802,10 @@ struct sip_pvt *sip_alloc(ast_string_field callid, struct ast_sockaddr *addr,
 		set_socket_transport(&p->socket, SIP_TRANSPORT_UDP);
 	}
 
+	p->sip_cfg = &sip_cfg;
 	p->socket.fd = -1;
 	p->method = intended_method;
+	p->rtcpeventid = -1;
 	p->initid = -1;
 	p->waitid = -1;
 	p->autokillid = -1;
@@ -7848,6 +7866,14 @@ struct sip_pvt *sip_alloc(ast_string_field callid, struct ast_sockaddr *addr,
 		build_callid_pvt(p);
 	else
 		ast_string_field_set(p, callid, callid);
+
+	/* Set cnames for the RTCP SDES */
+	if (p->rtp) {
+		ast_rtp_instance_setcname(p->rtp, p->callid, strlen(p->callid));
+	}
+	if (p->vrtp) {
+		ast_rtp_instance_setcname(p->vrtp, p->callid, strlen(p->callid));
+	}
 	/* Assign default music on hold class */
 	ast_string_field_set(p, mohinterpret, default_mohinterpret);
 	ast_string_field_set(p, mohsuggest, default_mohsuggest);
@@ -8815,6 +8841,7 @@ static void change_hold_state(struct sip_pvt *dialog, struct sip_request *req, i
 	}
 
 	if (!holdstate) {	/* Put off remote hold */
+		ast_rtp_instance_hold(dialog->rtp, 0);	/* Turn off RTP hold */
 		ast_clear_flag(&dialog->flags[1], SIP_PAGE2_CALL_ONHOLD);	/* Clear both flags */
 		return;
 	}
@@ -9534,9 +9561,9 @@ static int process_sdp(struct sip_pvt *p, struct sip_request *req, int t38action
 		ast_queue_control_data(p->owner, AST_CONTROL_HOLD,
 				       S_OR(p->mohsuggest, NULL),
 				       !ast_strlen_zero(p->mohsuggest) ? strlen(p->mohsuggest) + 1 : 0);
-		if (sendonly)
-			ast_rtp_instance_stop(p->rtp);
-		/* RTCP needs to go ahead, even if we're on hold!!! */
+		if (sendonly == 1 || sendonly == 2) {	/* sendonly (from the other side) or inactive */
+			ast_rtp_instance_hold(p->rtp, 1);
+		}
 		/* Activate a re-invite */
 		ast_queue_frame(p->owner, &ast_null_frame);
 		change_hold_state(p, req, TRUE, sendonly);
@@ -17582,8 +17609,10 @@ static char *_sip_show_peer(int type, int fd, struct mansession *s, const struct
 	int x = 0, load_realtime;
 	format_t codec = 0;
 	int realtimepeers;
+	int realtimertpqos = FALSE;
 
 	realtimepeers = ast_check_realtime("sippeers");
+	realtimertpqos = ast_check_realtime("rtpcqr");
 
 	if (argc < 4)
 		return CLI_SHOWUSAGE;
@@ -18189,9 +18218,11 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 {
 	int realtimepeers;
 	int realtimeregs;
+	int realtimertpqos;
 	char codec_buf[SIPBUFSIZE];
 	const char *msg;	/* temporary msg pointer */
 	struct sip_auth_container *credentials;
+
 
 	switch (cmd) {
 	case CLI_INIT:
@@ -18209,6 +18240,7 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 
 	realtimepeers = ast_check_realtime("sippeers");
 	realtimeregs = ast_check_realtime("sipregs");
+	realtimertpqos = ast_check_realtime("rtpcqr");
 
 	ast_mutex_lock(&authl_lock);
 	credentials = authl;
@@ -18278,6 +18310,8 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 	}
 	ast_cli(a->fd, "  Record SIP history:     %s\n", AST_CLI_ONOFF(recordhistory));
 	ast_cli(a->fd, "  Call Events:            %s\n", AST_CLI_ONOFF(sip_cfg.callevents));
+	ast_cli(a->fd, "  RTCP Events:            %s\n", AST_CLI_ONOFF(sip_cfg.rtcpevents));
+	ast_cli(a->fd, "  RTCP Event timer:       %d\n", sip_cfg.rtcptimer);
 	ast_cli(a->fd, "  Auth. Failure Events:   %s\n", AST_CLI_ONOFF(global_authfailureevents));
 
 	ast_cli(a->fd, "  T.38 support:           %s\n", AST_CLI_YESNO(ast_test_flag(&global_flags[1], SIP_PAGE2_T38SUPPORT)));
@@ -18287,6 +18321,7 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 		ast_cli(a->fd, "  SIP realtime:           Disabled\n" );
 	else
 		ast_cli(a->fd, "  SIP realtime:           Enabled\n" );
+	ast_cli(a->fd, "  QoS realtime reports:   %s\n", realtimertpqos ? "Enabled" : "Disabled" );
 	ast_cli(a->fd, "  Qualify Freq :          %d ms\n", global_qualifyfreq);
 	ast_cli(a->fd, "  Q.850 Reason header:    %s\n", AST_CLI_YESNO(ast_test_flag(&global_flags[1], SIP_PAGE2_Q850_REASON)));
 	ast_cli(a->fd, "  REFER await NOTIFY:     %s\n", AST_CLI_YESNO(sip_cfg.refer_await_notify));
@@ -20196,6 +20231,7 @@ static void handle_response_invite(struct sip_pvt *p, int resp, const char *rest
 		if (!req->ignore && p->invitestate != INV_CANCELLED && sip_cancel_destroy(p))
 			ast_log(LOG_WARNING, "Unable to cancel SIP destruction.  Expect bad things.\n");
 		check_pendings(p);
+		start_rtcp_events(p, sched);
 		break;
 
 	case 180:	/* 180 Ringing */
@@ -20453,6 +20489,7 @@ static void handle_response_invite(struct sip_pvt *p, int resp, const char *rest
 		ast_set_flag(&p->flags[1], SIP_PAGE2_DIALOG_ESTABLISHED);
 		xmitres = transmit_request(p, SIP_ACK, seqno, XMIT_UNRELIABLE, TRUE);
 		check_pendings(p);
+		start_rtcp_events(p, sched);
 		break;
 
 	case 407: /* Proxy authentication */
@@ -21116,16 +21153,21 @@ static void handle_response_message(struct sip_pvt *p, int resp, const char *res
 	}
 }
 
-/*! \brief Immediately stop RTP, VRTP and UDPTL as applicable */
+/*! \brief Immediately stop RTP, VRTP, TEXT and UDPTL as applicable */
 static void stop_media_flows(struct sip_pvt *p)
 {
 	/* Immediately stop RTP, VRTP and UDPTL as applicable */
-	if (p->rtp)
+	if (p->rtp && !ast_rtp_instance_isactive(p->rtp)) {
+		sip_rtcp_report(p, p->rtp, SDP_AUDIO, TRUE);
 		ast_rtp_instance_stop(p->rtp);
-	if (p->vrtp)
+	}
+	if (p->vrtp && !ast_rtp_instance_isactive(p->vrtp)) {
+		sip_rtcp_report(p, p->vrtp, SDP_VIDEO, TRUE);
 		ast_rtp_instance_stop(p->vrtp);
-	if (p->trtp)
+	}
+	if (p->trtp && !ast_rtp_instance_isactive(p->trtp)) {
 		ast_rtp_instance_stop(p->trtp);
+	}
 	if (p->udptl)
 		ast_udptl_stop(p->udptl);
 }
@@ -24023,6 +24065,7 @@ static int handle_request_bye(struct sip_pvt *p, struct sip_request *req)
 
 
 		if (p->rtp && (quality = ast_rtp_instance_get_quality(p->rtp, AST_RTP_INSTANCE_STAT_FIELD_QUALITY, quality_buf, sizeof(quality_buf)))) {
+			sip_rtcp_report(p, p->rtp, SDP_AUDIO, TRUE);
 			if (p->do_history) {
 				append_history(p, "RTCPaudio", "Quality:%s", quality);
 
@@ -24053,6 +24096,7 @@ static int handle_request_bye(struct sip_pvt *p, struct sip_request *req)
 		}
 
 		if (p->vrtp && (quality = ast_rtp_instance_get_quality(p->vrtp, AST_RTP_INSTANCE_STAT_FIELD_QUALITY, quality_buf, sizeof(quality_buf)))) {
+			sip_rtcp_report(p, p->rtp, SDP_VIDEO, TRUE);
 			if (p->do_history) {
 				append_history(p, "RTCPvideo", "Quality:%s", quality);
 			}
@@ -28348,6 +28392,8 @@ static int reload_config(enum channelreloadreason reason)
 	/* Misc settings for the channel */
 	global_relaxdtmf = FALSE;
 	sip_cfg.callevents = DEFAULT_CALLEVENTS;
+	sip_cfg.rtcpevents = FALSE;
+	sip_cfg.rtcptimer = 0;	/* Only report at end of call (default) */
 	global_authfailureevents = FALSE;
 	global_t1 = DEFAULT_TIMER_T1;
 	global_timer_b = 64 * DEFAULT_TIMER_T1;
@@ -28791,6 +28837,13 @@ static int reload_config(enum channelreloadreason reason)
 			} else {
 				ast_log(LOG_WARNING, "Invalid qualifyfreq number '%s' at line %d of %s\n", v->value, v->lineno, config);
 				global_qualifyfreq = DEFAULT_QUALIFYFREQ;
+			}
+		} else if (!strcasecmp(v->name, "rtcpevents")) {
+			sip_cfg.rtcpevents = ast_true(v->value);
+		} else if (!strcasecmp(v->name, "rtcpeventtimer")) {
+			if (sscanf(v->value, "%30d", &sip_cfg.rtcptimer) != 1) {
+				ast_log(LOG_WARNING, "RTCP event timer needs to be value (seconds between reports) at line %d of sip.conf\n", v->lineno);
+				sip_cfg.rtcptimer = 0;
 			}
 		} else if (!strcasecmp(v->name, "callevents")) {
 			sip_cfg.callevents = ast_true(v->value);

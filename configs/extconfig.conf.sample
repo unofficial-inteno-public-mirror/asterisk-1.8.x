@@ -72,6 +72,7 @@
 ;queue_members => odbc,asterisk
 ;musiconhold => mysql,general
 ;queue_log => mysql,general
+;rtpcqr => mysql,general	; RTP Call Quality Records
 ;
 ;
 ; While most dynamic realtime engines are automatically used when defined in
