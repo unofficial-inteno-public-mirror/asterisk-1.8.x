@@ -136,7 +136,9 @@ int sip_acf_channel_read(struct ast_channel *chan, const char *funcname, char *p
 
 		snprintf(buf, buflen, "%s", ast_sockaddr_stringify(&sa));
 	} else if (!strcasecmp(args.param, "rtpqos")) {
+/* OEJ - Check this part, different from 1.4 */
 		struct ast_rtp_instance *rtp = NULL;
+		struct ast_rtp_quality *qos;
 
 		if (ast_strlen_zero(args.type)) {
 			args.type = "audio";
@@ -158,6 +160,11 @@ int sip_acf_channel_read(struct ast_channel *chan, const char *funcname, char *p
 			if (!(quality = ast_rtp_instance_get_quality(rtp, AST_RTP_INSTANCE_STAT_FIELD_QUALITY, quality_buf, sizeof(quality_buf)))) {
 				return -1;
 			}
+#ifdef OEJ
+			if (!ast_rtp_instance_get_qualdata(rtp, ???, &qos)) {
+				this_needs_some_love;
+			}
+#endif
 
 			ast_copy_string(buf, quality_buf, buflen);
 			return res;
