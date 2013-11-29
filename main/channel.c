@@ -103,9 +103,6 @@ AST_THREADSTORAGE(state2str_threadbuf);
  *  100ms */
 #define AST_DEFAULT_EMULATE_DTMF_DURATION 100
 
-/*! Minimum allowed digit length - 80ms */
-#define AST_MIN_DTMF_DURATION 80
-
 /*! Minimum amount of time between the end of the last digit and the beginning 
  *  of a new one - 45ms */
 #define AST_MIN_DTMF_GAP 45
@@ -3995,10 +3992,10 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					chan->emulate_dtmf_digit = f->subclass.integer;
 					chan->dtmf_tv = ast_tvnow();
 					if (f->len) {
-						if (f->len > AST_MIN_DTMF_DURATION)
+						if (f->len > option_dtmfminduration)
 							chan->emulate_dtmf_duration = f->len;
 						else 
-							chan->emulate_dtmf_duration = AST_MIN_DTMF_DURATION;
+							chan->emulate_dtmf_duration = option_dtmfminduration;
 					} else
 						chan->emulate_dtmf_duration = AST_DEFAULT_EMULATE_DTMF_DURATION;
 					ast_log(LOG_DTMF, "DTMF begin emulation of '%c' with duration %u queued on %s\n", f->subclass.integer, chan->emulate_dtmf_duration, chan->name);
@@ -4028,25 +4025,25 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					 * dtmf emulation to be triggered later
 					 * on.
 					 */
-					if (ast_tvdiff_ms(now, chan->dtmf_tv) < AST_MIN_DTMF_DURATION) {
+					if (ast_tvdiff_ms(now, chan->dtmf_tv) < option_dtmfminduration) {
 						f->len = ast_tvdiff_ms(now, chan->dtmf_tv);
 						ast_log(LOG_DTMF, "DTMF end '%c' detected to have actual duration %ld on the wire, emulation will be triggered on %s\n", f->subclass.integer, f->len, chan->name);
 					}
 				} else if (!f->len) {
 					ast_log(LOG_DTMF, "DTMF end accepted without begin '%c' on %s\n", f->subclass.integer, chan->name);
-					f->len = AST_MIN_DTMF_DURATION;
+					f->len = option_dtmfminduration;
 				}
-				if (f->len < AST_MIN_DTMF_DURATION && !ast_test_flag(chan, AST_FLAG_END_DTMF_ONLY)) {
-					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s\n", f->subclass.integer, f->len, AST_MIN_DTMF_DURATION, chan->name);
+				if (f->len < option_dtmfminduration && !ast_test_flag(chan, AST_FLAG_END_DTMF_ONLY)) {
+					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s\n", f->subclass.integer, f->len, option_dtmfminduration, chan->name);
 					ast_set_flag(chan, AST_FLAG_EMULATE_DTMF);
 					chan->emulate_dtmf_digit = f->subclass.integer;
-					chan->emulate_dtmf_duration = AST_MIN_DTMF_DURATION - f->len;
+					chan->emulate_dtmf_duration = option_dtmfminduration - f->len;
 					ast_frfree(f);
 					f = &ast_null_frame;
 				} else {
 					ast_log(LOG_DTMF, "DTMF end passthrough '%c' on %s\n", f->subclass.integer, chan->name);
-					if (f->len < AST_MIN_DTMF_DURATION) {
-						f->len = AST_MIN_DTMF_DURATION;
+					if (f->len < option_dtmfminduration) {
+						f->len = option_dtmfminduration;
 					}
 					chan->dtmf_tv = now;
 				}
