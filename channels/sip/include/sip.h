@@ -695,6 +695,8 @@ struct sip_settings {
 	int compactheaders;         /*!< send compact sip headers */
 	int allow_external_domains; /*!< Accept calls to external SIP domains? */
 	int callevents;             /*!< Whether we send manager events or not */
+	int rtcpevents;             /*!< Whether we send manager RTCP events or not */
+	int rtcptimer;		    /*!< How often, during a call, to report RTCP stats */
 	int regextenonqualify;      /*!< Whether to add/remove regexten when qualifying peers */
 	int legacy_useroption_parsing; /*!< Whether to strip useroptions in URI via semicolons */
 	int matchexternaddrlocally;   /*!< Match externaddr/externhost setting against localnet setting */
@@ -1076,6 +1078,7 @@ struct sip_pvt {
 	int initid;                         /*!< Auto-congest ID if appropriate (scheduler) */
 	int waitid;                         /*!< Wait ID for scheduler after 491 or other delays */
 	int autokillid;                     /*!< Auto-kill ID (scheduler) */
+	int rtcpeventid;                        /*!< Scheduler ID for RTCP Events */
 	int t38id;                          /*!< T.38 Response ID */
 	struct sip_refer *refer;            /*!< REFER: SIP transfer data structure */
 	enum subscriptiontype subscribed;   /*!< SUBSCRIBE: Is this dialog a subscription?  */
@@ -1131,6 +1134,12 @@ struct sip_pvt {
 	 * The large-scale changes would be a good idea for implementing during an SDP rewrite.
 	 */
 	struct offered_media offered_media[OFFERED_MEDIA_COUNT];
+	//struct ast_rtp_quality *audioqual;              /*!< Audio: The latest quality report, for realtime storage */
+	//struct ast_rtp_quality *videoqual;              /*!< Video: The latest quality report, for realtime storage */
+	struct ast_rtp_instance_stats *audioqual;              /*!< Audio: The latest quality report, for realtime storage */
+	struct ast_rtp_instance_stats *videoqual;              /*!< Video: The latest quality report, for realtime storage */
+	struct sip_settings *sip_cfg;			/*! Which sip_cfg is associated with this dialog */
+
 	struct ast_cc_config_params *cc_params;
 	struct sip_epa_entry *epa_entry;
 	int fromdomainport;                 /*!< Domain port to show in from field */

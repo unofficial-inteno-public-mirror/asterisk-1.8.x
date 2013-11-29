@@ -67,12 +67,35 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 351611 $")
 #define MINIMUM_RTP_PORT 1024 /*!< Minimum port number to accept */
 #define MAXIMUM_RTP_PORT 65535 /*!< Maximum port number to accept */
 
-#define RTCP_PT_FUR     192
-#define RTCP_PT_SR      200
-#define RTCP_PT_RR      201
-#define RTCP_PT_SDES    202
-#define RTCP_PT_BYE     203
-#define RTCP_PT_APP     204
+#define RTCP_PT_FUR     192		/*!< FIR  - Full Intra-frame request (h.261) */
+#define RTCP_PT_NACK    193		/*!< NACK - Negative acknowledgement (h.261) */
+#define RTCP_PT_IJ      195		/*!< IJ   - RFC 5450 Extended Inter-arrival jitter report */
+#define RTCP_PT_SR      200		/*!< SR   - RFC 3550 Sender report */
+#define RTCP_PT_RR      201		/*!< RR   - RFC 3550 Receiver report */
+#define RTCP_PT_SDES    202		/*!< SDES - Source Description */
+#define RTCP_PT_BYE     203		/*!< BYE  - Goodbye */
+#define RTCP_PT_APP     204		/*!< APP  - Application defined */
+#define RTCP_PT_RTPFB   205		/*!< RTPFB - Generic RTP feedback RFC 4585 */
+#define RTCP_PT_PSFB    206		/*!< PSFB - Payload specific data  RFC 4585 */
+#define RTCP_PT_XR      207		/*!< XR   - Extended report - RFC3611 */
+#define RTCP_PT_AVB     208		/*!< ACB RTCP Packet */
+#define RTCP_PT_RSI     209		/*!< Receiver summary information */
+#define RTCP_PT_TOKEN   210		/*!< Port mapping, RFC 6284 */
+
+/*! \brief RFC 3550 RTCP SDES Item types */
+enum rtcp_sdes {
+	SDES_END	= 0,		/*!< End of SDES list */
+	SDES_CNAME	= 1,		/*!< Canonical name */
+	SDES_NAME	= 2,		/*!< User name */
+	SDES_EMAIL	= 3,		/*!< User's e-mail address */
+	SDES_PHONE	= 4,		/*!< User's phone number */
+	SDES_LOC	= 5,		/*!< Geographic user location */
+	SDES_TOOL	= 6,		/*!< Name of application or tool */
+	SDES_NOTE	= 7,		/*!< Notice about the source */
+	SDES_PRIV	= 8,		/*!< SDES Private extensions */
+	SDES_H323_CADDR	= 9,		/*!< H.323 Callable address */
+	SDES_APSI	= 10,		/*!< Application Specific Identifier (RFC 6776) */
+};
 
 #define RTP_MTU		1200
 
@@ -89,7 +112,7 @@ static int rtpstart = DEFAULT_RTP_START;			/*!< First port for RTP sessions (set
 static int rtpend = DEFAULT_RTP_END;			/*!< Last port for RTP sessions (set in rtp.conf) */
 static int rtpdebug;			/*!< Are we debugging? */
 static int rtcpdebug;			/*!< Are we debugging RTCP? */
-static int rtcpstats;			/*!< Are we debugging RTCP? */
+static int rtcpstats;			/*!< Are we gathering stats? */
 static int rtcpinterval = RTCP_DEFAULT_INTERVALMS; /*!< Time between rtcp reports in millisecs */
 static struct ast_sockaddr rtpdebugaddr;	/*!< Debug packets to/from this host */
 static struct ast_sockaddr rtcpdebugaddr;	/*!< Debug RTCP packets to/from this host */
@@ -113,6 +136,7 @@ enum strict_rtp_state {
 #define FLAG_NAT_INACTIVE_NOWARN        (1 << 1)
 #define FLAG_NEED_MARKER_BIT            (1 << 3)
 #define FLAG_DTMF_COMPENSATE            (1 << 4)
+#define FLAG_HOLD	        	(1 << 4)	/* This RTP stream is put on hold by someone else, a:sendonly */
 
 /*! \brief RTP session description */
 struct ast_rtp {
@@ -163,10 +187,11 @@ struct ast_rtp {
 	struct timeval rxcore;
 	struct timeval txcore;
 	double drxcore;                 /*!< The double representation of the first received packet */
+	struct timeval start;          /*!< When the stream started (we can't depend on CDRs) */
 	struct timeval lastrx;          /*!< timeval when we last received a packet */
 	struct timeval dtmfmute;
+	struct timeval holdstart;       /*!< When the stream was put on hold */
 	struct ast_smoother *smoother;
-	int *ioid;
 	unsigned short seqno;		/*!< Sequence number, RFC 3550, page 13. */
 	unsigned short rxseqno;
 	struct sched_context *sched;
@@ -185,6 +210,7 @@ struct ast_rtp {
 	 */
 	uint16_t learning_max_seq;		/*!< Highest sequence number heard */
 	int learning_probation;		/*!< Sequential packets untill source is valid */
+	int isactive;			/*!< Whether the RTP stream is active or not */
 
 	struct rtp_red *red;
 };
@@ -196,11 +222,18 @@ struct ast_rtp {
  * this structure is analogous to ast_rtp, which tracks a RTP session,
  * it is logical to think of this as a RTCP session.
  *
+ * On the other hand, RTCP SDES defines the names for the actual
+ * RTP session so it's one session - RTP and RTCP together (OEJ)
+ *
  * RTCP packet is defined on page 9 of RFC 3550.
  *
  */
 struct ast_rtcp {
 	int rtcp_info;
+	char ourcname[255];		/*!< Our SDES RTP session name (CNAME) */
+	size_t ourcnamelength;		/*!< Length of CNAME (utf8) */
+	char theircname[255];		/*!< Their SDES RTP session name (CNAME) */
+	size_t theircnamelength;	/*!< Length of CNAME (utf8) */
 	int s;				/*!< Socket */
 	struct ast_sockaddr us;		/*!< Socket representation of the local endpoint. */
 	struct ast_sockaddr them;	/*!< Socket representation of the remote endpoint. */
@@ -214,17 +247,19 @@ struct ast_rtcp {
 	int schedid;			/*!< Schedid returned from ast_sched_add() to schedule RTCP-transmissions*/
 	unsigned int rr_count;		/*!< number of RRs we've sent, not including report blocks in SR's */
 	unsigned int sr_count;		/*!< number of SRs we've sent */
+	unsigned int rec_rr_count;      /*!< Number of RRs we've received */
+	unsigned int rec_sr_count;      /*!< Number of SRs we've received */
 	unsigned int lastsrtxcount;     /*!< Transmit packet count when last SR sent */
 	double accumulated_transit;	/*!< accumulated a-dlsr-lsr */
 	double rtt;			/*!< Last reported rtt */
 	unsigned int reported_jitter;	/*!< The contents of their last jitter entry in the RR */
 	unsigned int reported_lost;	/*!< Reported lost packets in their RR */
 
-	double reported_maxjitter;
-	double reported_minjitter;
+	double reported_maxjitter;	/*!< The contents of their max jitter entry received by us */
+	double reported_minjitter;	/*!< The contents of their min jitter entry received by us */
 	double reported_normdev_jitter;
 	double reported_stdev_jitter;
-	unsigned int reported_jitter_count;
+	unsigned int reported_jitter_count; /*! Number of reports received */
 
 	double reported_maxlost;
 	double reported_minlost;
@@ -236,25 +271,33 @@ struct ast_rtcp {
 	double minrxlost;
 	double normdev_rxlost;
 	double stdev_rxlost;
-	unsigned int rxlost_count;
+	unsigned int rxlost_count;	/*! Number of reports received */
 
 	double maxrxjitter;
 	double minrxjitter;
 	double normdev_rxjitter;
 	double stdev_rxjitter;
-	unsigned int rxjitter_count;
+	unsigned int rxjitter_count;	/*! Number of reports received */
 	double maxrtt;
 	double minrtt;
 	double normdevrtt;
 	double stdevrtt;
-	unsigned int rtt_count;
+	unsigned int rtt_count;		/*! Number of reports received */
+	char bridgedchannel[AST_MAX_EXTENSION];		/*!< Bridged channel name */
+	char bridgeduniqueid[AST_MAX_EXTENSION];	/*!< Bridged channel uniqueid */
+	char channel[AST_MAX_EXTENSION];		/*!< Our channel name */
+	char uniqueid[AST_MAX_EXTENSION];	/*!< Our channel uniqueid */
+	char readtranslator[80];	/* Translation done on reading audio from PBX */
+	char writetranslator[80];	/* Translation done on writing audio to PBX - bridged channel */
+	int readcost;			/* Delay in milliseconds for translation of 1 second of audio */
+	int writecost;			/* Delay in milliseconds for translation of 1 second of audio */
 };
 
 struct rtp_red {
 	struct ast_frame t140;  /*!< Primary data  */
 	struct ast_frame t140red;   /*!< Redundant t140*/
 	unsigned char pt[AST_RED_MAX_GENERATION];  /*!< Payload types for redundancy data */
-	unsigned char ts[AST_RED_MAX_GENERATION]; /*!< Time stamps */
+unsigned char ts[AST_RED_MAX_GENERATION]; /*!< Time stamps */
 	unsigned char len[AST_RED_MAX_GENERATION]; /*!< length of each generation */
 	int num_gen; /*!< Number of generations */
 	int schedid; /*!< Timer id */
@@ -289,9 +332,18 @@ static int ast_rtp_local_bridge(struct ast_rtp_instance *instance0, struct ast_r
 static int ast_rtp_get_stat(struct ast_rtp_instance *instance, struct ast_rtp_instance_stats *stats, enum ast_rtp_instance_stat stat);
 static int ast_rtp_dtmf_compatible(struct ast_channel *chan0, struct ast_rtp_instance *instance0, struct ast_channel *chan1, struct ast_rtp_instance *instance1);
 static void ast_rtp_stun_request(struct ast_rtp_instance *instance, struct ast_sockaddr *suggestion, const char *username);
+static void ast_rtp_hold(struct ast_rtp_instance *instance, int status);
 static void ast_rtp_stop(struct ast_rtp_instance *instance);
 static int ast_rtp_qos_set(struct ast_rtp_instance *instance, int tos, int cos, const char* desc);
 static int ast_rtp_sendcng(struct ast_rtp_instance *instance, int level);
+static int ast_rtcp_write(const void *data);
+static void ast_rtcp_setcname(struct ast_rtp_instance *instance, const char *cname, size_t length);
+static void ast_rtcp_set_bridged(struct ast_rtp_instance *instance, const char *channel, const char *uniqueid, const char *bridgedchan, const char *bridgeduniqueid);
+void ast_rtcp_set_translator(struct ast_rtp_instance *instance, const char *readtranslator, const int readcost, const char *writetranslator, const int writecost);
+static int ast_rtp_isactive(struct ast_rtp_instance *instance);
+static int add_sdes_bodypart(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len, int type);
+static int add_sdes_header(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len);
+static int ast_rtcp_write_empty_frame(struct ast_rtp_instance *instance);
 
 /* RTP Engine Declaration */
 static struct ast_rtp_engine asterisk_rtp_engine = {
@@ -317,10 +369,50 @@ static struct ast_rtp_engine asterisk_rtp_engine = {
 	.get_stat = ast_rtp_get_stat,
 	.dtmf_compatible = ast_rtp_dtmf_compatible,
 	.stun_request = ast_rtp_stun_request,
+	.hold = ast_rtp_hold,
 	.stop = ast_rtp_stop,
 	.qos = ast_rtp_qos_set,
 	.sendcng = ast_rtp_sendcng,
+	.setcname = ast_rtcp_setcname,
+	.set_bridged_chan = ast_rtcp_set_bridged,
+	.set_translator = ast_rtcp_set_translator,
+	.isactive = ast_rtp_isactive,
+	.rtcp_write_empty = ast_rtcp_write_empty_frame,
 };
+
+
+/* Payload types */
+struct {
+	int		payload;
+	const char 	*desc;
+} rtcp_pt[] = {
+	{ RTCP_PT_FUR,	"FIR  - Full Intra-frame request (h.261)", },
+	{ RTCP_PT_NACK,	"NACK - Negative acknowledgement (h.261)", },
+	{ RTCP_PT_IJ,	"IJ   - RFC 5450 Extended Inter-arrival jitter report", },
+	{ RTCP_PT_SR,	"SR   - RFC 3550 Sender report", },
+	{ RTCP_PT_RR,	"RR   - RFC 3550 Receiver report", },
+	{ RTCP_PT_SDES,	"SDES - Source Description", },
+	{ RTCP_PT_BYE ,	"BYE  - Goodbye", },
+	{ RTCP_PT_APP,	"APP  - Application defined", },
+	{ RTCP_PT_RTPFB," RTPFB - Generic RTP feedback RFC 4585", },
+	{ RTCP_PT_PSFB,	"PSFB - Payload specific data  RFC 4585", },
+	{ RTCP_PT_XR,	"XR   - Extended report - RFC3611", },
+	{ RTCP_PT_AVB,	"ACB RTCP Packet", },
+	{ RTCP_PT_RSI,	"Receiver summary information", },
+	{ RTCP_PT_TOKEN,"Port mapping, RFC 6284", },
+};
+
+static const char *find_rtcp_pt(int payload)
+{
+	int x;
+
+	for (x = 0; x < ARRAY_LEN(rtcp_pt); x++) {
+		if (rtcp_pt[x].payload == payload)
+			return rtcp_pt[x].desc;
+	}
+
+	return "Unknown RTCP payload";
+}
 
 static inline int rtp_debug_test_addr(struct ast_sockaddr *addr)
 {
@@ -417,6 +509,24 @@ static unsigned int ast_rtcp_calc_interval(struct ast_rtp *rtp)
 	 * Look in RFC 3550 Section A.7 for an example*/
 	interval = rtcpinterval;
 	return interval;
+}
+
+/*! \brief Schedule RTCP transmissions for RTP channel */
+static void ast_rtcp_schedule(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+
+	/* Do not schedule RR if RTCP isn't run */
+	if (rtp->rtcp && !ast_sockaddr_isnull(&rtp->rtcp->them)  && rtp->rtcp->schedid < 1) {
+		/* Schedule transmission of Receiver Report */
+		ast_rtcp_write_empty(instance);
+		ao2_ref(instance, +1);
+		rtp->rtcp->schedid = ast_sched_add(rtp->sched, ast_rtcp_calc_interval(rtp), ast_rtcp_write, instance);
+		if (rtp->rtcp->schedid < 0) {
+			ao2_ref(instance, -1);
+			ast_log(LOG_WARNING, "scheduling RTCP transmission failed.\n");
+		}
+	}
 }
 
 /*! \brief Calculate normal deviation */
@@ -575,6 +685,9 @@ static int ast_rtp_new(struct ast_rtp_instance *instance,
 
 	/* Associate the RTP structure with the RTP instance and be done */
 	ast_rtp_instance_set_data(instance, rtp);
+
+	gettimeofday(&rtp->start, NULL);
+	rtp->isactive = 1;
 
 	return 0;
 }
@@ -884,7 +997,7 @@ static void timeval2ntp(struct timeval tv, unsigned int *msw, unsigned int *lsw)
 }
 
 /*! \brief Send RTCP recipient's report */
-static int ast_rtcp_write_rr(struct ast_rtp_instance *instance)
+static int ast_rtcp_write_rr(struct ast_rtp_instance *instance, int goodbye)
 {
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	int res;
@@ -896,7 +1009,7 @@ static int ast_rtcp_write_rr(struct ast_rtp_instance *instance)
 	unsigned int received_interval;
 	int lost_interval;
 	struct timeval now;
-	unsigned int *rtcpheader;
+	unsigned int *rtcpheader, *start;
 	char bdata[1024];
 	struct timeval dlsr;
 	int fraction;
@@ -944,7 +1057,7 @@ static int ast_rtcp_write_rr(struct ast_rtp_instance *instance)
 		fraction = (lost_interval << 8) / expected_interval;
 	gettimeofday(&now, NULL);
 	timersub(&now, &rtp->rtcp->rxlsr, &dlsr);
-	rtcpheader = (unsigned int *)bdata;
+	rtcpheader = (unsigned int *) bdata;
 	rtcpheader[0] = htonl((2 << 30) | (1 << 24) | (RTCP_PT_RR << 16) | ((len/4)-1));
 	rtcpheader[1] = htonl(rtp->ssrc);
 	rtcpheader[2] = htonl(rtp->themssrc);
@@ -954,13 +1067,13 @@ static int ast_rtcp_write_rr(struct ast_rtp_instance *instance)
 	rtcpheader[6] = htonl(rtp->rtcp->themrxlsr);
 	rtcpheader[7] = htonl((((dlsr.tv_sec * 1000) + (dlsr.tv_usec / 1000)) * 65536) / 1000);
 
-	/*! \note Insert SDES here. Probably should make SDES text equal to mimetypes[code].type (not subtype 'cos
-	  it can change mid call, and SDES can't) */
-	rtcpheader[len/4]     = htonl((2 << 30) | (1 << 24) | (RTCP_PT_SDES << 16) | 2);
-	rtcpheader[(len/4)+1] = htonl(rtp->ssrc);               /* Our SSRC */
-	rtcpheader[(len/4)+2] = htonl(0x01 << 24);              /* Empty for the moment */
-	len += 12;
 
+	start = &rtcpheader[len/4];
+	len +=8; /* SKip header for now */
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_CNAME);
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_END);
+	/* Now, add header when we know the actual length */
+	add_sdes_header(rtp, start, len);
 	res = rtcp_sendto(instance, (unsigned int *)rtcpheader, len, 0, &rtp->rtcp->them);
 
 	if (res < 0) {
@@ -986,15 +1099,16 @@ static int ast_rtcp_write_rr(struct ast_rtp_instance *instance)
 }
 
 /*! \brief Send RTCP sender's report */
-static int ast_rtcp_write_sr(struct ast_rtp_instance *instance)
+static int ast_rtcp_write_sr(struct ast_rtp_instance *instance, int goodbye)
 {
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	int res;
-	int len = 0;
+	int len = 0;	/* Measured in chunks of four bytes */
+	int srlen = 0;
 	struct timeval now;
 	unsigned int now_lsw;
 	unsigned int now_msw;
-	unsigned int *rtcpheader;
+	unsigned int *rtcpheader, *start;
 	unsigned int lost;
 	unsigned int extended;
 	unsigned int expected;
@@ -1017,7 +1131,8 @@ static int ast_rtcp_write_sr(struct ast_rtp_instance *instance)
 	}
 
 	gettimeofday(&now, NULL);
-	timeval2ntp(now, &now_msw, &now_lsw); /* fill thses ones in from utils.c*/
+	timeval2ntp(now, &now_msw, &now_lsw); /* fill these ones in from utils.c*/
+	/* Set the header for sender's report */
 	rtcpheader = (unsigned int *)bdata;
 	rtcpheader[1] = htonl(rtp->ssrc);               /* Our SSRC */
 	rtcpheader[2] = htonl(now_msw);                 /* now, MSW. gettimeofday() + SEC_BETWEEN_1900_AND_1970*/
@@ -1052,12 +1167,21 @@ static int ast_rtcp_write_sr(struct ast_rtp_instance *instance)
 
 	rtcpheader[0] = htonl((2 << 30) | (1 << 24) | (RTCP_PT_SR << 16) | ((len/4)-1));
 
-	/* Insert SDES here. Probably should make SDES text equal to mimetypes[code].type (not subtype 'cos */
-	/* it can change mid call, and SDES can't) */
-	rtcpheader[len/4]     = htonl((2 << 30) | (1 << 24) | (RTCP_PT_SDES << 16) | 2);
-	rtcpheader[(len/4)+1] = htonl(rtp->ssrc);               /* Our SSRC */
-	rtcpheader[(len/4)+2] = htonl(0x01 << 24);                    /* Empty for the moment */
-	len += 12;
+	start = &rtcpheader[len/4];
+	srlen = len;
+	len +=8; /* SKip header for now */
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_CNAME);
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_END);
+	/* Now, add header when we know the actual length */
+	add_sdes_header(rtp, start, len - srlen);
+
+	if (goodbye) {
+		/* An additional RTCP block */
+		rtcpheader[len/4] = htonl((2 << 30) | (1 << 24) | (RTCP_PT_BYE << 16) | 1);
+		len += 4;
+		rtcpheader[len/4] = htonl(rtp->ssrc);               /* Our SSRC */
+		len += 4;
+	}
 
 	res = rtcp_sendto(instance, (unsigned int *)rtcpheader, len, 0, &rtp->rtcp->them);
 	if (res < 0) {
@@ -1081,11 +1205,11 @@ static int ast_rtcp_write_sr(struct ast_rtp_instance *instance)
 		ast_verbose("  Sent packets: %u\n", rtp->txcount);
 		ast_verbose("  Sent octets: %u\n", rtp->txoctetcount);
 		ast_verbose("  Report block:\n");
-		ast_verbose("  Fraction lost: %u\n", fraction);
-		ast_verbose("  Cumulative loss: %u\n", lost);
-		ast_verbose("  IA jitter: %.4f\n", rtp->rxjitter);
-		ast_verbose("  Their last SR: %u\n", rtp->rtcp->themrxlsr);
-		ast_verbose("  DLSR: %4.4f (sec)\n\n", (double)(ntohl(rtcpheader[12])/65536.0));
+		ast_verbose("    Fraction lost (since last report): %u\n", fraction);
+		ast_verbose("    Cumulative loss: %u\n", lost);
+		ast_verbose("    IA jitter: %.4f\n", rtp->rxjitter);
+		ast_verbose("    Their last SR: %u\n", rtp->rtcp->themrxlsr);
+		ast_verbose("    Delay since last SR (DLSR): %4.4f (sec)\n\n", (double)(ntohl(rtcpheader[12])/65536.0));
 	}
 	manager_event(EVENT_FLAG_REPORTING, "RTCPSent", "To: %s\r\n"
 					    "OurSSRC: %u\r\n"
@@ -1128,9 +1252,9 @@ static int ast_rtcp_write(const void *data)
 	}
 
 	if (rtp->txcount > rtp->rtcp->lastsrtxcount) {
-		res = ast_rtcp_write_sr(instance);
+		res = ast_rtcp_write_sr(instance, 0);
 	} else {
-		res = ast_rtcp_write_rr(instance);
+		res = ast_rtcp_write_rr(instance, 0);
 	}
 
 	if (!res) {
@@ -1249,15 +1373,7 @@ static int ast_rtp_raw_write(struct ast_rtp_instance *instance, struct ast_frame
 			rtp->txcount++;
 			rtp->txoctetcount += (res - hdrlen);
 
-			if (rtp->rtcp && rtp->rtcp->schedid < 1) {
-				ast_debug(1, "Starting RTCP transmission on RTP instance '%p'\n", instance);
-				ao2_ref(instance, +1);
-				rtp->rtcp->schedid = ast_sched_add(rtp->sched, ast_rtcp_calc_interval(rtp), ast_rtcp_write, instance);
-				if (rtp->rtcp->schedid < 0) {
-					ao2_ref(instance, -1);
-					ast_log(LOG_WARNING, "scheduling RTCP transmission failed.\n");
-				}
-			}
+			ast_rtcp_schedule(instance);
 		}
 
 		if (rtp_debug_test_addr(&remote_address)) {
@@ -1314,6 +1430,12 @@ static int ast_rtp_write(struct ast_rtp_instance *instance, struct ast_frame *fr
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	struct ast_sockaddr remote_address = { {0,} };
 	format_t codec, subclass;
+
+	if (ast_test_flag(rtp, FLAG_HOLD)) {
+		/* This stream is on hold, just keep on happily and don't do anything */
+		ast_debug(1, "** Frame muted since we're on hold. \n");
+		return 0;
+	}
 
 	ast_rtp_instance_get_remote_address(instance, &remote_address);
 
@@ -1462,20 +1584,23 @@ static void calc_rxstamp(struct timeval *tv, struct ast_rtp *rtp, unsigned int t
 		d=-d;
 	rtp->rxjitter += (1./16.) * (d - rtp->rxjitter);
 
-	if (rtp->rtcp) {
-		if (rtp->rxjitter > rtp->rtcp->maxrxjitter)
-			rtp->rtcp->maxrxjitter = rtp->rxjitter;
-		if (rtp->rtcp->rxjitter_count == 1)
-			rtp->rtcp->minrxjitter = rtp->rxjitter;
-		if (rtp->rtcp && rtp->rxjitter < rtp->rtcp->minrxjitter)
-			rtp->rtcp->minrxjitter = rtp->rxjitter;
-
-		normdev_rxjitter_current = normdev_compute(rtp->rtcp->normdev_rxjitter,rtp->rxjitter,rtp->rtcp->rxjitter_count);
-		rtp->rtcp->stdev_rxjitter = stddev_compute(rtp->rtcp->stdev_rxjitter,rtp->rxjitter,rtp->rtcp->normdev_rxjitter,normdev_rxjitter_current,rtp->rtcp->rxjitter_count);
-
-		rtp->rtcp->normdev_rxjitter = normdev_rxjitter_current;
-		rtp->rtcp->rxjitter_count++;
+	if (!rtp->rtcp) {
+		return;
 	}
+	if (rtp->rxjitter > rtp->rtcp->maxrxjitter)
+		rtp->rtcp->maxrxjitter = rtp->rxjitter;
+	if (rtp->rtcp->rxjitter_count == 1) {
+		rtp->rtcp->minrxjitter = rtp->rxjitter;
+	}
+	if (rtp->rtcp && rtp->rxjitter < rtp->rtcp->minrxjitter) {
+		rtp->rtcp->minrxjitter = rtp->rxjitter;
+	}
+
+	normdev_rxjitter_current = normdev_compute(rtp->rtcp->normdev_rxjitter,rtp->rxjitter,rtp->rtcp->rxjitter_count);
+	rtp->rtcp->stdev_rxjitter = stddev_compute(rtp->rtcp->stdev_rxjitter,rtp->rxjitter,rtp->rtcp->normdev_rxjitter,normdev_rxjitter_current,rtp->rtcp->rxjitter_count);
+
+	rtp->rtcp->normdev_rxjitter = normdev_rxjitter_current;
+	rtp->rtcp->rxjitter_count++;
 }
 
 static struct ast_frame *create_dtmf_frame(struct ast_rtp_instance *instance, enum ast_frame_type type, int compensate)
@@ -1755,16 +1880,41 @@ static struct ast_frame *process_cn_rfc3389(struct ast_rtp_instance *instance, u
 	return &rtp->f;
 }
 
-static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
+static struct ast_frame *ast_rtcp_read_fd(int fd, struct ast_rtp_instance *instance);
+struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance);
+
+#ifdef NOT_NEEDED_ANYMORE
+static int p2p_rtcp_callback(int *id, int fd, short events, void *cbdata)
+{
+	struct ast_rtp *rtp = cbdata;
+	ast_rtcp_read_fd(fd, instance);	
+	/* For now, skip any frames that is output. Which is bad for FUR's, but well. DEBUG */
+	return 1;
+}
+#endif
+
+struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+	return ast_rtcp_read_fd(rtp->rtcp->s, instance);
+}
+
+static struct ast_frame *ast_rtcp_read_fd(int fd, struct ast_rtp_instance *instance)
 {
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	struct ast_sockaddr addr;
 	unsigned int rtcpdata[8192 + AST_FRIENDLY_OFFSET];
 	unsigned int *rtcpheader = (unsigned int *)(rtcpdata + AST_FRIENDLY_OFFSET);
-	int res, packetwords, position = 0;
+	int j, res, packetwords, position = 0;
+	char *sdes;
+	unsigned int sdeslength, sdestype;
 	struct ast_frame *f = &ast_null_frame;
 
 	/* Read in RTCP data from the socket */
+
+/* OEJ - ouch, we need to send a file handle here. Check this
+	isntance replaces the fd
+*/
 	if ((res = rtcp_recvfrom(instance, rtcpdata + AST_FRIENDLY_OFFSET,
 				sizeof(rtcpdata) - sizeof(unsigned int) * AST_FRIENDLY_OFFSET,
 				0, &addr)) < 0) {
@@ -1776,7 +1926,7 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 		return &ast_null_frame;
 	}
 
-	packetwords = res / 4;
+	packetwords = res / 4;	 /* Each RTCP segment is 32 bits */
 
 	if (ast_rtp_instance_get_prop(instance, AST_RTP_PROPERTY_NAT)) {
 		/* Send to whoever sent to us */
@@ -1788,8 +1938,15 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 		}
 	}
 
-	ast_debug(1, "Got RTCP report of %d bytes\n", res);
+	if (rtcp_debug_test_addr(&addr)) {
+		ast_debug(1, "Got RTCP report of %d bytes - %d messages\n", res, packetwords);
+	}
 
+	/* Process a compound packet 
+	   - A compound packet should start with a sender or receiver report. BYE can start as well
+		(seen in implementations) 
+	   -  Packet length should be a multiple of four bytes
+	*/
 	while (position < packetwords) {
 		int i, pt, rc;
 		unsigned int length, dlsr, lsr, msw, lsw, comp;
@@ -1798,23 +1955,32 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 		uint64_t rtt = 0;
 
 		i = position;
+		if (rtcp_debug_test_addr(&addr)) {
+			ast_debug(3, "***** Debug - position = %d\n", position     );
+		}
 		length = ntohl(rtcpheader[i]);
-		pt = (length & 0xff0000) >> 16;
-		rc = (length & 0x1f000000) >> 24;
+		pt = (length & 0xff0000) >> 16;		/* Packet type */
+		rc = (length & 0x1f000000) >> 24;	/* Number of chunks, i.e. streams reported */
 		length &= 0xffff;
 
 		if ((i + length) > packetwords) {
-			if (option_debug || rtpdebug)
-				ast_log(LOG_DEBUG, "RTCP Read too short\n");
-			return &ast_null_frame;
+			if (option_debug || rtpdebug) {
+				ast_log(LOG_WARNING, "RTCP Read too short - packet type %d position %d\n", pt, i);
+			}
+			//return &ast_null_frame;
+			return f;
 		}
 
 		if (rtcp_debug_test_addr(&addr)) {
 			ast_verbose("\n\nGot RTCP from %s\n",
 				    ast_sockaddr_stringify(&addr));
-			ast_verbose("PT: %d(%s)\n", pt, (pt == 200) ? "Sender Report" : (pt == 201) ? "Receiver Report" : (pt == 192) ? "H.261 FUR" : "Unknown");
+			ast_verbose("PT: %d(%s)\n", pt, find_rtcp_pt(pt)); 
 			ast_verbose("Reception reports: %d\n", rc);
-			ast_verbose("SSRC of sender: %u\n", rtcpheader[i + 1]);
+			ast_verbose("   SSRC of packet sender: %u (%x)", ntohl(rtcpheader[i + 1]), ntohl(rtcpheader[i + 1]));
+			ast_verbose("   (Position %d of %d)\n", i, packetwords);
+			if (rc == 0) {  
+				ast_verbose("   Empty - no reports! \n");
+			}
 		}
 
 		i += 2; /* Advance past header and ssrc */
@@ -1823,27 +1989,46 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 			continue;
 		}
 
-		switch (pt) {
-		case RTCP_PT_SR:
-			gettimeofday(&rtp->rtcp->rxlsr,NULL); /* To be able to populate the dlsr */
-			rtp->rtcp->spc = ntohl(rtcpheader[i+3]);
-			rtp->rtcp->soc = ntohl(rtcpheader[i + 4]);
-			rtp->rtcp->themrxlsr = ((ntohl(rtcpheader[i]) & 0x0000ffff) << 16) | ((ntohl(rtcpheader[i + 1]) & 0xffff0000) >> 16); /* Going to LSR in RR*/
 
+		if (rc == 0 && pt == RTCP_PT_RR) {	/* We're receiving a receiver report with no reports, which is ok */
+			position += (length + 1);
+			continue;
+		}
+		if (pt == RTCP_PT_SR) {
+			rtp->rtcp->rec_sr_count++;
+		} else if (pt == RTCP_PT_RR) {
+			rtp->rtcp->rec_rr_count++;
+		}
+		switch (pt) {
+		case RTCP_PT_SR:	/* Sender's report - about what they have sent us */
 			if (rtcp_debug_test_addr(&addr)) {
-				ast_verbose("NTP timestamp: %lu.%010lu\n", (unsigned long) ntohl(rtcpheader[i]), (unsigned long) ntohl(rtcpheader[i + 1]) * 4096);
-				ast_verbose("RTP timestamp: %lu\n", (unsigned long) ntohl(rtcpheader[i + 2]));
-				ast_verbose("SPC: %lu\tSOC: %lu\n", (unsigned long) ntohl(rtcpheader[i + 3]), (unsigned long) ntohl(rtcpheader[i + 4]));
+				ast_verbose("    - RTCP SR (sender report) from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
 			}
-			i += 5;
-			if (rc < 1)
-				break;
-			/* Intentional fall through */
-		case RTCP_PT_RR:
 			/* Don't handle multiple reception reports (rc > 1) yet */
+			gettimeofday(&rtp->rtcp->rxlsr, NULL); /* To be able to populate the dlsr */
+			rtp->rtcp->spc = ntohl(rtcpheader[i + 3]);	/* Sender packet count */
+			rtp->rtcp->soc = ntohl(rtcpheader[i + 4]);	/* Sender octet count */
+
+ 			rtp->rtcp->themrxlsr = ((ntohl(rtcpheader[i]) & 0x0000ffff) << 16) | ((ntohl(rtcpheader[i + 1]) & 0xffff0000) >> 16); /* Going to LSR in RR*/
+     
+ 			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("      NTP timestamp: %lu.%010lu\n", (unsigned long) ntohl(rtcpheader[i]), (unsigned long) ntohl(rtcpheader[i + 1]) * 4096);
+				ast_verbose("      RTP timestamp: %lu\n", (unsigned long) ntohl(rtcpheader[i + 2]));
+				ast_verbose("      SPC: %lu\tSOC: %lu\n", (unsigned long) ntohl(rtcpheader[i + 3]), (unsigned long) ntohl(rtcpheader[i + 4]));
+				ast_verbose("      RC (number of reports) %d\n", rc);
+ 			}
+			i += 5;	/* Sender's info report is five bytes */
+ 			if (rc < 1)
+ 				break;
+
+		case RTCP_PT_RR:	/* Receiver report - data about what we have sent to them */
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("Received a RTCP RR (receiver report) from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
 			/* Calculate RTT per RFC */
 			gettimeofday(&now, NULL);
 			timeval2ntp(now, &msw, &lsw);
+			/* Get timing */ 
 			if (ntohl(rtcpheader[i + 4]) && ntohl(rtcpheader[i + 5])) { /* We must have the LSR && DLSR */
 				comp = ((msw & 0xffff) << 16) | ((lsw & 0xffff0000) >> 16);
 				lsr = ntohl(rtcpheader[i + 4]);
@@ -1865,13 +2050,16 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 				if (comp - dlsr >= lsr) {
 					rtp->rtcp->accumulated_transit += rttsec;
 
-					if (rtp->rtcp->rtt_count == 0)
+					if (rtp->rtcp->rtt_count == 0) {
 						rtp->rtcp->minrtt = rttsec;
+					}
 
-					if (rtp->rtcp->maxrtt<rttsec)
+					if (rtp->rtcp->maxrtt<rttsec) {
 						rtp->rtcp->maxrtt = rttsec;
-					if (rtp->rtcp->minrtt>rttsec)
+					}
+					if (rtp->rtcp->minrtt > rttsec || rtp->rtcp->minrtt == 0) {
 						rtp->rtcp->minrtt = rttsec;
+					}
 
 					normdevrtt_current = normdev_compute(rtp->rtcp->normdevrtt, rttsec, rtp->rtcp->rtt_count);
 
@@ -1908,7 +2096,7 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 
 			rtp->rtcp->reported_normdev_jitter = reported_normdev_jitter_current;
 
-			rtp->rtcp->reported_lost = ntohl(rtcpheader[i + 1]) & 0xffffff;
+			rtp->rtcp->reported_lost = ntohl(rtcpheader[i + 1]) & 0xffffff;	/* Lost packets for HOLE session, not for report time */
 
 			reported_lost = (double) rtp->rtcp->reported_lost;
 
@@ -1916,7 +2104,7 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 			if (rtp->rtcp->reported_jitter_count == 0)
 				rtp->rtcp->reported_minlost = reported_lost;
 
-			if (reported_lost < rtp->rtcp->reported_minlost)
+			if (reported_lost < rtp->rtcp->reported_minlost)	/* OEJ: Min and max are not really interesting here. */
 				rtp->rtcp->reported_minlost = reported_lost;
 
 			if (reported_lost > rtp->rtcp->reported_maxlost)
@@ -1992,8 +2180,9 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 			}
 			break;
 		case RTCP_PT_FUR:
-			if (rtcp_debug_test_addr(&addr))
-				ast_verbose("Received an RTCP Fast Update Request\n");
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("Received an RTCP Fast Update Request from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
 			rtp->f.frametype = AST_FRAME_CONTROL;
 			rtp->f.subclass.integer = AST_CONTROL_VIDUPDATE;
 			rtp->f.datalen = 0;
@@ -2003,23 +2192,142 @@ static struct ast_frame *ast_rtcp_read(struct ast_rtp_instance *instance)
 			f = &rtp->f;
 			break;
 		case RTCP_PT_SDES:
-			if (rtcp_debug_test_addr(&addr))
-				ast_verbose("Received an SDES from %s\n",
-					    ast_sockaddr_stringify(&rtp->rtcp->them));
+			/* SDES messages are divided into chunks, each one containing one or
+			   several items. Each chunk is for a different CSRC, so it is not really
+			   relevant in most cases of voip calls - unless you have an advanced
+			   mixer in the network that separates the different streams with CSRC 
+
+			   A chunk starts with SSRC/CSRC (four bytes), then SDES items 
+			   In the SDES message, there can be several items, ending with SDES_END
+			   The length of the all items is length - header 
+			   Chunk starts on a 32-bit boundary and needs padding by 0's
+		
+			   the "rc" variable contains the number of chunks 
+			   When we start, we're beyond the SSRC and starts with SDES items in the
+			   first chunk.
+			
+				an SDES item is one byte of type, one byte of length then data 
+				(no null termination). Text is UTF-8.
+				the last item is a zero (END) type with no length indication.
+			*/
+			
+			j = i * 4;
+			sdes = (char *) &rtcpheader[i];
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received an SDES from %s - Total length %d (%d bytes)\n", ast_sockaddr_stringify(&rtp->rtcp->them), length-i, ((length-i)*4) - 6);
+			}
+			while (j < length * 4) {
+				sdestype = (uint8_t) *sdes;
+				sdes++;
+				sdeslength = (uint8_t) *sdes;
+				sdes++;
+				if (rtcp_debug_test_addr(&addr)) {
+					ast_verbose(" --- SDES Type %u, Length %u Curj %d)\n", sdestype, sdeslength, j);
+				}
+				switch (sdestype) {
+				case SDES_CNAME:
+					if (!ast_strlen_zero(rtp->rtcp->theircname)) {
+						if (sdeslength > sizeof(rtp->rtcp->theircname)) {
+							sdeslength = sizeof(rtp->rtcp->theircname) - 1;
+						}
+						if (strncmp(rtp->rtcp->theircname, sdes, sdeslength)) {
+							ast_log(LOG_WARNING, "New RTP stream received (new RTCP CNAME for session. Old name: %s\n", rtp->rtcp->theircname);
+						}
+					}
+					strncpy(rtp->rtcp->theircname, sdes, sdeslength);
+					rtp->rtcp->theircname[sdeslength + 1] = '\0';
+					rtp->rtcp->theircnamelength = sdeslength;
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES CNAME (utf8) %s\n", rtp->rtcp->theircname);
+					}
+					break;
+				case SDES_TOOL:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES TOOL \n");
+					}
+					break;
+				case SDES_NAME:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES NAME \n");
+					}
+					break;
+				case SDES_EMAIL:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES EMAIL \n");
+					}
+					break;
+				case SDES_PHONE:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES PHONE \n");
+					}
+					break;
+				case SDES_LOC:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES LOC \n");
+					}
+					break;
+				case SDES_NOTE:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES NOTE \n");
+					}
+					break;
+				case SDES_PRIV:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES PRIV \n");
+					}
+					break;
+				case SDES_END:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES END \n");
+					}
+					break;
+				case SDES_APSI:
+					if (rtcp_debug_test_addr(&addr)) {
+						ast_verbose(" --- SDES APSI \n");
+					}
+					break;
+				}
+				j += 2 + sdeslength;	/* Header (1 byte) + length */
+				sdes += sdeslength;
+				if (sdestype == SDES_END) {
+					break;	/* The while loop */
+				}
+			}
+
 			break;
-		case RTCP_PT_BYE:
-			if (rtcp_debug_test_addr(&addr))
-				ast_verbose("Received a BYE from %s\n",
-					    ast_sockaddr_stringify(&rtp->rtcp->them));
+		case RTCP_PT_NACK:
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received a RTCP NACK from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
+			break;
+ 		case RTCP_PT_BYE:
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received a RTCP BYE from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
+ 			break;
+		case RTCP_PT_XR:
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received a RTCP Extended Report (XR) packet from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
+			break;
+		case RTCP_PT_APP:
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received a RTCP APP packet from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
+			break;
+		case RTCP_PT_IJ:
+			if (rtcp_debug_test_addr(&addr)) {
+				ast_verbose("   Received a RTCP IJ from %s\n", ast_sockaddr_stringify(&rtp->rtcp->them));
+			}
 			break;
 		default:
-			ast_debug(1, "Unknown RTCP packet (pt=%d) received from %s\n",
-				  pt, ast_sockaddr_stringify(&rtp->rtcp->them));
+			ast_debug(1, "Unknown RTCP packet (pt=%d) received from %s\n", pt, ast_sockaddr_stringify(&rtp->rtcp->them));
 			break;
 		}
 		position += (length + 1);
-	}
+	}	/* While loop */
 
+	/* OEJ CHECK next line */
 	rtp->rtcp->rtcp_info = 1;
 
 	return f;
@@ -2033,6 +2341,10 @@ static int bridge_p2p_rtp_write(struct ast_rtp_instance *instance, unsigned int 
 	struct ast_rtp_payload_type payload_type;
 	int reconstruct = ntohl(rtpheader[0]);
 	struct ast_sockaddr remote_address = { {0,} };
+	struct timeval rxtime;
+	unsigned int timestamp;
+	int rate;
+	unsigned int ms;
 
 	/* Get fields from packet */
 	payload = (reconstruct & 0x7f0000) >> 16;
@@ -2055,11 +2367,28 @@ static int bridge_p2p_rtp_write(struct ast_rtp_instance *instance, unsigned int 
 		ast_clear_flag(rtp, FLAG_NEED_MARKER_BIT);
 	}
 
+	/* Calculate timestamp for reception of the packet */
+	timestamp = ntohl(rtpheader[1]);
+	calc_rxstamp(&rxtime, rtp, timestamp, mark);
+
+ 	rate = rtp_get_rate(bridged_payload) / 1000;
+
+	/* Now, calculate tx timestamp */
+	ms = calc_txstamp(rtp, &rxtime);
+	if (bridged_payload == AST_FRAME_VOICE) {
+		bridged->lastts = bridged->lastts + ms * rate;
+	} else if (bridged_payload == AST_FRAME_VIDEO) {
+		bridged->lastts = bridged->lastts + ms * 90;
+		/* This is not exact, but a best effort example that can be improved */
+	}
+
 	/* Reconstruct part of the packet */
 	reconstruct &= 0xFF80FFFF;
 	reconstruct |= (bridged_payload << 16);
 	reconstruct |= (mark << 23);
 	rtpheader[0] = htonl(reconstruct);
+
+	bridged->lasttxformat = rtp->lastrxformat = bridged_payload;
 
 	ast_rtp_instance_get_remote_address(instance1, &remote_address);
 
@@ -2086,7 +2415,12 @@ static int bridge_p2p_rtp_write(struct ast_rtp_instance *instance, unsigned int 
 			ast_set_flag(bridged, FLAG_NAT_INACTIVE_NOWARN);
 		}
 		return 0;
-	} else if (rtp_debug_test_addr(&remote_address)) {
+	}
+
+	bridged->txcount++;
+	bridged->txoctetcount += (res - hdrlen);
+
+	if (rtp_debug_test_addr(&remote_address)) {
 		ast_verbose("Sent RTP P2P packet to %s (type %-2.2d, len %-6.6u)\n",
 			    ast_sockaddr_stringify(&remote_address),
 			    bridged_payload, len - hdrlen);
@@ -2132,7 +2466,7 @@ static struct ast_frame *ast_rtp_read(struct ast_rtp_instance *instance, int rtc
 
 	/* Make sure the data that was read in is actually enough to make up an RTP packet */
 	if (res < hdrlen) {
-		ast_log(LOG_WARNING, "RTP Read too short\n");
+		ast_log(LOG_WARNING, "RTP Read too short (%d expecting %d)\n", res, hdrlen);
 		return &ast_null_frame;
 	}
 
@@ -2213,10 +2547,6 @@ static struct ast_frame *ast_rtp_read(struct ast_rtp_instance *instance, int rtc
 		}
 	}
 
-	/* If we are directly bridged to another instance send the audio directly out */
-	if (ast_rtp_instance_get_bridged(instance) && !bridge_p2p_rtp_write(instance, rtpheader, res, hdrlen)) {
-		return &ast_null_frame;
-	}
 
 	/* If the version is not what we expected by this point then just drop the packet */
 	if (version != 2) {
@@ -2253,6 +2583,15 @@ static struct ast_frame *ast_rtp_read(struct ast_rtp_instance *instance, int rtc
 	}
 
 	rtp->rxssrc = ssrc;
+
+	/* Schedule RTCP report transmissions if possible */
+	ast_rtcp_schedule(instance);
+
+	/* This needs to be after RTCP calculations to get more RTCP data */
+	/* If we are directly bridged to another instance send the audio directly out */
+	if (ast_rtp_instance_get_bridged(instance) && !bridge_p2p_rtp_write(instance, rtpheader, res, hdrlen)) {
+		return &ast_null_frame;
+	}
 
 	/* Remove any padding bytes that may be present */
 	if (padding) {
@@ -2699,6 +3038,46 @@ static int ast_rtp_get_stat(struct ast_rtp_instance *instance, struct ast_rtp_in
 	AST_RTP_STAT_SET(AST_RTP_INSTANCE_STAT_LOCAL_SSRC, -1, stats->local_ssrc, rtp->ssrc);
 	AST_RTP_STAT_SET(AST_RTP_INSTANCE_STAT_REMOTE_SSRC, -1, stats->remote_ssrc, rtp->themssrc);
 
+	AST_RTP_STAT_SET(AST_RTP_INSTANCE_STAT_START, -1, stats->start, rtp->start);
+	if (stat == AST_RTP_INSTANCE_STAT_IP || stat == AST_RTP_INSTANCE_STAT_ALL) {
+		memcpy(&stats->them, &rtp->rtcp->them, sizeof(stats->them));
+	}
+	if (stat == AST_RTP_INSTANCE_STAT_LOCAL_CNAME || stat == AST_RTP_INSTANCE_STAT_ALL) {
+		memcpy(&stats->ourcname, &rtp->rtcp->ourcname, rtp->rtcp->ourcnamelength);	/* UTF8 safe */
+		stats->ourcnamelength = rtp->rtcp->ourcnamelength;
+	}
+	if (stat == AST_RTP_INSTANCE_STAT_REMOTE_CNAME || stat == AST_RTP_INSTANCE_STAT_ALL) {
+		memcpy(&stats->theircname, &rtp->rtcp->theircname, rtp->rtcp->theircnamelength);	/* UTF8 safe */
+		stats->theircnamelength = rtp->rtcp->theircnamelength;
+	}
+
+	/* To fix */
+	stats->numberofreports = rtp->rtcp->rec_rr_count + rtp->rtcp->rec_sr_count;
+	stats->readcost = rtp->rtcp->readcost;
+        stats->writecost = rtp->rtcp->writecost;
+	stats->lasttxformat = rtp->lasttxformat;
+	stats->lastrxformat = rtp->lastrxformat;
+	if (!ast_strlen_zero(rtp->rtcp->readtranslator)) {
+		ast_copy_string(stats->readtranslator, rtp->rtcp->readtranslator, sizeof(stats->readtranslator));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->writetranslator)) {
+		ast_copy_string(stats->writetranslator, rtp->rtcp->writetranslator, sizeof(stats->writetranslator));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->readtranslator)) {
+		ast_copy_string(stats->readtranslator, rtp->rtcp->readtranslator, sizeof(stats->readtranslator));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->channel)) {
+		ast_copy_string(stats->channel, rtp->rtcp->channel, sizeof(stats->channel));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->bridgedchannel)) {
+		ast_copy_string(stats->bridgedchannel, rtp->rtcp->bridgedchannel, sizeof(stats->bridgedchannel));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->uniqueid)) {
+		ast_copy_string(stats->uniqueid, rtp->rtcp->uniqueid, sizeof(stats->uniqueid));
+	}
+	if (!ast_strlen_zero(rtp->rtcp->bridgeduniqueid)) {
+		ast_copy_string(stats->bridgeduniqueid, rtp->rtcp->bridgeduniqueid, sizeof(stats->bridgeduniqueid));
+	}
 	return 0;
 }
 
@@ -2728,17 +3107,41 @@ static void ast_rtp_stun_request(struct ast_rtp_instance *instance, struct ast_s
 	ast_sockaddr_from_sin(suggestion, &suggestion_tmp);
 }
 
+/* \brief Put stream on/off hold, mute outbound RTP but keep
+	RTP keepalives and RTCP going
+ */
+static void ast_rtp_hold(struct ast_rtp_instance *instance, int status)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+	if (status) {
+		ast_debug(1, "##### HOLDING RTCP, Have a nice day \n");
+		ast_set_flag(rtp, FLAG_HOLD);
+	} else {
+		/* CLEAR */
+		ast_debug(1, "##### UNHOLDING RTCP, You will get audio now. \n");
+		ast_clear_flag(rtp, FLAG_HOLD);
+	}
+}
+
 static void ast_rtp_stop(struct ast_rtp_instance *instance)
 {
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	struct ast_sockaddr addr = { {0,} };
 
+	ast_debug(1, "##### Stopping RTP, Sending good bye \n");
+
+	/* Send RTCP goodbye packet */
+	if (rtp->isactive && rtp->rtcp) {
+		ast_rtcp_write_sr(instance, 1);
+		ast_debug(1, "##### Stopping RTCP, Sent good bye \n");
+	}
 	if (rtp->rtcp && rtp->rtcp->schedid > 0) {
 		if (!ast_sched_del(rtp->sched, rtp->rtcp->schedid)) {
 			/* successfully cancelled scheduler entry. */
 			ao2_ref(instance, -1);
 		}
 		rtp->rtcp->schedid = -1;
+		ast_debug(1, "##### Stopping RTCP, Removing scheduler \n");
 	}
 
 	if (rtp->red) {
@@ -2753,6 +3156,7 @@ static void ast_rtp_stop(struct ast_rtp_instance *instance)
 	}
 
 	ast_set_flag(rtp, FLAG_NEED_MARKER_BIT);
+	rtp->isactive = 0;
 }
 
 static int ast_rtp_qos_set(struct ast_rtp_instance *instance, int tos, int cos, const char *desc)
@@ -2761,6 +3165,91 @@ static int ast_rtp_qos_set(struct ast_rtp_instance *instance, int tos, int cos, 
 
 	return ast_set_qos(rtp->s, tos, cos, desc);
 }
+
+
+/*! \brief set RTP cname used to describe session in RTCP sdes messages */
+void ast_rtcp_setcname(struct ast_rtp_instance *instance, const char *cname, size_t length)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+
+	if (!rtp || !rtp->rtcp) {
+		return;
+	}
+	if (length > 255) {
+		length=255;
+	}
+	ast_copy_string(rtp->rtcp->ourcname, cname, length+1);
+	rtp->rtcp->ourcnamelength = length;
+	if (option_debug > 3) {
+		ast_log(LOG_DEBUG, "--- Copied CNAME %s to RTCP structure (length %d)\n", cname, (int) length);
+	}
+}
+
+/*! \brief set the name of the bridged channel
+
+At the time when we write the report there might not be a bridge, so we need
+to store this so we can correlate the reports. If a channel changes bridge,
+it can be reset by first setting it to an empty string, then setting to 
+a new name 
+*/
+void ast_rtcp_set_bridged(struct ast_rtp_instance *instance, const char *channel, const char *uniqueid, const char *bridgedchan, const char *bridgeduniqueid)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+
+	if (!rtp) {		/* For some reason, there's no RTP */
+		ast_debug(1, "??????????????? NO RTP \n");
+		return;
+	}
+	if (!rtp->rtcp) {	/* No RTCP? Strange */
+		ast_debug(1, "??????????????? NO RTCP \n");
+		return;
+	}
+	/* If we already have data, don't replace it. 
+		NOTE: Should we replace it at a masquerade or something? Hmm.
+	*/
+	if (!ast_strlen_zero(channel) && !rtp->rtcp->channel[0]) {
+		ast_debug(1, "!!!!!! Setting channel name to %s\n", channel);
+		ast_copy_string(rtp->rtcp->channel, channel, sizeof(rtp->rtcp->channel));
+	}
+	if (!ast_strlen_zero(uniqueid) && !rtp->rtcp->uniqueid[0]) {
+		ast_debug(1, "!!!!!! Setting unique id to %s\n", uniqueid);
+		ast_copy_string(rtp->rtcp->uniqueid, uniqueid, sizeof(rtp->rtcp->uniqueid));
+	}
+	if (!ast_strlen_zero(bridgedchan)) {
+		ast_debug(1, "!!!!!! Setting bridged channel name to %s\n", bridgedchan);
+		ast_copy_string(rtp->rtcp->bridgedchannel, bridgedchan, sizeof(rtp->rtcp->bridgedchannel));
+	} else {
+		if(rtp->rtcp->bridgedchannel[0] != '\0') {
+			ast_debug(1, "!!!!!! Keeping bridged channel name %s\n", rtp->rtcp->bridgedchannel);
+		}
+		//rtp->rtcp->bridgedchan[0] = '\0';
+	}
+	if (!ast_strlen_zero(bridgeduniqueid)) {
+		ast_debug(1, "!!!!!! Setting bridged unique id to %s\n", bridgeduniqueid);
+		ast_copy_string(rtp->rtcp->bridgeduniqueid, bridgeduniqueid, sizeof(rtp->rtcp->bridgeduniqueid));
+	} else {
+		if(rtp->rtcp->bridgeduniqueid[0] != '\0') {
+			ast_debug(1, "!!!!!! Keeping bridged unique id \n");
+		}
+	}
+}
+
+
+/*! \brief Set the transcoding variables for the QoS reports */
+void ast_rtcp_set_translator(struct ast_rtp_instance *instance, const char *readtranslator, const int readcost, const char *writetranslator, const int writecost)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+	if (!rtp || !rtp->rtcp) {
+		return;
+	}
+	ast_copy_string(rtp->rtcp->readtranslator, S_OR(readtranslator,""), sizeof(rtp->rtcp->readtranslator));
+	ast_copy_string(rtp->rtcp->writetranslator, S_OR(writetranslator,""), sizeof(rtp->rtcp->writetranslator));
+	rtp->rtcp->readcost = readcost;
+	rtp->rtcp->writecost = writecost;
+	
+}
+
+
 
 /*! \brief generate comfort noice (CNG) */
 static int ast_rtp_sendcng(struct ast_rtp_instance *instance, int level)
@@ -2805,6 +3294,120 @@ static int ast_rtp_sendcng(struct ast_rtp_instance *instance, int level)
 	return res;
 }
 
+/*! \brief Check if rtp stream is active */
+static int ast_rtp_isactive(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+	return rtp->isactive ? 0 : 1;
+}
+
+/*! \brief Basically add SSRC */
+static int add_sdes_header(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len)
+{
+	/* 2 is version, 1 is number of chunks, then RTCP packet type (SDES) and length */
+	*rtcp_packet = htonl((2 << 30) | (1 << 24) | (RTCP_PT_SDES << 16) | ((len/4)-1));
+
+	rtcp_packet++;	/* Move 32 bits ahead for the header */
+	*rtcp_packet = htonl(rtp->ssrc);               /* Our SSRC */
+	rtcp_packet ++;
+
+	/* Header + SSRC */
+	return len + 8;
+}
+
+static int add_sdes_bodypart(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len, int type)
+{
+	int cnamelen;
+	int sdeslen = 0;
+	char *sdes;
+
+	sdes = (char *) rtcp_packet;
+	switch (type) {
+	case SDES_CNAME:
+		cnamelen = (int) rtp->rtcp->ourcnamelength;
+
+		*sdes = SDES_CNAME;
+		sdes++;
+		*sdes = (char) cnamelen;
+		sdes++;
+		strncpy(sdes, rtp->rtcp->ourcname, cnamelen);	/* NO terminating 0 */
+
+		/* THere must be a multiple of four bytes in the packet */
+		sdeslen = cnamelen;
+		break;
+	case SDES_END:
+		*sdes = SDES_END;
+		sdes++;
+		*sdes = (char) 0;
+		sdes++;
+		sdeslen = 2;
+	}
+	len += sdeslen + (sdeslen % 4 == 0 ? 0 : 4 - (sdeslen % 4)) ;
+
+	return len;
+}
+
+/*! \brief Send emtpy RTCP receiver's report and SDES message 
+ 	Mainly used to open NAT sessions  */
+static int ast_rtcp_write_empty_frame(struct ast_rtp_instance *instance)
+{
+	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+	char bdata[512];
+	unsigned int *rtcpheader, *start;
+	int fd, len, res;
+
+	if (!rtp || !rtp->rtcp) {
+		return 0;
+	} 
+	ast_debug(1,  "************ ---- About to send empty RTCP packet\n");
+	fd = rtp->rtcp->s;
+	
+	if (fd == -1) {
+		ast_debug(1, "--- No file descriptor to use \n");
+	}
+	
+	if (!ast_sockaddr_isnull(&rtp->rtcp->them)) { /* This'll stop rtcp for this rtp session */
+		ast_verbose("RTCP SR transmission error, rtcp halted\n");
+		AST_SCHED_DEL(rtp->sched, rtp->rtcp->schedid);
+		return 0;
+	}
+	if (rtcp_debug_test_addr(&rtp->rtcp->them)) {
+		ast_debug(1,  "---- About to send empty RTCP packet\n");
+	}
+	rtcpheader = (unsigned int *)bdata;
+	/* Add a RR header with no reports (chunks = 0) - The RFC says that it's always needed 
+		first in a compound packet.
+	 */
+	rtcpheader[0] = htonl((2 << 30) | (0 << 24) | (RTCP_PT_RR << 16) | 1);
+	rtcpheader[1] = htonl(rtp->ssrc);
+	len = 8;
+	start = &rtcpheader[len/4];
+	len +=8; /* SKip header for now */
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_CNAME);
+	len = add_sdes_bodypart(rtp, &rtcpheader[len/4], len, SDES_END);
+	/* Now, add header when we know the actual length */
+	add_sdes_header(rtp, start, len);
+
+	res = sendto(fd, (unsigned int *)rtcpheader, len, 0, (struct sockaddr *)&rtp->rtcp->them, sizeof(rtp->rtcp->them));
+
+	if (res < 0) {
+		ast_log(LOG_ERROR, "RTCP RR transmission error, rtcp halted: %s\n",strerror(errno));
+		/* Remove the scheduler */
+		AST_SCHED_DEL(rtp->sched, rtp->rtcp->schedid);
+		return 0;
+	}
+
+	rtp->rtcp->rr_count++;
+
+	if (rtcp_debug_test_addr(&rtp->rtcp->them)) {
+		ast_verbose("\n* Sending Empty RTCP RR to %s  Our SSRC: %u\n",
+			ast_sockaddr_stringify(&rtp->rtcp->them),
+			rtp->ssrc);
+	}
+
+	return res;
+}
+
 static char *rtp_do_debug_ip(struct ast_cli_args *a)
 {
 	char *arg = ast_strdupa(a->argv[4]);
@@ -2816,8 +3419,7 @@ static char *rtp_do_debug_ip(struct ast_cli_args *a)
 		return CLI_FAILURE;
 	}
 	rtpdebugport = (!ast_strlen_zero(debugport) && debugport[0] != '0');
-	ast_cli(a->fd, "RTP Debugging Enabled for address: %s\n",
-		ast_sockaddr_stringify(&rtpdebugaddr));
+	ast_cli(a->fd, "RTP Debugging Enabled for address: %s\n", ast_sockaddr_stringify(&rtpdebugaddr));
 	rtpdebug = 1;
 	return CLI_SUCCESS;
 }
