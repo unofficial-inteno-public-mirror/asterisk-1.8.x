@@ -132,6 +132,8 @@ enum ast_frame_type {
 	AST_FRAME_MODEM,	
 	/*! DTMF begin event, subclass is the digit */
 	AST_FRAME_DTMF_BEGIN,
+	/*! DTMF continue event, subclass is the digit */
+	AST_FRAME_DTMF_CONTINUE,
 };
 #define AST_FRAME_DTMF AST_FRAME_DTMF_END
 
