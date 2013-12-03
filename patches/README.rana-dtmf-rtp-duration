@@ -1,0 +1,43 @@
+EDVINA AB
+Olle E. Johansson
+
+
+This branch is trying to focus on DTMF in the RTP channel. Asterisk 1.4 and later
+doesn't send the proper DTMF duration on the outbound call leg. If we receive
+a DTMF with a duration of 480 samples, we might end up sending 1440 samples out.
+
+Another issue is the delayed transmission when using the core bridge with features
+enabled. If you send a three second DTMF inbound, the outbound begins after the inbound
+ends, so you get a six second interruption to the call.
+
+A third issue is that if we get a new DTMF while we're still transmitting the old,
+we immediately jump to the new one without finishing the old DTMF tone. 
+
+Fixes
+=====
+
+In order to handle this a lot of bugs was fixed. We also added a new control
+frame to update the outbound channel with the latest duration from the inbound,
+in order to try to prevent the outbound channel to run ahead of the inbound.
+If the outbound channel gets these frames, it will stop adding to the outbound
+DTMF, but retransmit previous message instead.
+
+The outbound channel sends a packet for every incoming RTP packet. As usual,
+the inbound and outbond channels are not synchronized at all. So the outbound
+always clocks dtmf in 160 samples /20 ms, something which will break wideband
+codecs. (another fix required for that).
+
+With this code, the outbound channel sends outbound DTMF for the duration of
+the inbound dtmf tone, a bit adjusted to match 160 samples per outbound
+transmission. We do not break outbound DTMF when we receive inbound
+DTMF end, we continue until we have reached the duration of the DTMF that
+we received on the inbound channel.
+
+By adding a ast_feature_check function to main/features.c we now check 
+the DTMF on the incoming DTMF_BEGIN. If it's not a feature code it's 
+immediately forwarded to the outbound channel. If it's a feature code,
+it's dropped and the feature channel waits for DTMF_END (like now).
+This dramatically changes DTMF behaviour in a PBX bridged call.
+
+
+This work was sponsored by IPvision AS, Denmark
