@@ -450,6 +450,7 @@ static int mgcp_write(struct ast_channel *ast, struct ast_frame *frame);
 static int mgcp_indicate(struct ast_channel *ast, int ind, const void *data, size_t datalen);
 static int mgcp_fixup(struct ast_channel *oldchan, struct ast_channel *newchan);
 static int mgcp_senddigit_begin(struct ast_channel *ast, char digit);
+static int mgcp_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
 static int mgcp_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int mgcp_devicestate(void *data);
 static void add_header_offhook(struct mgcp_subchannel *sub, struct mgcp_request *resp, char *tone);
@@ -475,6 +476,7 @@ static const struct ast_channel_tech mgcp_tech = {
 	.indicate = mgcp_indicate,
 	.fixup = mgcp_fixup,
 	.send_digit_begin = mgcp_senddigit_begin,
+	.send_digit_continue = mgcp_senddigit_continue,
 	.send_digit_end = mgcp_senddigit_end,
 	.bridge = ast_rtp_instance_bridge,
 	.func_channel_read = acf_channel_read,
@@ -1317,6 +1319,21 @@ static int mgcp_senddigit_begin(struct ast_channel *ast, char digit)
 	return res;
 }
 
+static int mgcp_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
+{
+	struct mgcp_subchannel *sub = ast->tech_pvt;
+	struct mgcp_endpoint *p = sub->parent;
+
+	ast_mutex_lock(&sub->lock);
+
+	if (p->dtmfmode & MGCP_DTMF_RFC2833) {
+		ast_debug(4, "DTMF continue using RFC2833\n");
+		ast_rtp_instance_dtmf_continue(sub->rtp, digit, duration);
+	}
+	ast_mutex_unlock(&sub->lock);
+
+	return 0;
+}
 static int mgcp_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
 	struct mgcp_subchannel *sub = ast->tech_pvt;

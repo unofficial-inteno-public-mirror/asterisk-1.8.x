@@ -524,6 +524,13 @@ struct ast_channel_tech {
 	 */
 	int (* const send_digit_begin)(struct ast_channel *chan, char digit);
 
+	/*! 
+	 * \brief Continue sending a literal DTMF digit 
+	 *
+	 * \note The channel is not locked when this function gets called. 
+	 */
+	int (* const send_digit_continue)(struct ast_channel *chan, char digit, unsigned int duration);
+
 	/*!
 	 * \brief Stop sending a literal DTMF digit
 	 *
@@ -1842,6 +1849,15 @@ int ast_senddigit(struct ast_channel *chan, char digit, unsigned int duration);
  * \return 0 on success, -1 on failure
  */
 int ast_senddigit_begin(struct ast_channel *chan, char digit);
+
+/*! \brief Continue to send a DTMF digit to a channel
+ * used on RTP bridges mainly (to get the duration correct)
+ * Send a DTMF digit to a channel.
+ * \param chan channel to act upon
+ * \param digit the DTMF digit to send, encoded in ASCII
+ * \return Returns 0 on success, -1 on failure
+ */
+int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration);
 
 /*!
  * \brief Send a DTMF digit to a channel.

@@ -362,6 +362,8 @@ struct ast_rtp_engine {
 	void (*stop)(struct ast_rtp_instance *instance);
 	/*! Callback for starting RFC2833 DTMF transmission */
 	int (*dtmf_begin)(struct ast_rtp_instance *instance, char digit);
+	/*! Callback for continuing RFC2833 DTMF transmission */
+	int (*dtmf_continue)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
 	/*! Callback for stopping RFC2833 DTMF transmission */
 	int (*dtmf_end)(struct ast_rtp_instance *instance, char digit);
 	int (*dtmf_end_with_duration)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
@@ -1239,6 +1241,28 @@ void ast_rtp_codecs_packetization_set(struct ast_rtp_codecs *codecs, struct ast_
 int ast_rtp_instance_dtmf_begin(struct ast_rtp_instance *instance, char digit);
 
 /*!
+ * \brief Continue sending a DTMF digit
+ *
+ * \param instance The RTP instance to send the DTMF on
+ * \param digit What DTMF digit to send
+ * \param duration Current duration of the DTMF
+ *
+ * \retval 0 success
+ * \retval -1 failure
+ *
+ * Example usage:
+ *
+ * \code
+ * ast_rtp_instance_dtmf_continue(instance, '1', 142857);
+ * \endcode
+ *
+ * This starts continues the DTMF '1' on the RTP instance pointed to by instance.
+ *
+ * \since 11
+ */
+int ast_rtp_instance_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration);
+
+/*!
  * \brief Stop sending a DTMF digit
  *
  * \param instance The RTP instance to stop the DTMF on
@@ -1932,7 +1956,6 @@ int ast_rtp_instance_isactive(struct ast_rtp_instance *instance);
  */
 int ast_rtp_instance_setcname(struct ast_rtp_instance *instance, const char *cname, size_t length);
 
-/*!
 
 int ast_rtp_instance_add_srtp_policy(struct ast_rtp_instance *instance, struct ast_srtp_policy *policy);
 struct ast_srtp *ast_rtp_instance_get_srtp(struct ast_rtp_instance *instance);
