@@ -3159,7 +3159,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 					res = builtin_features[x].operation(chan, peer, config, code, sense, NULL);
 				}
 				if (feature) {
-					memcpy(feature, &builtin_features[x], sizeof(feature));
+					memcpy(feature, &builtin_features[x], sizeof(*feature));
 				}
 				feature_detected = 1;
 				break;
@@ -3189,7 +3189,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 					if (operation) {
 						res = fge->feature->operation(chan, peer, config, code, sense, fge->feature);
 					}
-					memcpy(feature, fge->feature, sizeof(feature));
+					memcpy(feature, fge->feature, sizeof(*feature));
 					if (res != AST_FEATURE_RETURN_KEEPTRYING) {
 						AST_RWLIST_UNLOCK(&feature_groups);
 						break;
@@ -3222,7 +3222,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 				res = tmpfeature->operation(chan, peer, config, code, sense, tmpfeature);
 			}
 			if (feature) {
-				memcpy(feature, tmpfeature, sizeof(feature));
+				memcpy(feature, tmpfeature, sizeof(*feature));
 			}
 			if (res != AST_FEATURE_RETURN_KEEPTRYING) {
 				AST_RWLIST_UNLOCK(&feature_list);
@@ -4051,11 +4051,11 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 					   digits to come in for features. */
 					ast_debug(1, "Timed out for feature!\n");
 					if (!ast_strlen_zero(peer_featurecode)) {
-						ast_dtmf_stream(chan, peer, peer_featurecode, 0, 0);
+						ast_dtmf_stream(chan, peer, peer_featurecode, 0, f ? f->len : 0);
 						memset(peer_featurecode, 0, sizeof(peer_featurecode));
 					}
 					if (!ast_strlen_zero(chan_featurecode)) {
-						ast_dtmf_stream(peer, chan, chan_featurecode, 0, 0);
+						ast_dtmf_stream(peer, chan, chan_featurecode, 0, f ? f->len : 0);
 						memset(chan_featurecode, 0, sizeof(chan_featurecode));
 					}
 					if (f)

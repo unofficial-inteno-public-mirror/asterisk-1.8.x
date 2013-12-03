@@ -801,6 +801,11 @@ void ast_frame_dump(const char *name, struct ast_frame *f, char *prefix)
 		subclass[0] = f->subclass.integer;
 		subclass[1] = '\0';
 		break;
+	case AST_FRAME_DTMF_CONTINUE:
+		strcpy(ftype, "DTMF Continue");
+		subclass[0] = f->subclass.integer;
+		subclass[1] = '\0';
+		break;
 	case AST_FRAME_DTMF_END:
 		strcpy(ftype, "DTMF End");
 		subclass[0] = f->subclass.integer;

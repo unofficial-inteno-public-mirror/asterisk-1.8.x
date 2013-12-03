@@ -1,0 +1,936 @@
+Index: channels/chan_sip.c
+===================================================================
+--- channels/chan_sip.c	(.../branches/1.8)	(revision 403287)
++++ channels/chan_sip.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -1232,6 +1232,7 @@
+ static int sip_transfer(struct ast_channel *ast, const char *dest);
+ static int sip_fixup(struct ast_channel *oldchan, struct ast_channel *newchan);
+ static int sip_senddigit_begin(struct ast_channel *ast, char digit);
++static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
+ static int sip_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
+ static int sip_setoption(struct ast_channel *chan, int option, void *data, int datalen);
+ static int sip_queryoption(struct ast_channel *chan, int option, void *data, int *datalen);
+@@ -1624,6 +1625,7 @@
+ 	.transfer = sip_transfer,		/* called with chan locked */
+ 	.fixup = sip_fixup,			/* called with chan locked */
+ 	.send_digit_begin = sip_senddigit_begin,	/* called with chan unlocked */
++	.send_digit_continue = sip_senddigit_continue,	/* called with chan unlocked */
+ 	.send_digit_end = sip_senddigit_end,
+ 	.bridge = ast_rtp_instance_bridge,			/* XXX chan unlocked ? */
+ 	.early_bridge = ast_rtp_instance_early_bridge,
+@@ -7084,6 +7086,30 @@
+ 	return res;
+ }
+ 
++/*! \brief Update DTMF character on SIP channel
++	within one call, we're able to transmit in many methods simultaneously */
++static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
++{
++	struct sip_pvt *p = ast->tech_pvt;
++	int res = 0;
++
++	if (!p) {
++		ast_debug(1, "Asked to continue DTMF on channel %s with no pvt, ignoring\n", ast->name);
++		return res;
++	}
++
++	sip_pvt_lock(p);
++	switch (ast_test_flag(&p->flags[0], SIP_DTMF)) {
++	case SIP_DTMF_RFC2833:
++		if (p->rtp) {
++			ast_rtp_instance_dtmf_continue(p->rtp, digit, duration);
++		}
++		break;
++	}
++	sip_pvt_unlock(p);
++
++	return res;
++}
+ /*! \brief Send DTMF character on SIP channel
+ 	within one call, we're able to transmit in many methods simultaneously */
+ static int sip_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
+Index: channels/chan_iax2.c
+===================================================================
+--- channels/chan_iax2.c	(.../branches/1.8)	(revision 403287)
++++ channels/chan_iax2.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -1170,6 +1170,7 @@
+ static int iax2_call(struct ast_channel *c, char *dest, int timeout);
+ static int iax2_devicestate(void *data);
+ static int iax2_digit_begin(struct ast_channel *c, char digit);
++static int iax2_digit_continue(struct ast_channel *c, char digit, unsigned int duration);
+ static int iax2_digit_end(struct ast_channel *c, char digit, unsigned int duration);
+ static int iax2_do_register(struct iax2_registry *reg);
+ static int iax2_fixup(struct ast_channel *oldchannel, struct ast_channel *newchan);
+@@ -1221,6 +1222,7 @@
+ 	.requester = iax2_request,
+ 	.devicestate = iax2_devicestate,
+ 	.send_digit_begin = iax2_digit_begin,
++	.send_digit_continue = iax2_digit_continue,
+ 	.send_digit_end = iax2_digit_end,
+ 	.send_text = iax2_sendtext,
+ 	.send_image = iax2_sendimage,
+@@ -4300,8 +4302,15 @@
+ 	return send_command_locked(PTR_TO_CALLNO(c->tech_pvt), AST_FRAME_DTMF_BEGIN, digit, 0, NULL, 0, -1);
+ }
+ 
++static int iax2_digit_continue(struct ast_channel *c, char digit, unsigned int duration)
++{
++	/* We propably should find a way to send duration here. */
++	return send_command_locked(PTR_TO_CALLNO(c->tech_pvt), AST_FRAME_DTMF_CONTINUE, digit, 0, NULL, 0, -1);
++}
++
+ static int iax2_digit_end(struct ast_channel *c, char digit, unsigned int duration)
+ {
++	/* We propably should find a way to send duration here. */
+ 	return send_command_locked(PTR_TO_CALLNO(c->tech_pvt), AST_FRAME_DTMF_END, digit, 0, NULL, 0, -1);
+ }
+ 
+Index: channels/chan_mgcp.c
+===================================================================
+--- channels/chan_mgcp.c	(.../branches/1.8)	(revision 403287)
++++ channels/chan_mgcp.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -450,6 +450,7 @@
+ static int mgcp_indicate(struct ast_channel *ast, int ind, const void *data, size_t datalen);
+ static int mgcp_fixup(struct ast_channel *oldchan, struct ast_channel *newchan);
+ static int mgcp_senddigit_begin(struct ast_channel *ast, char digit);
++static int mgcp_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
+ static int mgcp_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
+ static int mgcp_devicestate(void *data);
+ static void add_header_offhook(struct mgcp_subchannel *sub, struct mgcp_request *resp, char *tone);
+@@ -475,6 +476,7 @@
+ 	.indicate = mgcp_indicate,
+ 	.fixup = mgcp_fixup,
+ 	.send_digit_begin = mgcp_senddigit_begin,
++	.send_digit_continue = mgcp_senddigit_continue,
+ 	.send_digit_end = mgcp_senddigit_end,
+ 	.bridge = ast_rtp_instance_bridge,
+ 	.func_channel_read = acf_channel_read,
+@@ -1317,6 +1319,21 @@
+ 	return res;
+ }
+ 
++static int mgcp_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
++{
++	struct mgcp_subchannel *sub = ast->tech_pvt;
++	struct mgcp_endpoint *p = sub->parent;
++
++	ast_mutex_lock(&sub->lock);
++
++	if (p->dtmfmode & MGCP_DTMF_RFC2833) {
++		ast_debug(4, "DTMF continue using RFC2833\n");
++		ast_rtp_instance_dtmf_continue(sub->rtp, digit, duration);
++	}
++	ast_mutex_unlock(&sub->lock);
++
++	return 0;
++}
+ static int mgcp_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
+ {
+ 	struct mgcp_subchannel *sub = ast->tech_pvt;
+Index: channels/chan_local.c
+===================================================================
+--- channels/chan_local.c	(.../branches/1.8)	(revision 403287)
++++ channels/chan_local.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -96,6 +96,7 @@
+ 
+ static struct ast_channel *local_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
+ static int local_digit_begin(struct ast_channel *ast, char digit);
++static int local_digit_continue(struct ast_channel *ast, char digit, unsigned int duration);
+ static int local_digit_end(struct ast_channel *ast, char digit, unsigned int duration);
+ static int local_call(struct ast_channel *ast, char *dest, int timeout);
+ static int local_hangup(struct ast_channel *ast);
+@@ -118,6 +119,7 @@
+ 	.capabilities = -1,
+ 	.requester = local_request,
+ 	.send_digit_begin = local_digit_begin,
++	.send_digit_continue = local_digit_continue,
+ 	.send_digit_end = local_digit_end,
+ 	.call = local_call,
+ 	.hangup = local_hangup,
+@@ -804,6 +806,29 @@
+ 	return res;
+ }
+ 
++static int local_digit_continue(struct ast_channel *ast, char digit, unsigned int duration)
++{
++	struct local_pvt *p = ast->tech_pvt;
++	int res = -1;
++	struct ast_frame f = { AST_FRAME_DTMF_CONTINUE, };
++	int isoutbound;
++
++	if (!p) {
++		return -1;
++	}
++
++	ao2_ref(p, 1); /* ref for local_queue_frame */
++	ao2_lock(p);
++	isoutbound = IS_OUTBOUND(ast, p);
++	f.subclass.integer = digit;
++	f.len = duration;
++	res = local_queue_frame(p, isoutbound, &f, ast, 0);
++	ao2_unlock(p);
++	ao2_ref(p, -1);
++
++	return res;
++}
++
+ static int local_digit_end(struct ast_channel *ast, char digit, unsigned int duration)
+ {
+ 	struct local_pvt *p = ast->tech_pvt;
+Index: apps/app_senddtmf.c
+===================================================================
+--- apps/app_senddtmf.c	(.../branches/1.8)	(revision 403287)
++++ apps/app_senddtmf.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -79,6 +79,9 @@
+ 			<parameter name="Digit" required="true">
+ 				<para>The DTMF digit to play.</para>
+ 			</parameter>
++			<parameter name="Duration" required="false">
++				<para>The duration in ms for the digit to play.</para>
++			</parameter>
+ 		</syntax>
+ 		<description>
+ 			<para>Plays a dtmf digit on the specified channel.</para>
+@@ -145,7 +148,9 @@
+ {
+ 	const char *channel = astman_get_header(m, "Channel");
+ 	const char *digit = astman_get_header(m, "Digit");
++	const char *duration = astman_get_header(m, "Duration");
+ 	struct ast_channel *chan;
++	int dtmfduration = 0;
+ 
+ 	if (!(chan = ast_channel_get_by_name(channel))) {
+ 		astman_send_error(s, m, "Channel not found");
+@@ -157,8 +162,11 @@
+ 		chan = ast_channel_unref(chan);
+ 		return 0;
+ 	}
++	if (!ast_strlen_zero(duration)) {
++		dtmfduration = atoi(duration);
++	}
+ 
+-	ast_senddigit(chan, *digit, 0);
++	ast_senddigit(chan, *digit, dtmfduration);
+ 
+ 	chan = ast_channel_unref(chan);
+ 
+Index: funcs/func_frame_trace.c
+===================================================================
+--- funcs/func_frame_trace.c	(.../branches/1.8)	(revision 403287)
++++ funcs/func_frame_trace.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -54,6 +54,7 @@
+ 				<para>Below are the different types of frames that can be filtered.</para>
+ 				<enumlist>
+ 					<enum name = "DTMF_BEGIN" />
++					<enum name = "DTMF_CONTINUE" />
+ 					<enum name = "DTMF_END" />
+ 					<enum name = "VOICE" />
+ 					<enum name = "VIDEO" />
+@@ -83,6 +84,7 @@
+ 	const char *str;
+ } frametype2str[] = {
+ 	{ AST_FRAME_DTMF_BEGIN,   "DTMF_BEGIN" },
++	{ AST_FRAME_DTMF_CONTINUE,   "DTMF_CONTINUE" },
+ 	{ AST_FRAME_DTMF_END,   "DTMF_END" },
+ 	{ AST_FRAME_VOICE,   "VOICE" },
+ 	{ AST_FRAME_VIDEO,   "VIDEO" },
+@@ -353,6 +355,10 @@
+ 		ast_verbose("FrameType: DTMF BEGIN\n");
+ 		ast_verbose("Digit: %d\n", frame->subclass.integer);
+ 		break;
++	case AST_FRAME_DTMF_CONTINUE:
++		ast_verbose("FrameType: DTMF CONTINUE\n");
++		ast_verbose("Digit: %d\n", frame->subclass.integer);
++		break;
+ 	}
+ 
+ 	ast_verbose("Src: %s\n", ast_strlen_zero(frame->src) ? "NOT PRESENT" : frame->src);
+Index: include/asterisk/rtp_engine.h
+===================================================================
+--- include/asterisk/rtp_engine.h	(.../branches/1.8)	(revision 403287)
++++ include/asterisk/rtp_engine.h	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -322,6 +322,8 @@
+ 	void (*stop)(struct ast_rtp_instance *instance);
+ 	/*! Callback for starting RFC2833 DTMF transmission */
+ 	int (*dtmf_begin)(struct ast_rtp_instance *instance, char digit);
++	/*! Callback for continuing RFC2833 DTMF transmission */
++	int (*dtmf_continue)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
+ 	/*! Callback for stopping RFC2833 DTMF transmission */
+ 	int (*dtmf_end)(struct ast_rtp_instance *instance, char digit);
+ 	int (*dtmf_end_with_duration)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
+@@ -1190,6 +1192,28 @@
+ int ast_rtp_instance_dtmf_begin(struct ast_rtp_instance *instance, char digit);
+ 
+ /*!
++ * \brief Continue sending a DTMF digit
++ *
++ * \param instance The RTP instance to send the DTMF on
++ * \param digit What DTMF digit to send
++ * \param duration Current duration of the DTMF
++ *
++ * \retval 0 success
++ * \retval -1 failure
++ *
++ * Example usage:
++ *
++ * \code
++ * ast_rtp_instance_dtmf_continue(instance, '1', 142857);
++ * \endcode
++ *
++ * This starts continues the DTMF '1' on the RTP instance pointed to by instance.
++ *
++ * \since 11
++ */
++int ast_rtp_instance_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration);
++
++/*!
+  * \brief Stop sending a DTMF digit
+  *
+  * \param instance The RTP instance to stop the DTMF on
+Index: include/asterisk/channel.h
+===================================================================
+--- include/asterisk/channel.h	(.../branches/1.8)	(revision 403287)
++++ include/asterisk/channel.h	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -527,6 +527,13 @@
+ 	 */
+ 	int (* const send_digit_begin)(struct ast_channel *chan, char digit);
+ 
++	/*! 
++	 * \brief Continue sending a literal DTMF digit 
++	 *
++	 * \note The channel is not locked when this function gets called. 
++	 */
++	int (* const send_digit_continue)(struct ast_channel *chan, char digit, unsigned int duration);
++
+ 	/*!
+ 	 * \brief Stop sending a literal DTMF digit
+ 	 *
+@@ -1868,6 +1875,15 @@
+  */
+ int ast_senddigit_begin(struct ast_channel *chan, char digit);
+ 
++/*! \brief Continue to send a DTMF digit to a channel
++ * used on RTP bridges mainly (to get the duration correct)
++ * Send a DTMF digit to a channel.
++ * \param chan channel to act upon
++ * \param digit the DTMF digit to send, encoded in ASCII
++ * \return Returns 0 on success, -1 on failure
++ */
++int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration);
++
+ /*!
+  * \brief Send a DTMF digit to a channel.
+  * \param chan channel to act upon
+Index: include/asterisk/frame.h
+===================================================================
+--- include/asterisk/frame.h	(.../branches/1.8)	(revision 403287)
++++ include/asterisk/frame.h	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -124,6 +124,8 @@
+ 	AST_FRAME_MODEM,	
+ 	/*! DTMF begin event, subclass is the digit */
+ 	AST_FRAME_DTMF_BEGIN,
++	/*! DTMF continue event, subclass is the digit */
++	AST_FRAME_DTMF_CONTINUE,
+ };
+ #define AST_FRAME_DTMF AST_FRAME_DTMF_END
+ 
+Index: main/channel.c
+===================================================================
+--- main/channel.c	(.../branches/1.8)	(revision 403287)
++++ main/channel.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -1829,6 +1829,7 @@
+ 		return 1;
+ 
+ 	case AST_FRAME_DTMF_END:
++	case AST_FRAME_DTMF_CONTINUE:
+ 	case AST_FRAME_DTMF_BEGIN:
+ 	case AST_FRAME_VOICE:
+ 	case AST_FRAME_VIDEO:
+@@ -3048,6 +3049,7 @@
+ 				case AST_FRAME_VIDEO:
+ 				case AST_FRAME_TEXT:
+ 				case AST_FRAME_DTMF_BEGIN:
++				case AST_FRAME_DTMF_CONTINUE:
+ 				case AST_FRAME_DTMF_END:
+ 				case AST_FRAME_IMAGE:
+ 				case AST_FRAME_HTML:
+@@ -3630,6 +3632,7 @@
+ 
+ 			switch (f->frametype) {
+ 			case AST_FRAME_DTMF_BEGIN:
++			case AST_FRAME_DTMF_CONTINUE:
+ 				break;
+ 			case AST_FRAME_DTMF_END:
+ 				res = f->subclass.integer;
+@@ -3940,7 +3943,7 @@
+ 			 * there are cases where we want to leave DTMF frames on the queue until
+ 			 * some later time. */
+ 
+-			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
++			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_CONTINUE || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
+ 				continue;
+ 			}
+ 
+@@ -4146,6 +4149,13 @@
+ 				}
+ 			}
+ 			break;
++		case AST_FRAME_DTMF_CONTINUE:
++			/* No manager event at this point
++				send_dtmf_event(chan, "Received", f->subclass, "Yes", "No");
++			*/
++			ast_log(LOG_DTMF, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
++			ast_debug(4, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
++			break;
+ 		case AST_FRAME_DTMF_BEGIN:
+ 			send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
+ 			ast_log(LOG_DTMF, "DTMF begin '%c' received on %s\n", f->subclass.integer, chan->name);
+@@ -4709,6 +4719,18 @@
+ 	return 0;
+ }
+ 
++int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration)
++{
++	int res = -1;
++
++	ast_debug(4, "--- Continue frame passed on to tech for %s\n", chan->name);
++	if (chan->tech->send_digit_continue) {
++		res = chan->tech->send_digit_continue(chan, digit, duration);
++	}
++
++	return 0;
++}
++
+ int ast_senddigit_end(struct ast_channel *chan, char digit, unsigned int duration)
+ {
+ 	int res = -1;
+@@ -4952,6 +4974,22 @@
+ 		ast_channel_lock(chan);
+ 		CHECK_BLOCKING(chan);
+ 		break;
++	case AST_FRAME_DTMF_CONTINUE:
++		if (chan->audiohooks) {
++			struct ast_frame *old_frame = fr;
++			fr = ast_audiohook_write_list(chan, chan->audiohooks, AST_AUDIOHOOK_DIRECTION_WRITE, fr);
++			if (old_frame != fr)
++				f = fr;
++		}
++		ast_log(LOG_DEBUG, "---Continue FRAME received, forwarding to channel %s\n", chan->name);
++		// Skip manager for continue events (at least for now)
++		//send_dtmf_event(chan, "Sent", fr->subclass, "Yes", "No");
++		ast_clear_flag(chan, AST_FLAG_BLOCKING);
++		ast_channel_unlock(chan);
++		res = ast_senddigit_continue(chan, fr->subclass.integer, fr->len);
++		ast_channel_lock(chan);
++		CHECK_BLOCKING(chan);
++		break;
+ 	case AST_FRAME_DTMF_END:
+ 		if (chan->audiohooks) {
+ 			struct ast_frame *new_frame = fr;
+@@ -7301,6 +7339,7 @@
+ 		}
+ 		if ((f->frametype == AST_FRAME_VOICE) ||
+ 		    (f->frametype == AST_FRAME_DTMF_BEGIN) ||
++		    (f->frametype == AST_FRAME_DTMF_CONTINUE) ||
+ 		    (f->frametype == AST_FRAME_DTMF) ||
+ 		    (f->frametype == AST_FRAME_VIDEO) ||
+ 		    (f->frametype == AST_FRAME_IMAGE) ||
+@@ -7316,7 +7355,7 @@
+ 				*fo = f;
+ 				*rc = who;
+ 				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
+-					f->frametype == AST_FRAME_DTMF_END ? "end" : "begin",
++					f->frametype == AST_FRAME_DTMF_END ? "end" : (AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+ 					who->name);
+ 
+ 				break;
+Index: main/features.c
+===================================================================
+--- main/features.c	(.../branches/1.8)	(revision 403287)
++++ main/features.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -4163,11 +4163,11 @@
+ 					   digits to come in for features. */
+ 					ast_debug(1, "Timed out for feature!\n");
+ 					if (!ast_strlen_zero(peer_featurecode)) {
+-						ast_dtmf_stream(chan, peer, peer_featurecode, 0, 0);
++						ast_dtmf_stream(chan, peer, peer_featurecode, 0, f ? f->len : 0);
+ 						memset(peer_featurecode, 0, sizeof(peer_featurecode));
+ 					}
+ 					if (!ast_strlen_zero(chan_featurecode)) {
+-						ast_dtmf_stream(peer, chan, chan_featurecode, 0, 0);
++						ast_dtmf_stream(peer, chan, chan_featurecode, 0, f ? f->len : 0);
+ 						memset(chan_featurecode, 0, sizeof(chan_featurecode));
+ 					}
+ 					if (f)
+Index: main/frame.c
+===================================================================
+--- main/frame.c	(.../branches/1.8)	(revision 403287)
++++ main/frame.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -810,6 +810,11 @@
+ 		subclass[0] = f->subclass.integer;
+ 		subclass[1] = '\0';
+ 		break;
++	case AST_FRAME_DTMF_CONTINUE:
++		strcpy(ftype, "DTMF Continue");
++		subclass[0] = f->subclass.integer;
++		subclass[1] = '\0';
++		break;
+ 	case AST_FRAME_DTMF_END:
+ 		strcpy(ftype, "DTMF End");
+ 		subclass[0] = f->subclass.integer;
+Index: main/rtp_engine.c
+===================================================================
+--- main/rtp_engine.c	(.../branches/1.8)	(revision 403287)
++++ main/rtp_engine.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -738,6 +738,11 @@
+ 	return instance->engine->dtmf_begin ? instance->engine->dtmf_begin(instance, digit) : -1;
+ }
+ 
++int ast_rtp_instance_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration)
++{
++	return instance->engine->dtmf_continue ? instance->engine->dtmf_continue(instance, digit, duration) : -1;
++}
++
+ int ast_rtp_instance_dtmf_end(struct ast_rtp_instance *instance, char digit)
+ {
+ 	return instance->engine->dtmf_end ? instance->engine->dtmf_end(instance, digit) : -1;
+Index: res/res_rtp_asterisk.c
+===================================================================
+--- res/res_rtp_asterisk.c	(.../branches/1.8)	(revision 403287)
++++ res/res_rtp_asterisk.c	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -108,6 +108,14 @@
+ 	STRICT_RTP_CLOSED,   /*! Drop all RTP packets not coming from source that was learned */
+ };
+ 
++/*! \brief States for an outbound RTP stream that handles DTMF in RFC 2833 mode */
++enum dtmf_send_states {
++	DTMF_NOT_SENDING = 0,	/*! Not sending DTMF this very moment */
++	DTMF_SEND_INIT,		/*! Initializing */
++	DTMF_SEND_INPROGRESS,	/*! Playing DTMF */
++	DTMF_SEND_INPROGRESS_WITH_QUEUE	/*! Playing and having a queue to continue with */
++};
++
+ #define FLAG_3389_WARNING               (1 << 0)
+ #define FLAG_NAT_ACTIVE                 (3 << 1)
+ #define FLAG_NAT_INACTIVE               (0 << 1)
+@@ -155,18 +163,25 @@
+ 	unsigned int dtmf_timeout;        /*!< When this timestamp is reached we consider END frame lost and forcibly abort digit */
+ 	unsigned int dtmfsamples;
+ 	enum ast_rtp_dtmf_mode dtmfmode;  /*!< The current DTMF mode of the RTP stream */
++
+ 	/* DTMF Transmission Variables */
+ 	unsigned int lastdigitts;
+-	char sending_digit;	/*!< boolean - are we sending digits */
++	enum dtmf_send_states sending_dtmf;     /*!< - are we sending dtmf */
+ 	char send_digit;	/*!< digit we are sending */
++	char send_dtmf_frame;	/*!< Number of samples in a frame with the current packetization */
++	AST_LIST_HEAD_NOLOCK(, ast_frame) dtmfqueue;	/*!< \ref DTMFQUEUE : Queue for DTMF that we receive while occupied with transmitting an outbound DTMF */
++	struct timeval dtmfmute;
++
+ 	int send_payload;
+ 	int send_duration;
++	int send_endflag:1;		/*!< We have received END marker but are in waiting mode */
++	unsigned int received_duration; /*!< Received duration (according to control frames) */
++
+ 	unsigned int flags;
+ 	struct timeval rxcore;
+ 	struct timeval txcore;
+ 	double drxcore;                 /*!< The double representation of the first received packet */
+ 	struct timeval lastrx;          /*!< timeval when we last received a packet */
+-	struct timeval dtmfmute;
+ 	struct ast_smoother *smoother;
+ 	int *ioid;
+ 	unsigned short seqno;		/*!< Sequence number, RFC 3550, page 13. */
+@@ -273,6 +288,7 @@
+ static int ast_rtp_new(struct ast_rtp_instance *instance, struct sched_context *sched, struct ast_sockaddr *addr, void *data);
+ static int ast_rtp_destroy(struct ast_rtp_instance *instance);
+ static int ast_rtp_dtmf_begin(struct ast_rtp_instance *instance, char digit);
++static int ast_rtp_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration);
+ static int ast_rtp_dtmf_end(struct ast_rtp_instance *instance, char digit);
+ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, char digit, unsigned int duration);
+ static int ast_rtp_dtmf_mode_set(struct ast_rtp_instance *instance, enum ast_rtp_dtmf_mode dtmf_mode);
+@@ -301,6 +317,7 @@
+ 	.new = ast_rtp_new,
+ 	.destroy = ast_rtp_destroy,
+ 	.dtmf_begin = ast_rtp_dtmf_begin,
++	.dtmf_continue = ast_rtp_dtmf_continue,
+ 	.dtmf_end = ast_rtp_dtmf_end,
+ 	.dtmf_end_with_duration = ast_rtp_dtmf_end_with_duration,
+ 	.dtmf_mode_set = ast_rtp_dtmf_mode_set,
+@@ -324,6 +341,25 @@
+ 	.sendcng = ast_rtp_sendcng,
+ };
+ 
++/*! * \page DTMFQUEUE Queue for outbound DTMF events
++
++	The Asterisk RTP Engine contains a queue for outbound DTMF events. Because of Asterisk's
++	architecture, we might have situations where DTMF events are not happening at the same
++ 	time on the inbound call leg and the outbound. Because the feature handling, we might
++	"swallow" a DTMF for a while to figure out the next digit. When we realize that this
++	is not a digit we want, we start playing out the complete DTMF on the outbound call leg.
++
++	During that time, we might get an incoming DTMF begin signal on the inbound call leg,
++	which is transported over the bridge and to the outbound call leg, that gets a 
++	request to begin a new DTMF, while still playing out the previous one.
++
++	In order not to drop this DTMF, we queue it up until we're done with the previous
++	DTMF and then play it out.
++
++	The DTMF queue is held in the rtp structure. 
++*/
++
++
+ static inline int rtp_debug_test_addr(struct ast_sockaddr *addr)
+ {
+ 	if (!rtpdebug) {
+@@ -616,6 +652,7 @@
+ static int ast_rtp_destroy(struct ast_rtp_instance *instance)
+ {
+ 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
++	struct ast_frame *f;
+ 
+ 	/* Destroy the smoother that was smoothing out audio if present */
+ 	if (rtp->smoother) {
+@@ -644,6 +681,11 @@
+ 		ast_free(rtp->red);
+ 	}
+ 
++	/* Empty the DTMF queue */
++	while ((f = AST_LIST_REMOVE_HEAD(&rtp->dtmfqueue, frame_list))) {
++		ast_frfree(f);
++	}
++
+ 	/* Finally destroy ourselves */
+ 	ast_free(rtp);
+ 
+@@ -678,6 +720,17 @@
+ 		return -1;
+ 	}
+ 
++	/* If we're sending DTMF already, we will ignore this but raise sending_dtmf with one
++	   to mark that we're busy and can't be disturbed. When we receive an END packet, we will
++	   act on that - either start playing with some delay or stack it up in a dtmfqueue.
++	*/
++	if (rtp->sending_dtmf) {
++		ast_debug(3, "Received DTMF begin while we're playing out DTMF. Ignoring \n");
++		rtp->sending_dtmf = DTMF_SEND_INPROGRESS_WITH_QUEUE;	/* Tell the world that there's an ignored DTMF */
++	//	AST_LIST_INSERT_TAIL(&frames, f, frame_list);
++/* OEJ Fix ??? */
++	}
++
+ 	/* Convert given digit into what we want to transmit */
+ 	if ((digit <= '9') && (digit >= '0')) {
+ 		digit -= '0';
+@@ -698,7 +751,8 @@
+ 	payload = ast_rtp_codecs_payload_code(ast_rtp_instance_get_codecs(instance), 0, AST_RTP_DTMF);
+ 
+ 	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
+-	rtp->send_duration = 160;
++	rtp->send_duration = 160;		/* XXX This assumes 20 ms packetization */
++	rtp->received_duration = 160;
+ 	rtp->lastts += calc_txstamp(rtp, NULL) * DTMF_SAMPLE_RATE_MS;
+ 	rtp->lastdigitts = rtp->lastts + rtp->send_duration;
+ 
+@@ -722,21 +776,69 @@
+ 				    payload, rtp->seqno, rtp->lastdigitts, res - hdrlen);
+ 		}
+ 		rtp->seqno++;
+-		rtp->send_duration += 160;
++		//rtp->send_duration += 160;	/* OEJ - check what's going on here. */
++		
+ 		rtpheader[0] = htonl((2 << 30) | (payload << 16) | (rtp->seqno));
+ 	}
+ 
+-	/* Record that we are in the process of sending a digit and information needed to continue doing so */
+-	rtp->sending_digit = 1;
++	/* Since we received a begin, we can safely store the digit and disable any compensation */
++	rtp->sending_dtmf = DTMF_SEND_INIT;
+ 	rtp->send_digit = digit;
+ 	rtp->send_payload = payload;
+ 
++	ast_debug(4, "DEBUG DTMF BEGIN - Digit %d send-digit %d\n", digit, rtp->send_digit);
++
+ 	return 0;
+ }
+ 
+-static int ast_rtp_dtmf_continuation(struct ast_rtp_instance *instance)
++/*! \brief Get notification of duration updates */
++static int ast_rtp_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration)
+ {
+ 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
++
++	ast_debug(4, "DTMF CONTINUE - Duration %d Digit %d Send-digit %d\n", duration, digit, rtp->send_digit);
++
++	/* If we missed the BEGIN, we will have to turn on the flag */
++	if (!rtp->sending_dtmf) {
++		rtp->sending_dtmf = DTMF_SEND_INPROGRESS;
++	}
++
++	/* Duration is in ms. Calculate the duration in timestamps */
++	if (duration > 0) {
++		/* We have an incoming duration from the incoming channel. This needs
++		   to be matched with our outbound pacing. The inbound can be paced
++		   in either 50 ms or whatever packetization that is used on that channel,
++		   so we can't assume 20 ms (160 units in 8000 hz audio).
++		*/
++		int dursamples = duration * rtp_get_rate(rtp->f.subclass.codec) / 1000;
++
++		/* How do we get the sample rate for the primary media in this call? */
++
++		ast_debug(4, "DTMF CONTINUE : %d ms %d samples\n", duration, dursamples);
++		rtp->received_duration = dursamples;
++	} else {
++		ast_debug(4, "DTMF CONTINUE : Missing duration!!!!!!!\n");
++		
++	}
++	return 0;
++}
++
++/*! \brief Send continuation frame for DTMF 
++
++This is called when we get a frame in ast_rtp_read. To keep the timing, because there may be delays through Asterisk
++feature handling and other code, we need to clock the outbound DTMF with the frame size we have on the stream.
++We should not cut short and send a begin then in the next packet an END with a duration that exceeds the
++framesize (in most cases for audio 20 ms) and number of frames. That will seriously cause issues in gateways
++or phones down the path.
++
++An effect of this is that we may get a new DTMF frame while we're transmitting the previous one. For this case,
++we have implemented an DTMF queue that will queue up the dtmf and play out. The alternative would be to skip
++these, which is no good, or cut them short and cause issues with timing for other devices, while we solve our
++own situation. That's generally considered bad behaviour amongst SIP devices.
++*/
++static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
++{
++	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
+ 	struct ast_sockaddr remote_address = { {0,} };
+ 	int hdrlen = 12, res = 0;
+ 	char data[256];
+@@ -749,6 +851,27 @@
+ 		return -1;
+ 	}
+ 
++
++	/*! \todo XXX This code assumes 160 samples, which is for 20 ms of 8000 samples
++		we need to calculate this based on the current sample rate and the rtp 
++		stream packetization. Please help me figure this out :-)
++	 */
++	if (!rtp->send_endflag && rtp->send_duration + 160 > rtp->received_duration) {
++		/* We need to wait with sending this continue, as we're sending 160 frames */
++		ast_debug(4, "---- Send duration %d Received duration %d - Skipping this continue frame until we have a proper 20 ms/160 samples to send\n", rtp->send_duration, rtp->received_duration);
++		return -1;
++	}
++	if (rtp->received_duration == 0 || rtp->send_duration + 160 < rtp->received_duration) {
++		ast_debug(3, "---- Adding 160 samples before sending : (previous values) Send duration %d Received duration %d\n", rtp->send_duration, rtp->received_duration);
++		rtp->send_duration += 160;
++	} 
++	if (rtp->send_endflag) {
++		ast_debug(4, "---- Send duration %d Received duration %d - sending END packet\n", rtp->send_duration, rtp->received_duration);
++		/* We are done, ready to send end flag */
++		rtp->send_endflag = 0;
++		return ast_rtp_dtmf_end_with_duration(instance, 0, rtp->received_duration);
++	}
++	ast_debug(4, "---- Send duration %d Received duration %d Endflag %d Send-digit %d\n", rtp->send_duration, rtp->received_duration, rtp->send_endflag, rtp->send_digit);
+ 	/* Actually create the packet we will be sending */
+ 	rtpheader[0] = htonl((2 << 30) | (rtp->send_payload << 16) | (rtp->seqno));
+ 	rtpheader[1] = htonl(rtp->lastdigitts);
+@@ -771,7 +894,8 @@
+ 
+ 	/* And now we increment some values for the next time we swing by */
+ 	rtp->seqno++;
+-	rtp->send_duration += 160;
++	rtp->send_duration += 160;	/* Again assuming 20 ms packetization and 8000 samples */
++	ast_debug(4, "---- Adding 160 samples after sending : Send duration %d Received duration %d\n", rtp->send_duration, rtp->received_duration);
+ 	rtp->lastts += calc_txstamp(rtp, NULL) * DTMF_SAMPLE_RATE_MS;
+ 
+ 	return 0;
+@@ -785,6 +909,7 @@
+ 	char data[256];
+ 	unsigned int *rtpheader = (unsigned int*)data;
+ 	unsigned int measured_samples;
++	unsigned int dursamples;
+ 
+ 	ast_rtp_instance_get_remote_address(instance, &remote_address);
+ 
+@@ -792,7 +917,19 @@
+ 	if (ast_sockaddr_isnull(&remote_address)) {
+ 		goto cleanup;
+ 	}
++	dursamples =  duration * (8000 / 1000);     /* How do we get the sample rate for the primary media in this call? */
+ 
++	ast_debug(1, "---- Send duration %d Received duration %d Duration %d Endflag %d Digit %d      Send-digit %d\n", rtp->send_duration, rtp->received_duration, duration, rtp->send_endflag, digit, rtp     ->send_digit);
++
++	if (!rtp->send_endflag && rtp->send_duration + 160 < rtp->received_duration) {
++		/* We still have to send DTMF continuation, because otherwise we will end prematurely. Set end flag to indicate
++		   that we will have to end ourselves when we're done with the actual duration
++		 */
++		ast_debug(4, "---- Send duration %d Received duration %d - Avoiding sending END packet\n", rtp->send_duration, rtp->received_duration);
++		rtp->send_endflag = 1;
++		return ast_rtp_dtmf_cont(instance);
++	}
++
+ 	/* Convert the given digit to the one we are going to send */
+ 	if ((digit <= '9') && (digit >= '0')) {
+ 		digit -= '0';
+@@ -845,8 +982,9 @@
+ 
+ 	/* Oh and we can't forget to turn off the stuff that says we are sending DTMF */
+ 	rtp->lastts += calc_txstamp(rtp, NULL) * DTMF_SAMPLE_RATE_MS;
++
+ cleanup:
+-	rtp->sending_digit = 0;
++	rtp->sending_dtmf = DTMF_NOT_SENDING;
+ 	rtp->send_digit = 0;
+ 
+ 	return res;
+@@ -1177,7 +1315,7 @@
+ 		frame->samples /= 2;
+ 	}
+ 
+-	if (rtp->sending_digit) {
++	if (rtp->sending_dtmf) {
+ 		return 0;
+ 	}
+ 
+@@ -1514,7 +1652,7 @@
+ 		return &ast_null_frame;
+ 	}
+ 	ast_debug(1, "Creating %s DTMF Frame: %d (%c), at %s\n",
+-		type == AST_FRAME_DTMF_END ? "END" : "BEGIN",
++		type == AST_FRAME_DTMF_END ? "END" : "BEGIN/CONT",
+ 		rtp->resp, rtp->resp,
+ 		ast_sockaddr_stringify(&remote_address));
+ 	if (rtp->resp == 'X') {
+@@ -1575,7 +1713,7 @@
+ 		resp = 'X';
+ 	} else {
+ 		/* Not a supported event */
+-		ast_log(LOG_DEBUG, "Ignoring RTP 2833 Event: %08x. Not a DTMF Digit.\n", event);
++		ast_debug(4, "Ignoring RTP 2833 Event: %08x. Not a DTMF Digit.\n", event);
+ 		return;
+ 	}
+ 
+@@ -1610,6 +1748,7 @@
+ 				f = ast_frdup(create_dtmf_frame(instance, AST_FRAME_DTMF_END, 0));
+ 				f->len = ast_tvdiff_ms(ast_samp2tv(rtp->dtmf_duration, rtp_get_rate(f->subclass.codec)), ast_tv(0, 0));
+ 				rtp->resp = 0;
++				ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms)\n", rtp->dtmf_duration, f->len);
+ 				rtp->dtmf_duration = rtp->dtmf_timeout = 0;
+ 				AST_LIST_INSERT_TAIL(frames, f, frame_list);
+ 			} else if (rtpdebug) {
+@@ -1648,6 +1787,10 @@
+ 			if (rtp->resp) {
+ 				/* Digit continues */
+ 				rtp->dtmf_duration = new_duration;
++				f = ast_frdup(create_dtmf_frame(instance, AST_FRAME_DTMF_CONTINUE, 0));
++				f->len = ast_tvdiff_ms(ast_samp2tv(rtp->dtmf_duration, rtp_get_rate(f->subclass.codec)), ast_tv(0, 0));
++				AST_LIST_INSERT_TAIL(frames, f, frame_list);
++				ast_debug(4, "Queued frame AST_FRAME_DTMF_CONTINUE, Samples %d Ms %d\n", rtp->dtmf_duration, (int)f->len);
+ 			} else {
+ 				/* New digit began */
+ 				rtp->resp = resp;
+@@ -1836,8 +1979,10 @@
+ 		length &= 0xffff;
+ 
+ 		if ((i + length) > packetwords) {
+-			if (option_debug || rtpdebug)
+-				ast_log(LOG_DEBUG, "RTCP Read too short\n");
++			if (rtpdebug || option_debug) {
++				/* Because of rtpdebug, this can't be ast_debug() */
++				ast_debug(1, "RTCP Read too short\n");
++			}
+ 			return &ast_null_frame;
+ 		}
+ 
+@@ -2151,8 +2296,8 @@
+ 	}
+ 
+ 	/* If we are currently sending DTMF to the remote party send a continuation packet */
+-	if (rtp->sending_digit) {
+-		ast_rtp_dtmf_continuation(instance);
++	if (rtp->sending_dtmf) {
++		ast_rtp_dtmf_cont(instance);
+ 	}
+ 
+ 	/* Actually read in the data from the socket */
+Index: README.rana-dtmf-rtp-duration
+===================================================================
+--- README.rana-dtmf-rtp-duration	(.../branches/1.8)	(revision 0)
++++ README.rana-dtmf-rtp-duration	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+@@ -0,0 +1,43 @@
++EDVINA AB
++Olle E. Johansson
++
++
++This branch is trying to focus on DTMF in the RTP channel. Asterisk 1.4 and later
++doesn't send the proper DTMF duration on the outbound call leg. If we receive
++a DTMF with a duration of 480 samples, we might end up sending 1440 samples out.
++
++Another issue is the delayed transmission when using the core bridge with features
++enabled. If you send a three second DTMF inbound, the outbound begins after the inbound
++ends, so you get a six second interruption to the call.
++
++A third issue is that if we get a new DTMF while we're still transmitting the old,
++we immediately jump to the new one without finishing the old DTMF tone. 
++
++Fixes
++=====
++
++In order to handle this a lot of bugs was fixed. We also added a new control
++frame to update the outbound channel with the latest duration from the inbound,
++in order to try to prevent the outbound channel to run ahead of the inbound.
++If the outbound channel gets these frames, it will stop adding to the outbound
++DTMF, but retransmit previous message instead.
++
++The outbound channel sends a packet for every incoming RTP packet. As usual,
++the inbound and outbond channels are not synchronized at all. So the outbound
++always clocks dtmf in 160 samples /20 ms, something which will break wideband
++codecs. (another fix required for that).
++
++With this code, the outbound channel sends outbound DTMF for the duration of
++the inbound dtmf tone, a bit adjusted to match 160 samples per outbound
++transmission. We do not break outbound DTMF when we receive inbound
++DTMF end, we continue until we have reached the duration of the DTMF that
++we received on the inbound channel.
++
++By adding a ast_feature_check function to main/features.c we now check 
++the DTMF on the incoming DTMF_BEGIN. If it's not a feature code it's 
++immediately forwarded to the outbound channel. If it's a feature code,
++it's dropped and the feature channel waits for DTMF_END (like now).
++This dramatically changes DTMF behaviour in a PBX bridged call.
++
++
++This work was sponsored by IPvision AS, Denmark
+
+Property changes on: README.rana-dtmf-rtp-duration
+___________________________________________________________________
+Added: svn:mime-type
+## -0,0 +1 ##
++text/plain
+\ No newline at end of property
+Added: svn:keywords
+## -0,0 +1 ##
++Author Date Id Revision
+\ No newline at end of property
+Added: svn:eol-style
+## -0,0 +1 ##
++native
+\ No newline at end of property
+Index: .
+===================================================================
+--- .	(.../branches/1.8)	(revision 403287)
++++ .	(.../team/oej/rana-dtmf-duration-1.8)	(revision 403287)
+
+Property changes on: .
+___________________________________________________________________
+Added: automerge-email
+## -0,0 +1 ##
++oej@edvina.net
+\ No newline at end of property
+Added: automerge
+## -0,0 +1 ##
++*
+\ No newline at end of property
+Added: svnmerge-integrated
+## -0,0 +1 ##
++/branches/1.8:1-403286
+\ No newline at end of property
