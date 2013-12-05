@@ -349,13 +349,6 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	return res;
 }
 
-/*! \brief Incoming DTMF continue */
-static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
-{
-	/* OEJ */
-}
-
-
 /*! \brief Incoming DTMF end */
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
