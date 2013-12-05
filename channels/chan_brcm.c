@@ -217,7 +217,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,
 	.write = brcm_write,
 	.send_digit_begin = brcm_senddigit_begin,
-	.send_digit_continue = brcm_senddigit_continue,
 	.send_digit_end = brcm_senddigit_end,
 	.indicate = brcm_indicate,
 };
@@ -361,13 +360,6 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	ast_mutex_unlock(&sub->parent->lock);
 	return res;
 }
-
-/*! \brief Incoming DTMF continue */
-static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
-{
-	/* OEJ */
-}
-
 
 /*! \brief Incoming DTMF end */
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
