@@ -217,6 +217,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,
 	.write = brcm_write,
 	.send_digit_begin = brcm_senddigit_begin,
+	.send_digit_continue = brcm_senddigit_continue,
 	.send_digit_end = brcm_senddigit_end,
 	.indicate = brcm_indicate,
 };
@@ -330,6 +331,7 @@ static int brcm_finish_transfer(struct brcm_subchannel *p, int result)
 	return 0;
 }
 
+/*! \brief Incoming DTMF begin event */
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
 	int res;
@@ -360,6 +362,14 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	return res;
 }
 
+/*! \brief Incoming DTMF continue */
+static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
+{
+	/* OEJ */
+}
+
+
+/*! \brief Incoming DTMF end */
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
 	int res;
@@ -1475,6 +1485,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 	p->dtmfbuf[p->dtmf_len] = '\0';
 }
 
+/*! \brief Handle incoming DTMF from Broadcom and send it to Asterisk core */
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p;
@@ -1642,9 +1653,11 @@ static void *brcm_monitor_packets(void *data)
 					}
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
+#ifdef EPEVT_DTMF
 				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
 				ast_mutex_unlock(&p->parent->lock);
 				continue;
+#endif
 
 				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
 
@@ -1663,8 +1676,32 @@ static void *brcm_monitor_packets(void *data)
 					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
 				}
 				else {
+					unsigned int duration = (pdata[14] << 8 | pdata[15]);
+					unsigned int dtmf_end = pdata[13] > 0;
+					unsigned int event = phone_2digit(pdata[12]);
+
 					/* Use DTMFBE instead */
-					//ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					ast_verbose(" === Event %d Duration %d End? %s\n",  event, duration, event ? "Yes" : "no");
+
+/*
+ RFC 2833
+ The payload format is shown in Fig. 1.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     event     |E|R| volume    |          duration             |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Duration is in timestamp units
+E = End bit
+R = reserved (ignore)
+
+ 
+
+*/
+
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 					fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
@@ -1673,7 +1710,7 @@ static void *brcm_monitor_packets(void *data)
 						//fr.samples = (pdata[14] << 8 | pdata[15]);
 						//fr.len = fr.samples / 8;
 					}
-					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+					ast_debug(2, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 				}
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
@@ -1858,7 +1895,9 @@ static void *brcm_monitor_events(void *data)
 			case EPEVT_DTMFH:
 			{
 				unsigned int old_state = sub->channel_state;
+#ifdef EPEVT_DTMF
 				handle_dtmf(tEventParm.event, sub);
+#endif
 				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 					/* DTMF event took channel state to DIALING. Stop dial tone. */
 					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
