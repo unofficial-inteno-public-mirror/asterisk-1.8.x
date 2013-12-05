@@ -208,6 +208,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,				//Channel is locked
 	.write = brcm_write,				//Channel is locked
 	.send_digit_begin = brcm_senddigit_begin,	//Channel is NOT locked
+	.send_digit_continue = brcm_senddigit_continue, //Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
 };
@@ -317,6 +318,7 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 	return 0;
 }
 
+/*! \brief Incoming DTMF begin event */
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
 	int res;
@@ -347,6 +349,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	return res;
 }
 
+/*! \brief Incoming DTMF end */
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
 	int res;
@@ -1596,9 +1599,77 @@ static void *brcm_monitor_packets(void *data)
 						ast_log(LOG_WARNING, "Unknown rtp codec id [%d]\n", pdata[1]);
 						break;
 				}
+			} else if  (rtp_packet_type == BRCM_DTMF) {
+#ifdef SKREP_EPEVT_DTMF
+				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
+				ast_mutex_unlock(&p->parent->lock);
+				continue;
+#endif
 
-				if (owner && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
-					ast_queue_frame(owner, &fr);
+				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
+
+				if (dtmf_short) {
+					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
+					fr.subclass.integer = phone_2digit(pdata[12]);
+
+					if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
+						current_dtmf_digit = -1;
+
+					if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
+						current_dtmf_digit = fr.subclass.integer;
+					else
+						fr.frametype = AST_FRAME_NULL;
+
+					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
+				}
+				else {
+					unsigned int duration = (pdata[14] << 8 | pdata[15]);
+					unsigned int dtmf_end = pdata[13] & 128;
+					unsigned int event = phone_2digit(pdata[12]);
+
+					/* Use DTMFBE instead */
+					ast_debug(7, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					ast_log(LOG_DTMF, " === Event %d Duration %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
+
+/*
+ RFC 2833
+ The payload format is shown in Fig. 1.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     event     |E|R| volume    |          duration             |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Duration is in timestamp units
+E = End bit
+R = reserved (ignore)
+
+ 
+
+*/
+
+					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+					/* OEJ: Broadcom seems to start with duration 400 samples so let's use that */
+
+					if (dtmf_end) {
+						fr.frametype = AST_FRAME_DTMF_END;
+					} else {
+						if (duration == 400) { /* DTMF starts here */
+							ft_frametype = AST_FRAME_DTMF_BEGIN;
+						} else {
+							ft_frametype = AST_FRAME_DTMF_CONTINUE;
+						}
+					}
+					fr.subclass.integer = phone_2digit(pdata[12]);
+					if (fr.frametype == AST_FRAME_DTMF_END || fr_frametype == AST_FRAME_DTMF_CONTINUE) {
+						fr.samples = duration;
+						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
+						f->len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
+						fr.len = duration;
+					}
+					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE"));
 				}
 			}
 
@@ -1811,6 +1882,7 @@ static void *brcm_monitor_events(void *data)
 					}
 
 					unsigned int old_state = sub->channel_state;
+					ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event);
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
 					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 						/* DTMF event took channel state to DIALING. Stop dial tone. */
@@ -2698,7 +2770,7 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
 	}
 
 	/* Force inband mode, since this is what seems to be working best with Asterisk */
-	s->dtmf_relay = EPDTMFRFC2833_DISABLED;
+	/* OEJ  s->dtmf_relay = EPDTMFRFC2833_DISABLED;		*/
 
 	return CLI_SUCCESS;
 }
@@ -3065,7 +3137,7 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 				line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 			}
 			/* Force inband mode, since this is what seems to be working best with Asterisk */
-			line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
+			/* line_config->dtmf_relay = EPDTMFRFC2833_DISABLED; */
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			line_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "dtmfcompatibility")) {
