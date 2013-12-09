@@ -92,24 +92,11 @@ endif
 
 # dect flags
 BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx
-DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx/userspace/private/apps/dectd
 
-chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       	\
-           -I$(DECTD_DIR)/inc                   		\
-           -I$(DECTD_DIR)/dectI/inc               		\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix               	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api               	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/CodecList     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpCc          	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpFwu         	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpMm          	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpNoEmission  	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/GenEveNot     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpGeneral     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Las           	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/LasDb         	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Project       	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Types         	\
+
+chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= \
+	-I$(STAGING_DIR)/usr/include/natalie-dect/ \
+	-I$(STAGING_DIR)/usr/include/natalie-dect/Phoenix  \
 	-I$(BRCM_DIR)/bcmdrivers/broadcom/include/bcm963xx/ \
 	-I$(BRCM_DIR)/bcmdrivers/opensource/include/bcm963xx/ \
 	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/endpt/inc/ \
