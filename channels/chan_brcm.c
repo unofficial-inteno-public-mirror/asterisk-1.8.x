@@ -3083,6 +3083,8 @@ static line_settings line_settings_create(void)
 		.jitterMax = 0,
 		.jitterTarget = 0,
 		.hangup_xfer = 0,
+		.min_hookflash = 50,
+		.max_hookflash = 800,
 	};
 	return line_conf;
 }
@@ -3486,6 +3488,16 @@ static void brcm_provision_endpoints(void)
 		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffTarget, &s->jitterTarget, sizeof(VRG_UINT32));
 		if (result != EPSTATUS_SUCCESS) {
 			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffTarget to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterTarget, i, result);
+
+		result = vrgEndptProvSet(i, EPPROV_MinHookFlash, &s->min_hookflash, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_MinHookFlash to %d for Endpoint %d failed with EPSTATUS %d\n", s->min_hookflash, i, result);
+
+		result = vrgEndptProvSet(i, EPPROV_MaxHookFlash, &s->max_hookflash, sizeof(VRG_UINT32));
+		if (result != EPSTATUS_SUCCESS) {
+			ast_log(LOG_ERROR, "Setting EPPROV_MaxHookFlash to %d for Endpoint %d failed with EPSTATUS %d\n", s->min_hookflash, i, result);
+
+
 		}
 	}
 }

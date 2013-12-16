@@ -197,6 +197,8 @@ typedef struct {
 	VRG_UINT32 jitterMin;
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
+	VRG_UINT32 min_hookflash;
+	VRG_UINT32 max_hookflash;
 	int hangup_xfer;
 } line_settings;
 
