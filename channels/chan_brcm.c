@@ -1887,9 +1887,9 @@ static void *brcm_monitor_events(void *data)
 			case EPEVT_DTMFH:
 			{
 				unsigned int old_state = sub->channel_state;
-#ifdef EPEVT_DTMF
+		
+				ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event);
 				handle_dtmf(tEventParm.event, sub);
-#endif
 				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 					/* DTMF event took channel state to DIALING. Stop dial tone. */
 					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
