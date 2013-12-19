@@ -75,6 +75,7 @@ struct brcm_subchannel {
 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
 	int cw_timer_id;			/* Current call waiting timer id, -1 if no active timer */
 	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
+	int dtmf_duration;		/* Duration of the DTMF currently sending. Should be zero when not sending */
 };
 
 
