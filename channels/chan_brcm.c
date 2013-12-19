@@ -1568,7 +1568,6 @@ static void *brcm_monitor_packets(void *data)
 				ast_channel_ref(sub->owner);
 				owner = sub->owner;
 			}
-			ast_mutex_unlock(&sub->parent->lock);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
@@ -1605,24 +1604,35 @@ static void *brcm_monitor_packets(void *data)
 						break;
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
-                unsigned int duration = (pdata[14] << 8 | pdata[15]);
-                unsigned int dtmf_end = pdata[13] > 0;
-                unsigned int event = phone_2digit(pdata[12]);
 
-                /* Use DTMFBE instead */
-                ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
-                ast_verbose(" === Event %d Duration %d End? %s\n",  event, duration, event ? "Yes" : "no");
+				unsigned int duration = (pdata[14] << 8 | pdata[15]);
+				unsigned int dtmf_end = pdata[13] & 128;
+				unsigned int event = phone_2digit(pdata[12]);
 
-                //fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-                //fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-                fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
-                fr.subclass.integer = phone_2digit(pdata[12]);
-                if (fr.frametype == AST_FRAME_DTMF_END) {
-                    //fr.samples = (pdata[14] << 8 | pdata[15]);
-                    //fr.len = fr.samples / 8;
-                }
-                ast_debug(2, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
+				/* Use DTMFBE instead */
+				ast_debug(7, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+				ast_log(LOG_DTMF, " === Event %d Duration %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
+
+				if (dtmf_end) {
+					fr.frametype = AST_FRAME_DTMF_END;
+					sub->dtmf_duration = 0;
+				} else {
+					if (sub->dtmf_duration == 0) { /* DTMF starts here */
+						fr.frametype = AST_FRAME_DTMF_BEGIN;
+					} else {
+						fr.frametype = AST_FRAME_DTMF_CONTINUE;
+					}
+					sub->dtmf_duration = duration;
+				}
+				fr.subclass.integer = phone_2digit(pdata[12]);
+				if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
+					fr.samples = duration;
+					/* Assuming 8000 samples/second - narrowband alaw or ulaw */
+					fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
+				}
+				ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 			}
+			ast_mutex_unlock(&sub->parent->lock);
 
 			if (owner) {
 				ast_channel_unref(owner);
