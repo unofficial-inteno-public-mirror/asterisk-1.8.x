@@ -1655,21 +1655,22 @@ R = reserved (ignore)
 
 					if (dtmf_end) {
 						fr.frametype = AST_FRAME_DTMF_END;
+						p->dtmf_duration = 0;
 					} else {
-						if (duration == 400) { /* DTMF starts here */
-							ft_frametype = AST_FRAME_DTMF_BEGIN;
+						if (p->dtmf_duration == 0) { /* DTMF starts here */
+							fr.frametype = AST_FRAME_DTMF_BEGIN;
 						} else {
-							ft_frametype = AST_FRAME_DTMF_CONTINUE;
+							fr.frametype = AST_FRAME_DTMF_CONTINUE;
 						}
+						p->dtmf_duration = duration;
 					}
 					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END || fr_frametype == AST_FRAME_DTMF_CONTINUE) {
+					if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
 						fr.samples = duration;
 						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
-						f->len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
-						fr.len = duration;
+						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
 					}
-					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE"));
+					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
 
