@@ -1870,6 +1870,7 @@ static void *brcm_monitor_events(void *data)
 					}
 
 					unsigned int old_state = sub->channel_state;
+					ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event);
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
 					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 						/* DTMF event took channel state to DIALING. Stop dial tone. */
