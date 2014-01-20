@@ -1511,6 +1511,14 @@ static char phone_2digit(char c)
 		return '#';
 	else if (c == 10)
 		return '*';
+	else if (c == 12)
+		return 'A';
+	else if (c == 13)
+		return 'B';
+	else if (c == 14)
+		return 'C';
+	else if (c == 15)
+		return 'D';
 	else if ((c < 10) && (c >= 0))
 		return '0' + c;
 	else
