@@ -1507,7 +1507,7 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
 	else if (p->dtmf_first == dtmf_button) {
-		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);
+		ast_debug(5,"Depressed DTMF %s\n", dtmfMap->name);
 		if (p->hf_detected) {
 			ast_log(LOG_DEBUG, "DTMF after HF\n");
 			p->hf_detected = 0;
@@ -1525,6 +1525,7 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
 			if (!dtmf_compatibility) {
 				ast_channel_lock(sub->owner);
+				ast_debug(5,"===> Sending DTMF to bridge core -> %d\n", dtmfbutton);
 				struct ast_frame f = { 0, };
 				f.subclass.integer = dtmf_button;
 				f.src = "BRCM";
@@ -1726,7 +1727,7 @@ R = reserved (ignore)
 						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
 						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
 					}
-					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
+					ast_debug(2, "== > Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
