@@ -118,6 +118,8 @@ struct brcm_pvt {
 	int hf_detected;			/* Hook flash detected */
 	dialtone_state dialtone;		/* Set by manager command */
 	struct brcm_channel_tech *tech;
+	int dialtone_extension_cb_id;
+	char dialtone_extension_hint[AST_MAX_EXTENSION];
 };
 
 enum rtp_type {
@@ -198,6 +200,7 @@ typedef struct {
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
 	int hangup_xfer;
+	char dialtone_extension_hint[AST_MAX_EXTENSION];
 } line_settings;
 
 
