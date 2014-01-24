@@ -328,6 +328,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	sub = ast->tech_pvt;
 	ast_mutex_lock(&sub->parent->lock);
 
+	ast_debug(3, "===> Receiving DTMF BEGIN from bridge: %d \n", (int) digit);
 	res = 0;
 	s = &line_config[sub->parent->line_id];
 	switch (s->dtmf_relay) {
@@ -358,6 +359,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 
 	sub = ast->tech_pvt;
 	ast_mutex_lock(&sub->parent->lock);
+	ast_debug(3, "===> Receiving DTMF END from bridge: %d (Duration %d)\n", (int) digit, duration);
 
 	res = 0;
 	s = &line_config[sub->parent->line_id];
@@ -1458,7 +1460,8 @@ void handle_dtmf(EPEVT event,
 
 	if (p->dtmf_first < 0) {
 		p->dtmf_first = dtmf_button;
-		ast_debug(9,"Pressed DTMF %s\n", dtmfMap->name);
+		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+		ast_debug(5,"Pressed DTMF %s\n", dtmfMap->name);
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
 	else if (p->dtmf_first == dtmf_button) {
@@ -1521,8 +1524,10 @@ static char phone_2digit(char c)
 		return 'D';
 	else if ((c < 10) && (c >= 0))
 		return '0' + c;
-	else
+	else {
+		ast_debug(2, "===> Unknown DTMF from BRCM value %d\n",(int) c);
 		return '?';
+	}
 }
 
 static void *brcm_monitor_packets(void *data)
@@ -1636,7 +1641,7 @@ static void *brcm_monitor_packets(void *data)
 					unsigned int event = phone_2digit(pdata[12]);
 
 					/* Use DTMFBE instead */
-					ast_debug(7, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+					ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 					ast_log(LOG_DTMF, " === Event %d Duration %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
 
 /*
@@ -1659,7 +1664,6 @@ R = reserved (ignore)
 
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-					/* OEJ: Broadcom seems to start with duration 400 samples so let's use that */
 
 					if (dtmf_end) {
 						fr.frametype = AST_FRAME_DTMF_END;
