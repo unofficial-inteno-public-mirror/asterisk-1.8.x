@@ -1465,7 +1465,7 @@ void handle_dtmf(EPEVT event,
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
 	else if (p->dtmf_first == dtmf_button) {
-		ast_debug(5,"Depressed DTMF %s\n", dtmfMap->name);
+		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);
 		if (p->hf_detected) {
 			ast_log(LOG_DEBUG, "DTMF after HF\n");
 			p->hf_detected = 0;
@@ -1483,15 +1483,14 @@ void handle_dtmf(EPEVT event,
 			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
 			p->dtmf_first = -1;
 			if (!dtmf_compatibility) {
-				ast_debug(5,"===> Sending DTMF to bridge core -> %d\n", dtmfbutton);
+				ast_channel_lock(sub->owner);
 				struct ast_frame f = { 0, };
 				f.subclass.integer = dtmf_button;
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
-
-				if (owner) {
-					ast_queue_frame(owner, &f);
-				}
+				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
+				ast_queue_frame(sub->owner, &f);
+				ast_channel_unlock(sub->owner);
 			}
 		}
 		else {
@@ -1683,7 +1682,7 @@ R = reserved (ignore)
 						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
 						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
 					}
-					ast_debug(2, "== > Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
+					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
 
@@ -3747,6 +3746,7 @@ static EPSIG map_dtmf_to_epsig(char digit)
 
 int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit)
 {
+	ast_debug(4, " ====> BRCM sending DTMF %c \n", digit);
 	EPSIG signal = map_dtmf_to_epsig(digit);
 	if (signal == EPSIG_LAST) {
 		return EPSTATUS_ERROR;
@@ -3756,6 +3756,7 @@ int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit)
 
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit)
 {
+	ast_debug(4, " ====> BRCM stop DTMF %c \n", digit);
 	EPSIG signal = map_dtmf_to_epsig(digit);
 	if (signal == EPSIG_LAST) {
 		return EPSTATUS_ERROR;
