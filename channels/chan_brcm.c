@@ -64,19 +64,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm_dect.h"
 
 /*** DOCUMENTATION
-	<manager name="BRCMDialtoneSet" language="en_US">
-		<synopsis>
-			Set dialtone state for BRCM port.
-		</synopsis>
-		<syntax>
-			<xi:include xpointer="xpointer(/docs/manager[@name='Login']/syntax/parameter[@name='ActionID'])" />
-			<parameter name="LineType" required="true" />
-			<parameter name="LineId" required="true" />
-			<parameter name="State" required="true" />
-		</syntax>
-		<description>
-		</description>
-	</manager>
 	<manager name="BRCMPortsShow" language="en_US">
 		<synopsis>
 			Show detected BRCM ports.
@@ -2584,73 +2571,6 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	return CLI_SUCCESS;
 }
 
-static int manager_brcm_dialtone_set(struct mansession *s, const struct message *m)
-{
-	struct brcm_pvt *p;
-	struct brcm_pvt *p_tmp;
-	const char *line_id = astman_get_header(m, "LineId");
-	const char *requested_dialtone = astman_get_header(m, "Dialtone");
-	int line;
-
-	if (ast_strlen_zero(line_id)) {
-		astman_send_error(s, m, "BRCMDialtoneSet requires LineId");
-		return 0;
-	}
-
-	if (ast_strlen_zero(requested_dialtone)) {
-		astman_send_error(s, m, "BRCMDialtoneSet requires Dialtone");
-		return 0;
-	}
-
-	/* Find line id */
-	int i;
-        for (i = 0; i < strlen(line_id); i++) {
-                if (!isdigit(line_id[i])) {
-			astman_send_error(s, m, "Invalid LineId");
-			return 0;
-                }
-        }
-	line = atoi(line_id);
-	if (ast_mutex_lock(&iflock)) {
-		astman_send_error(s, m, "Failed to lock iflist");
-		return -1;
-	}
-	p = NULL;
-	p_tmp = iflist;
-	while (p_tmp) {
-		if (p_tmp->line_id == line) {
-			p = p_tmp;
-			break;
-		}
-		p_tmp = p_tmp->next;
-	}
-	ast_mutex_unlock(&iflock);
-	if (!p) {
-		astman_send_error(s, m, "Unknown LineId");
-		return 0;
-	}
-
-	/* Match requested dialtone str with corresponding dialtone enum */
-	const DIALTONE_MAP *dialtone = dialtone_map;
-	while (dialtone->state != DIALTONE_UNKNOWN) {
-		if (strcmp(dialtone->str, requested_dialtone) == 0) {
-			break;
-		}
-		dialtone++;
-	}
-	if (dialtone->state == DIALTONE_UNKNOWN) {
-		astman_send_error(s, m, "Unknown dialtone");
-		return 0;
-	}
-
-	ast_mutex_lock(&p->lock);
-	p->dialtone = dialtone->state;
-	ast_mutex_unlock(&p->lock);
-
-	astman_send_ack(s, m, "Dialtone Set");
-	return 0;
-}
-
 static int manager_brcm_ports_show(struct mansession *s, const struct message *m)
 {
 	char response[64];
@@ -3423,7 +3343,6 @@ static int load_module(void)
 	ast_config_destroy(cfg);
 
 	/* Register manager commands */
-	ast_manager_register_xml("BRCMDialtoneSet", EVENT_FLAG_SYSTEM, manager_brcm_dialtone_set);
 	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
 
 	/* Start channel threads */
