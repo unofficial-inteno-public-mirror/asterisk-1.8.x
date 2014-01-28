@@ -4162,6 +4162,7 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 	}
 	else {
 		/* This means that current pvt was not configured to receive incoming calls from any provider */
+		brcm_extension_state_unregister(p);
 		ast_log(LOG_DEBUG, "No dialtone hint for pvt %d found (%s@%s)\n", p->line_id, p->dialtone_extension_hint, p->dialtone_extension_hint_context);
 		state = DIALTONE_OFF;
 	}
