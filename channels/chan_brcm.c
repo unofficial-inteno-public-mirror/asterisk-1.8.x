@@ -2497,6 +2497,41 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	return CLI_SUCCESS;
 }
 
+/*! \brief CLI for showing brcm dialtone status. */
+static char *brcm_show_dialtone_status(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	if (cmd == CLI_INIT) {
+		e->command = "brcm show dialtone status";
+		e->usage =
+			"Usage: brcm show dialtone status\n"
+			"       Shows the current chan_brcm dialtone status.\n";
+		return NULL;
+	}
+	else if (cmd == CLI_GENERATE) {
+		return NULL;
+	}
+
+	struct brcm_pvt *p = iflist;
+	int i = 0;
+
+	ast_cli(a->fd, "Pvt nr\tDialtone\n\n");
+	while(p) {
+		const DIALTONE_MAP *dialtone = dialtone_map;
+		while (dialtone->state != DIALTONE_LAST) {
+			if (dialtone->state == p->dialtone) {
+				break;
+			}
+			dialtone++;
+		}
+		ast_cli(a->fd, "%d\t%s\n", i, dialtone->str);
+
+		i++;
+		p = brcm_get_next_pvt(p);
+	}
+
+	return CLI_SUCCESS;
+}
+
 /*! \brief CLI for reloading brcm config.
  * Note that the contry setting will not be reloaded. In order to do that the following
  * sequence must be carried out: vrgEndptDeinit(), vrgEndptDriverClose(), vrgEndptDriverOpen()
@@ -2844,6 +2879,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 /*! \brief BRCM Cli commands definition */
 static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_show_status, "Show chan_brcm status"),
+	AST_CLI_DEFINE(brcm_show_dialtone_status, "Show chan_brcm dialtone status"),
 	AST_CLI_DEFINE(brcm_set_parameters_on_off,  "Set chan_brcm parameters"),
 	AST_CLI_DEFINE(brcm_set_dtmf_mode,  "Set chan_brcm dtmf_relay parameter"),
 	AST_CLI_DEFINE(brcm_set_parameters_value,  "Set chan_brcm dialout msecs"),
