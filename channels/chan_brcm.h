@@ -63,7 +63,7 @@ typedef enum dialtone_state {
 
 struct brcm_subchannel {
 	int id;
-	struct ast_channel *owner;	/* Channel we belong to, possibly NULL */
+	char *owner_name;		/* Name of channel we bleong to, possibly NULL */
 	int connection_id;		/* Current connection id, may be -1 */
 	unsigned int channel_state;	/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
@@ -252,7 +252,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *p);
 static int brcm_close_connection(struct brcm_subchannel *p);
 static int brcm_create_conference(struct brcm_pvt *p);
 static int brcm_stop_conference(struct brcm_subchannel *p);
-static int brcm_finish_transfer(struct brcm_subchannel *p, int result);
+static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchannel *p, int result);
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
@@ -279,7 +279,7 @@ int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p);
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p);
 int brcm_signal_callwaiting(const struct brcm_pvt *p);
 int brcm_stop_callwaiting(const struct brcm_pvt *p);
-int brcm_signal_callerid(struct brcm_subchannel *sub);
+int brcm_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *sub);
 int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit);
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit);
 static int brcm_in_call(const struct brcm_pvt *p);
