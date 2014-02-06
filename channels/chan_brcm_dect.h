@@ -43,7 +43,7 @@ void dectRingHandSet( int destHandset, int dspChannel);
 void dect_hangup(int handset);
 int dect_signal_ringing(struct brcm_pvt *p);
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
-int dect_signal_callerid(struct brcm_subchannel *s);
+int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
 int dect_stop_ringing(struct brcm_pvt *p);
 int dect_stop_ringing_callerid_pending(struct brcm_pvt *p);
 
