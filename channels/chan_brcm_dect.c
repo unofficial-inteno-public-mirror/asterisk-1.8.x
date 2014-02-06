@@ -109,12 +109,12 @@ int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 	return 0;
 }
 
-int dect_signal_callerid(struct brcm_subchannel *s) {
+int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
 	
 	int handset = s->parent->line_id + 1;
-	ast_verbose("Caller id: %s\n", s->owner->connected.id.number.str);
+	ast_verbose("Caller id: %s\n", chan->connected.id.number.str);
 	
-	strncpy(handsets[handset].cid, s->owner->connected.id.number.str, CID_MAX_LEN);
+	strncpy(handsets[handset].cid, chan->connected.id.number.str, CID_MAX_LEN);
 
 	return 0;
 }

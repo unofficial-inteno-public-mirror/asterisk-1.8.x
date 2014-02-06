@@ -81,7 +81,7 @@ struct brcm_subchannel {
 struct brcm_channel_tech {
 	int (* signal_ringing)(struct brcm_pvt *p);
 	int (* signal_ringing_callerid_pending)(struct brcm_pvt *p);
-	int (* signal_callerid)(struct brcm_subchannel *s);
+	int (* signal_callerid)(const struct ast_channel *chan, struct brcm_subchannel *s);
 	int (* stop_ringing)(struct brcm_pvt *p);
 	int (* stop_ringing_callerid_pending)(struct brcm_pvt *p);
 };

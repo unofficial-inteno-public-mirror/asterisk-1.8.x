@@ -416,7 +416,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	}
 	else if (brcm_in_call(p)) {
 		ast_log(LOG_WARNING, "Line is busy\n");
-		sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
+		chan->hangupcause = AST_CAUSE_USER_BUSY;
 		ast_queue_control(chan, AST_CONTROL_BUSY);
 	}
 	else {
@@ -426,7 +426,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 			p->tech->signal_ringing(p);
 		} else {
 			p->tech->signal_ringing_callerid_pending(p);
-			p->tech->signal_callerid(sub);
+			p->tech->signal_callerid(chan, sub);
 		}
 	  	ast_setstate(chan, AST_STATE_RINGING);
 		ast_queue_control(chan, AST_CONTROL_RINGING);
