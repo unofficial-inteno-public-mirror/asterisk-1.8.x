@@ -397,8 +397,8 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", sub->parent->line_id);
 	ast_localtime(&UtcTime, &tm, NULL);
 
-	if ((ast->_state != AST_STATE_DOWN) && (ast->_state != AST_STATE_RESERVED)) {
-		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", ast->name);
+	if ((chan->_state != AST_STATE_DOWN) && (chan->_state != AST_STATE_RESERVED)) {
+		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", chan->name);
 		return -1;
 	}
 
