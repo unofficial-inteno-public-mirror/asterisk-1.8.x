@@ -1462,6 +1462,7 @@ static int __sip_do_register(struct sip_registry *r);
 static int sip_reg_timeout(const void *data);
 static void sip_send_all_registers(void);
 static int sip_reinvite_retry(const void *data);
+static int peer_is_registered(const struct sip_peer *peer);
 
 /*--- Parsing SIP requests and responses */
 static void append_date(struct sip_request *req);	/* Append date to SIP packet */
@@ -13310,6 +13311,7 @@ static int sip_reg_timeout(const void *data)
 		ast_log(LOG_NOTICE, "   -- Registration for '%s@%s' timed out, trying again (Attempt #%d)\n", r->username, r->hostname, r->regattempts);
 	}
 	manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nUsername: %s\r\nDomain: %s\r\nStatus: %s\r\n", r->username, r->hostname, regstate2str(r->regstate));
+	ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 	registry_unref(r, "unreffing registry_unref r");
 	return 0;
 }
@@ -14299,6 +14301,7 @@ static enum parse_register_result parse_register_contact(struct sip_pvt *pvt, st
 	if (!peer->rt_fromcontact || !sip_cfg.peer_rtupdate)
 		ast_db_put("SIP/Registry", peer->name, data);
 	manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: SIP\r\nPeer: SIP/%s\r\nPeerStatus: Registered\r\nAddress: %s\r\n", peer->name,  ast_sockaddr_stringify(&peer->addr));
+	ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", peer->name);
 
 	/* Is this a new IP address for us? */
 	if (VERBOSITY_ATLEAST(2) && ast_sockaddr_cmp(&peer->addr, &oldsin)) {
@@ -19972,6 +19975,30 @@ static int sip_reinvite_retry(const void *data)
 }
 
 /*!
+ * \brief Find out if peer is registered (outbound)
+ *
+ * \retval -1 unknown peer
+ * \retval 0 peer is not registered
+ * \retval 1 peer is registered
+ */
+static int peer_is_registered(const struct sip_peer *peer)
+{
+	int res = -1;
+
+	ASTOBJ_CONTAINER_TRAVERSE(&regl, 1, do {  /* regl is locked */
+			ASTOBJ_WRLOCK(iterator); /* now regl is locked, and the object is also locked */
+			if (!strcmp(peer->name, iterator->hostname)) {
+				res = iterator->regstate == REG_STATE_REGISTERED ? 1 : 0;
+				ASTOBJ_UNLOCK(iterator);
+				break;
+			}
+			ASTOBJ_UNLOCK(iterator);
+	} while(0));
+
+	return res;
+}
+
+/*!
  * \brief Handle authentication challenge for SIP UPDATE
  *
  * This function is only called upon the receipt of a 401/407 response to an UPDATE.
@@ -20838,6 +20865,7 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 			transmit_register(r, SIP_REGISTER, NULL, NULL);
 		}
 		manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nUsername: %s\r\nDomain: %s\r\nStatus: %s\r\n", r->username, r->hostname, regstate2str(r->regstate));
+		ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 		break;
 	case 479:	/* SER: Not able to process the URI - address is wrong in register*/
 		ast_log(LOG_WARNING, "Got error 479 on register to %s@%s, giving up (check config)\n", p->registry->username, p->registry->hostname);
@@ -20857,6 +20885,7 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 		r->regstate = REG_STATE_REGISTERED;
 		r->regtime = ast_tvnow();		/* Reset time of last successful registration */
 		manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nDomain: %s\r\nStatus: %s\r\n", r->hostname, regstate2str(r->regstate));
+		ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 		r->regattempts = 0;
 		ast_debug(1, "Registration successful\n");
 		if (r->timeout > -1) {
@@ -26550,6 +26579,9 @@ static int sip_devicestate(void *data)
 				res = AST_DEVICE_INUSE;
 			else if (p->maxms && ((p->lastms > p->maxms) || (p->lastms < 0)))
 				/* We don't have a call. Are we reachable at all? Requires qualify= */
+				res = AST_DEVICE_UNAVAILABLE;
+			else if (!peer_is_registered(p))
+				/* Peer is not registered */
 				res = AST_DEVICE_UNAVAILABLE;
 			else	/* Default reply if we're registered and have no other data */
 				res = AST_DEVICE_NOT_INUSE;
