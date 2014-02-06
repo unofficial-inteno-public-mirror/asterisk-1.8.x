@@ -889,21 +889,6 @@ struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id)
 	return NULL;
 }
 
-struct brcm_pvt* brcm_get_pvt_from_extension_hint(struct brcm_pvt *p, const char *context, const char *exten)
-{
-	struct brcm_pvt *tmp = p;
-
-	do {
-		if (!strcmp(tmp->dialtone_extension_hint_context, context) &&
-			!strcmp(tmp->dialtone_extension_hint, exten)) {
-			return tmp;
-		}
-		tmp = brcm_get_next_pvt(tmp);
-	} while (tmp);
-
-	return NULL;
-}
-
 static struct brcm_subchannel* brcm_get_subchannel_from_connectionid(struct brcm_pvt *p, int connection_id)
 {
 	int i;
@@ -2063,6 +2048,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->endpoint_type = endpoint_type;
 		tmp->dialtone = DIALTONE_UNKNOWN;
 		tmp->dialtone_extension_cb_id = -1;
+		tmp->dialtone_extension_cb_data = NULL;
 		
 		/* Low level signaling */
 		if (endpoint_type == FXS) {
@@ -4175,17 +4161,23 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 static int brcm_extension_state_register(struct brcm_pvt *p)
 {
 	int id;
+	int *cb_data;
 
 	if (p->dialtone_extension_cb_id != -1) {
 		brcm_extension_state_unregister(p);
 	}
 
-	if ((id = ast_extension_state_add(p->dialtone_extension_hint_context, p->dialtone_extension_hint, extension_state_cb, NULL)) < 0) {
+	cb_data = ast_malloc(sizeof(int));
+	*cb_data = p->line_id;
+
+	if ((id = ast_extension_state_add(p->dialtone_extension_hint_context, p->dialtone_extension_hint, extension_state_cb, cb_data)) < 0) {
 		ast_log(LOG_ERROR, "Failed to register for dialtone extension call back (%s@%s)\n", p->dialtone_extension_hint_context, p->dialtone_extension_hint);
+		ast_free(cb_data);
 		return -1;
 	}
 
 	p->dialtone_extension_cb_id = id;
+	p->dialtone_extension_cb_data = cb_data;
 	return 0;
 }
 
@@ -4195,6 +4187,8 @@ static void brcm_extension_state_unregister(struct brcm_pvt *p)
 	if (p->dialtone_extension_cb_id != -1) {
 		ast_extension_state_del(p->dialtone_extension_cb_id, extension_state_cb);
 		p->dialtone_extension_cb_id = -1;
+		ast_free(p->dialtone_extension_cb_data);
+		p->dialtone_extension_cb_data = NULL;
 	}
 }
 
@@ -4239,16 +4233,24 @@ static dialtone_state extension_state2dialtone_state(int extension_state)
 static int extension_state_cb(char *context, char *exten, int state, void *data)
 {
 	struct brcm_pvt *p;
+	int line_id = *(int*) data;
 
-	if ((p = brcm_get_pvt_from_extension_hint(iflist, context, exten)) == NULL) {
-		ast_log(LOG_ERROR, "Received extension_state_cb for unknown hint '%s@%s'\n", exten, context);
+	if ((p = brcm_get_pvt_from_lineid(iflist, line_id)) == NULL) {
+		ast_log(LOG_ERROR, "Received extension_state_cb for unknown pvt %d '%s@%s'\n", line_id, exten, context);
 		return -1;
 	}
 
-	ast_log(LOG_DEBUG, "New extension state for '%s' '%s@%s'\n", ast_extension_state2str(state), exten, context);
 	ast_mutex_lock(&p->lock);
+	if (state == AST_EXTENSION_DEACTIVATED) {
+		/* Hint for which this pvt was registered to was removed */
+		p->dialtone_extension_cb_id = -1;
+		ast_free(p->dialtone_extension_cb_data);
+		p->dialtone_extension_cb_data = NULL;
+	}
+	ast_log(LOG_DEBUG, "New extension state '%s' for '%s@%s' pvt: %d\n", ast_extension_state2str(state), exten, context, p->line_id);
 	brcm_dialtone_set(p, extension_state2dialtone_state(state));
 	ast_mutex_unlock(&p->lock);
+	return 0;
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");

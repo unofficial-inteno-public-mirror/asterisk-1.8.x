@@ -119,6 +119,7 @@ struct brcm_pvt {
 	dialtone_state dialtone;		/* Set by manager command */
 	struct brcm_channel_tech *tech;
 	int dialtone_extension_cb_id;
+	int *dialtone_extension_cb_data;
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
 };
@@ -290,7 +291,6 @@ static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_
 static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const sub);
 static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
-struct brcm_pvt* brcm_get_pvt_from_extension_hint(struct brcm_pvt *p, const char *context, const char *exten);
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub);
 
 #endif /* CHAN_BRCM_H */
