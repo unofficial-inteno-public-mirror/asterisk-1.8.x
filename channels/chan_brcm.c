@@ -1440,11 +1440,13 @@ static void handle_hookflash(struct brcm_pvt *p)
 			strcpy(data.exten, sub->parent->ext);
 			strcpy(data.replaces, bridged_chan->name);
 
+			ast_channel_unlock(peer_sub_owner);
+
 			ast_queue_control_data(sub_owner, sub_frame, &data, sizeof(data));
 		} else {
+			ast_channel_unlock(peer_sub_owner);
 			ast_log(LOG_ERROR, "Failed to fetch bridged channel\n");
 		}
-		ast_channel_unlock(peer_sub_owner);
 		sub_frame = 0;
 	}
 
@@ -1564,7 +1566,7 @@ static char phone_2digit(char c)
 
 static void *brcm_monitor_packets(void *data)
 {
-	struct brcm_subchannel *p;
+	struct brcm_subchannel *sub;
 	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
@@ -1596,22 +1598,22 @@ static void *brcm_monitor_packets(void *data)
 			/* Classify the rtp packet */
 			rtp_packet_type = brcm_classify_rtp_packet(pdata[1]);
 
-			p = brcm_get_subchannel_from_connectionid(iflist, tPacketParm.cnxId);
-			if (p == NULL) {
+			sub = brcm_get_subchannel_from_connectionid(iflist, tPacketParm.cnxId);
+			if (sub == NULL) {
 				ast_log(LOG_ERROR, "Failed to find subchannel for connection id %d\n", tPacketParm.cnxId);
 				continue;
 			}
-			ast_mutex_lock(&p->parent->lock);
+			ast_mutex_lock(&sub->parent->lock);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
-			if (p->channel_state == ONHOLD) {
-				ast_mutex_unlock(&p->parent->lock);
+			if (sub->channel_state == ONHOLD) {
+				ast_mutex_unlock(&sub->parent->lock);
 				continue;
 			}
 
-			/* Handle rtp packet accoarding to classification */
-			if ((rtp_packet_type == BRCM_AUDIO) && p) {
+			/* Handle rtp packet according to classification */
+			if ((rtp_packet_type == BRCM_AUDIO) && sub) {
 				if (pdata[0] == 0x80) {
 					fr.frametype = AST_FRAME_VOICE;
 					fr.offset = 0;
@@ -1648,56 +1650,27 @@ static void *brcm_monitor_packets(void *data)
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
-				ast_mutex_unlock(&p->parent->lock);
+				ast_mutex_unlock(&sub->parent->lock);
 				continue;
-
-				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
-
-				if (dtmf_short) {
-					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
-					fr.subclass.integer = phone_2digit(pdata[12]);
-
-					if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
-						current_dtmf_digit = -1;
-
-					if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
-						current_dtmf_digit = fr.subclass.integer;
-					else
-						fr.frametype = AST_FRAME_NULL;
-
-					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
-				}
-				else {
-					/* Use DTMFBE instead */
-					//ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
-					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-					fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
-					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END) {
-						//fr.samples = (pdata[14] << 8 | pdata[15]);
-						//fr.len = fr.samples / 8;
-					}
-					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
-				}
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
-			struct ast_channel *sub_owner = ast_channel_get_by_name(p->owner_name);
-			ast_mutex_unlock(&p->parent->lock);
+			if (rtp_packet_type == BRCM_DTMF || rtp_packet_type == BRCM_DTMFBE || rtp_packet_type == BRCM_AUDIO) {
 
-			if (sub_owner) {
-				if (rtp_packet_type == BRCM_DTMF || rtp_packet_type == BRCM_DTMFBE || rtp_packet_type == BRCM_AUDIO) {
-					/* Lock channel */
-					ast_channel_lock(sub_owner);
+				struct ast_channel *sub_owner = ast_channel_get_by_name(sub->owner_name);
+				ast_mutex_unlock(&sub->parent->lock);
+
+				if (sub_owner) {
 					if (sub_owner->_state == AST_STATE_UP || sub_owner->_state == AST_STATE_RING) {
 						/* and enque frame if channel is up */
 						ast_queue_frame(sub_owner, &fr);
 					}
-					ast_channel_unlock(sub_owner);
+					ast_channel_unref(sub_owner);
 				}
-				ast_channel_unref(sub_owner);
+			}
+			else {
+				ast_mutex_unlock(&sub->parent->lock);
 			}
 		}
 		//sched_yield();
@@ -2868,14 +2841,12 @@ static int unload_module(void)
 			int i;
 			ast_mutex_lock(&p->lock);
 			for (i=0; i<NUM_SUBCHANNELS; i++) {
-				if (p->sub[i]->owner_name) {
-					struct ast_channel *owner = ast_channel_get_by_name(p->sub[i]->owner_name);
-					if (owner) {
-						ast_mutex_unlock(&p->lock);
-						ast_softhangup(owner, AST_SOFTHANGUP_APPUNLOAD);
-						ast_channel_unref(owner);
-						ast_mutex_lock(&p->lock);
-					}
+				struct ast_channel *owner = ast_channel_get_by_name(p->sub[i]->owner_name);
+				if (owner) {
+					ast_mutex_unlock(&p->lock);
+					ast_softhangup(owner, AST_SOFTHANGUP_APPUNLOAD);
+					ast_channel_unref(owner);
+					ast_mutex_lock(&p->lock);
 				}
 			}
 			brcm_extension_state_unregister(p);
@@ -3008,18 +2979,22 @@ static void build_xlaw_table(uint8_t *linear_to_xlaw,
  */
 static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
 {
+	struct ast_channel *owner = NULL;
 	EPZCNXPARAM epCnxParms = {0};
 	line_settings *s = &line_config[p->parent->line_id];
 
 	epCnxParms.mode = EPCNXMODE_SNDRX;
 
-	if (p->owner) {
+	owner = ast_channel_get_by_name(p->owner_name);
+
+	if (owner) {
 		//p is owned by a ast_channel, so we need to configure endpoint with the settings from there
-		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(p->owner->readformat);
-		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(p->owner->readformat);
+		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(owner->readformat);
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(owner->readformat);
 		epCnxParms.cnxParmList.send.numCodecs = 1;
 		epCnxParms.cnxParmList.send.period[0] = s->period;
 		epCnxParms.cnxParmList.send.numPeriods = 1;
+		ast_channel_unref(owner);
 	}
 	else {
 		//Select our preferred codec. This may result in asterisk transcoding if remote SIP peer doesn't support this codec,

@@ -1006,6 +1006,7 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	unsigned char o_buf[5];
 	ApiCallReferenceType CallReference = m->CallReference;
 	ApiFpCcConnectResType *r;
+	struct ast_channel *owner;
 
 
 	/* Signal offhook to endpoint */
@@ -1053,6 +1054,7 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	sub = brcm_get_active_subchannel(p);
 
 	if (!sub) {
+		ast_mutex_unlock(&p->lock);
 		ast_verbose("Failed to get active subchannel\n");
 		return;
 	}
@@ -1063,11 +1065,14 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 		brcm_create_connection(sub);
 	}
 
-	if (sub->owner) {
-		ast_queue_control(sub->owner, AST_CONTROL_ANSWER);
-		sub->channel_state = INCALL;
-	}
+	owner = ast_channel_get_by_name(sub->owner_name);
 	ast_mutex_unlock(&p->lock);
+
+	if (owner) {
+		ast_queue_control(owner, AST_CONTROL_ANSWER);
+ 		sub->channel_state = INCALL;
+		ast_channel_unref(owner);
+ 	}
 
 }
 
