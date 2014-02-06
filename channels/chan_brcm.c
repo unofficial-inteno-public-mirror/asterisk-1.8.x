@@ -83,9 +83,6 @@ static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
 
-static struct ast_channel *get_ast_channel(const struct brcm_subchannel *sub);
-static void release_ast_channel(struct ast_channel *chan);
-
 /* Global brcm channel parameters */
 
 static const char tdesc[] = "Brcm SLIC Driver";
@@ -1735,9 +1732,8 @@ static void *brcm_monitor_events(void *data)
 				manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
 
 				struct ast_channel *owner;
-				ast_mutex_unlock(&p->lock);
-				owner = get_ast_channel(sub);
-				ast_mutex_lock(&p->lock);
+
+				owner = ast_channel_get_by_name(sub->owner_name);
 				if (owner) {
 					if (!sub->connection_init) {
 						ast_debug(9, "create_connection()\n");
@@ -1746,7 +1742,7 @@ static void *brcm_monitor_events(void *data)
 
 					ast_queue_control(owner, AST_CONTROL_ANSWER);
 					brcm_subchannel_set_state(sub, INCALL);
-					release_ast_channel(owner);
+					ast_channel_unref(owner);
 				}
 				else if (sub->channel_state == OFFHOOK) {
 					/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
@@ -1788,14 +1784,12 @@ static void *brcm_monitor_events(void *data)
 				struct ast_channel *peer_sub_owner;
 
 				peer_sub = brcm_subchannel_get_peer(sub);
-				ast_mutex_unlock(&p->lock);
-				owner = get_ast_channel(sub);
-				peer_sub_owner = get_ast_channel(peer_sub);
-				ast_mutex_lock(&p->lock);
+				owner = ast_channel_get_by_name(sub->owner_name);
+				peer_sub_owner = ast_channel_get_by_name(sub->owner_name);
 
 				if (owner) {
 					ast_queue_control(owner, AST_CONTROL_HANGUP);
-					release_ast_channel(owner);
+					ast_channel_unref(owner);
 				}
 
 				//TRANSFER_REMOTE
@@ -1831,7 +1825,9 @@ static void *brcm_monitor_events(void *data)
 					ast_queue_control(peer_sub_owner, AST_CONTROL_HANGUP);
 				}
 
-				release_ast_channel(peer_sub_owner);
+				if (peer_sub_owner) {
+					ast_channel_unref(peer_sub_owner);
+				}
 				break;
 			}
 			case EPEVT_DTMF0:
@@ -4263,30 +4259,6 @@ static int extension_state_cb(char *context, char *exten, int state, void *data)
 	brcm_dialtone_set(p, extension_state2dialtone_state(state));
 	ast_mutex_unlock(&p->lock);
 	return 0;
-}
-
-static struct ast_channel* get_ast_channel(const struct brcm_subchannel *sub)
-{
-	struct ast_channel *owner = NULL;
-	if (!sub) {
-		return NULL;
-	}
-
-	ast_mutex_lock(&sub->parent->lock);
-	owner = ast_channel_get_by_name(sub->owner_name);
-	ast_mutex_unlock(&sub->parent->lock);
-	if (!owner) {
-		return NULL;
-	}
-	ast_channel_lock(owner);
-	return owner;
-}
-
-static void release_ast_channel(struct ast_channel *chan)
-{
-	if (chan) {
-		ast_channel_unref(chan);
-	}
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
