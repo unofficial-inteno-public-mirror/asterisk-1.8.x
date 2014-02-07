@@ -225,6 +225,7 @@ static struct brcm_channel_tech fxs_tech = {
 
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
 {
+	ast_channel_lock(ast);
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
 
@@ -255,6 +256,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		break;
 	}
 	ast_mutex_unlock(&sub->parent->lock);
+	ast_channel_unlock(ast);
 	return res;
 }
 
@@ -322,6 +324,7 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
+	ast_channel_lock(ast);
 	int res;
 	struct brcm_subchannel *sub;
 	line_settings* s;
@@ -347,11 +350,13 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	}
 
 	ast_mutex_unlock(&sub->parent->lock);
+	ast_channel_unlock(ast);
 	return res;
 }
 
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
+	ast_channel_lock(ast);
 	int res;
 	struct brcm_subchannel *sub;
 	line_settings* s;
@@ -377,12 +382,14 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 	}
 
 	ast_mutex_unlock(&sub->parent->lock);
+	ast_channel_unlock(ast);
 	return res;
 }
 
 
 static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 {
+	ast_channel_lock(chan);
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 
@@ -430,11 +437,13 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	}
 	ast_mutex_unlock(&sub->parent->lock);
 
+	ast_channel_unlock(chan);
 	return 0;
 }
 
 static int brcm_hangup(struct ast_channel *ast)
 {
+	ast_channel_lock(ast);
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	sub = ast->tech_pvt;
@@ -488,13 +497,14 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast->tech_pvt = NULL;
 	brcm_close_connection(sub);
 	ast_mutex_unlock(&p->lock);
-
+	ast_channel_unlock(ast);
 	return 0;
 }
 
 
 static int brcm_answer(struct ast_channel *ast)
 {
+	ast_channel_lock(ast);
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 
 	struct brcm_subchannel *sub = ast->tech_pvt;
@@ -506,6 +516,7 @@ static int brcm_answer(struct ast_channel *ast)
 	ast->rings = 0;
 	brcm_subchannel_set_state(sub, INCALL);
 	ast_mutex_unlock(&sub->parent->lock);
+	ast_channel_unlock(ast);
 	return 0;
 }
 
@@ -669,6 +680,7 @@ static char* brcm_rtppayload_to_string(int id) {
 
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 {
+	ast_channel_lock(ast);
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	struct brcm_subchannel *p = ast->tech_pvt;
@@ -715,6 +727,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
 		}
 	}
+	ast_channel_unlock(ast);
 	return 0;
 }
 
@@ -1701,11 +1714,12 @@ static void *brcm_monitor_events(void *data)
 		}
 
 		/* Get locks in correct order */
-		ast_mutex_lock(&sub->parent->lock);
+		ast_mutex_lock(&p->lock);
+		sub = brcm_get_active_subchannel(p);
 		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
 		struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
 		struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
-		ast_mutex_unlock(&sub->parent->lock);
+		ast_mutex_unlock(&p->lock);
 		if (owner && peer_owner) {
 			if (owner && peer_owner) {
 				if (owner < peer_owner) {
@@ -1724,10 +1738,9 @@ static void *brcm_monitor_events(void *data)
 		else if (peer_owner) {
 			ast_channel_lock(peer_owner);
 		}
-		ast_mutex_lock(&sub->parent->lock);
+		ast_mutex_lock(&p->lock);
 
 		ast_verbose("me: got mutex\n");
-		sub = brcm_get_active_subchannel(p);
 		if (sub) {
 
 			switch (tEventParm.event) {
