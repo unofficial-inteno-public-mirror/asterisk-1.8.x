@@ -1665,7 +1665,7 @@ R = reserved (ignore)
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
-					if (dtmf_end && p->lastwasend) {
+					if (dtmf_end && p->dtmf_lastwasend) {
 						/* We correctly get a series of END messages. We should skip the
 						   copies */
 						ast_debug(5, "---> Skipping DTMF_END duplicate \n");
@@ -1673,9 +1673,9 @@ R = reserved (ignore)
 					} else {
 						if (dtmf_end) {
 							fr.frametype = AST_FRAME_DTMF_END;
-							p->lastwasend = 1;
+							p->dtmf_lastwasend = 1;
 						} else {
-							p->lastwasend = 0;
+							p->dtmf_lastwasend = 0;
 							if (p->dtmf_duration == 0) { /* DTMF starts here */
 								fr.frametype = AST_FRAME_DTMF_BEGIN;
 							} else {
