@@ -403,6 +403,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 
 	if ((chan->_state != AST_STATE_DOWN) && (chan->_state != AST_STATE_RESERVED)) {
 		ast_log(LOG_WARNING, "brcm_call called on %s, neither down nor reserved\n", chan->name);
+		ast_channel_unlock(chan);
 		return -1;
 	}
 
@@ -450,6 +451,7 @@ static int brcm_hangup(struct ast_channel *ast)
 
 	if (!ast->tech_pvt) {
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
+		ast_channel_unlock(ast);
 		return 0;
 	}
 	ast_mutex_lock(&sub->parent->lock);
@@ -689,11 +691,13 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	if (ast->_state != AST_STATE_UP && ast->_state != AST_STATE_RING) {
 		/* Silently ignore packets until channel is up */
 		ast_debug(5, "error: channel not up\n");
+		ast_channel_unlock(ast);
 		return 0;
 	}
 
 	/* Ignore if on hold */
 	if (p->channel_state == ONHOLD) {
+		ast_channel_unlock(ast);
 		return 0;
 	}
 
