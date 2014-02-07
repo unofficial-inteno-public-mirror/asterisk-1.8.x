@@ -3661,6 +3661,8 @@ static inline void queue_dtmf_readq(struct ast_channel *chan, struct ast_frame *
 	fr->frametype = AST_FRAME_DTMF_END;
 	fr->subclass.integer = f->subclass.integer;
 	fr->len = f->len;
+	fr->samples = f->samples;
+	ast_debug(8, " ===> queueing DTMF for some reason - samples %d\n", f->samples);
 
 	/* The only time this function will be called is for a frame that just came
 	 * out of the channel driver.  So, we want to stick it on the tail of the
@@ -3978,6 +3980,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			ast_log(LOG_DTMF, "DTMF end '%c' received on %s, duration %ld ms\n", f->subclass.integer, chan->name, f->len);
 			/* Queue it up if DTMF is deferred, or if DTMF emulation is forced. */
 			if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF) || ast_test_flag(chan, AST_FLAG_EMULATE_DTMF)) {
+				ast_debug(8, "===> queueing up DTMF for some reason */
 				queue_dtmf_readq(chan, f);
 				ast_frfree(f);
 				f = &ast_null_frame;
@@ -3985,6 +3988,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				if (!ast_tvzero(chan->dtmf_tv) && 
 				    ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 					/* If it hasn't been long enough, defer this digit */
+					ast_debug(8, "===> queueing up DTMF for another weird reason (to small gap) */
 					queue_dtmf_readq(chan, f);
 					ast_frfree(f);
 					f = &ast_null_frame;
