@@ -1,3 +1,7 @@
+# Inteno AB, Stockholm, Sweden
+# Channel for Broadcom FXS ports and Dect interface
+#
+
 #ifndef CHAN_BRCM_H
 #define CHAN_BRCM_H
 
@@ -76,6 +80,8 @@ struct brcm_subchannel {
 	int cw_timer_id;			/* Current call waiting timer id, -1 if no active timer */
 	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
 	int dtmf_duration;		/* Duration of the DTMF currently sending. Should be zero when not sending */
+	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
+					   in sequence and we only need to react on the first one */
 };
 
 
