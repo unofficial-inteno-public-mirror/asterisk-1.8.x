@@ -1,6 +1,6 @@
-# Inteno AB, Stockholm, Sweden
-# Channel for Broadcom FXS ports and Dect interface
-#
+/* Inteno AB, Stockholm, Sweden
+* Channel for Broadcom FXS ports and Dect interface
+*/
 
 #ifndef CHAN_BRCM_H
 #define CHAN_BRCM_H
