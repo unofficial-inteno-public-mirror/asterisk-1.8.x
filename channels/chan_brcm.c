@@ -1447,28 +1447,30 @@ static void handle_hookflash(struct brcm_pvt *p)
 		sub_frame = 0;
 	}
 
-	if (sub_owner && sub_frame) {
-		ast_queue_control(sub_owner, sub_frame);
+	if (sub_owner) {
+		if (sub_frame) {
+			ast_queue_control(sub_owner, sub_frame);
+		}
+		ast_channel_unref(sub_owner);
 	}
 
-	if (peer_sub_owner && peer_sub_frame) {
+	if (peer_sub_owner) {
 		ast_channel_lock(peer_sub_owner);
-		ast_queue_control(peer_sub_owner, peer_sub_frame);
+		if (peer_sub_hangupcause > 0) {
+			peer_sub_owner->hangupcause = peer_sub_hangupcause;
+		}
+
+		if (peer_sub_frame) {
+			ast_queue_control(peer_sub_owner, peer_sub_frame);
+		}
 
 		if (peer_sub_frame == AST_CONTROL_UNHOLD) {
 			//Asterisk jitter buffer causes one way audio when going from unhold.
 			//This is a workaround until jitter buffer is handled by DSP.
 			ast_jb_destroy(peer_sub_owner);
 		}
-		ast_channel_unlock(peer_sub_owner);
-	}
-
-	if (sub_owner) {
-		ast_channel_unref(sub_owner);
-	}
-
-	if (peer_sub_owner) {
 		ast_channel_unref(peer_sub_owner);
+		ast_channel_unlock(peer_sub_owner);
 	}
 
 	ast_mutex_lock(&p->lock);
@@ -1684,11 +1686,19 @@ static void *brcm_monitor_events(void *data)
 {
 	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
 	int rc = IOCTL_STATUS_FAILURE;
-	struct brcm_pvt *p;
-	struct brcm_subchannel *sub;
 	struct timeval tim;
 
 	while (monitor) {
+		struct brcm_pvt *p = NULL;
+		struct brcm_subchannel *sub = NULL;
+		struct ast_channel *owner = NULL;
+		struct brcm_subchannel *peer_sub = NULL;
+		struct ast_channel *peer_owner = NULL;
+		enum ast_control_frame_type owner_control = 0;
+		enum ast_control_frame_type peer_owner_control = 0;
+		struct ast_transfer_remote_data data;
+		int peer_owner_hangupcause = -1;
+
 		tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
 		tEventParm.length = 0;
 		p = iflist;
@@ -1731,8 +1741,6 @@ static void *brcm_monitor_events(void *data)
 				ast_verbose("Sending manager event\n");
 				manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
 
-				struct ast_channel *owner;
-
 				owner = ast_channel_get_by_name(sub->owner_name);
 				if (owner) {
 					if (!sub->connection_init) {
@@ -1740,9 +1748,8 @@ static void *brcm_monitor_events(void *data)
 						brcm_create_connection(sub);
 					}
 
-					ast_queue_control(owner, AST_CONTROL_ANSWER);
 					brcm_subchannel_set_state(sub, INCALL);
-					ast_channel_unref(owner);
+					owner_control = AST_CONTROL_ANSWER;
 				}
 				else if (sub->channel_state == OFFHOOK) {
 					/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
@@ -1779,29 +1786,22 @@ static void *brcm_monitor_events(void *data)
 				p->dtmfbuf[p->dtmf_len] = '\0';
 				brcm_close_connection(sub);
 
-				struct ast_channel *owner;
-				struct brcm_subchannel *peer_sub;
-				struct ast_channel *peer_sub_owner;
-
 				peer_sub = brcm_subchannel_get_peer(sub);
 				owner = ast_channel_get_by_name(sub->owner_name);
-				peer_sub_owner = ast_channel_get_by_name(sub->owner_name);
+				peer_owner = ast_channel_get_by_name(sub->owner_name);
 
 				if (owner) {
-					ast_queue_control(owner, AST_CONTROL_HANGUP);
-					ast_channel_unref(owner);
+					owner_control = AST_CONTROL_HANGUP;
 				}
 
 				//TRANSFER_REMOTE
 				if (perform_remote_transfer) {
-					if (peer_sub->channel_state == ONHOLD && peer_sub_owner) {
+					if (peer_sub->channel_state == ONHOLD && peer_owner) {
 						ast_verbose("Performing transfer-on-hangup to %s\n", peer_sub->parent->ext);
 
-						struct ast_transfer_remote_data data;
 						strcpy(data.exten, peer_sub->parent->ext);
 						data.replaces[0] = '\0'; //Not replacing any call
-
-						ast_queue_control_data(peer_sub_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
+						peer_owner_control = AST_CONTROL_TRANSFER_REMOTE;
 						brcm_subchannel_set_state(peer_sub, TRANSFERING);
 					}
 				}
@@ -1815,18 +1815,14 @@ static void *brcm_monitor_events(void *data)
 					}
 					peer_sub->cw_timer_id = -1;
 
-					if (peer_sub_owner) {
-						peer_sub_owner->hangupcause = AST_CAUSE_USER_BUSY;
-						ast_queue_control(peer_sub_owner, AST_CONTROL_BUSY);
+					if (peer_owner) {
+						peer_owner_hangupcause = AST_CAUSE_USER_BUSY;
+						peer_owner_control = AST_CONTROL_BUSY;
 					}
 				}
-				if (peer_sub_owner && peer_sub->channel_state != TRANSFERING) {
+				else if (peer_owner && peer_sub->channel_state != TRANSFERING) {
 					ast_log(LOG_DEBUG, "should hangup call on hold or incall\n");
-					ast_queue_control(peer_sub_owner, AST_CONTROL_HANGUP);
-				}
-
-				if (peer_sub_owner) {
-					ast_channel_unref(peer_sub_owner);
+					peer_owner_control = AST_CONTROL_HANGUP;
 				}
 				break;
 			}
@@ -1898,6 +1894,30 @@ static void *brcm_monitor_events(void *data)
 		}
 		ast_mutex_unlock(&p->lock);
 		ast_debug(9, "me: unlocked mutex\n");
+
+		if (owner) {
+			if (owner_control) {
+				ast_queue_control(owner, owner_control);
+			}
+			ast_channel_unref(owner);
+		}
+
+		if (peer_owner) {
+
+			if (peer_owner_hangupcause > 0) {
+				ast_channel_lock(peer_owner);
+				peer_owner->hangupcause = peer_owner_hangupcause;
+				ast_channel_unlock(peer_owner);
+			}
+
+			if (peer_owner_control == AST_CONTROL_TRANSFER_REMOTE) {
+				ast_queue_control_data(peer_owner, peer_owner_control, &data, sizeof(data));
+			}
+			else if (peer_owner_control) {
+				ast_queue_control(peer_owner, peer_owner_control);
+			}
+			ast_channel_unref(peer_owner);
+		}
 	}
 
 	ast_verbose("Monitor thread ended\n");
