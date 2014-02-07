@@ -1642,7 +1642,7 @@ static void *brcm_monitor_packets(void *data)
 
 					/* Use DTMFBE instead */
 					ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
-					ast_log(LOG_DTMF, " === Event %d Duration %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
+					ast_log(LOG_DTMF, " === Event %d Duration (samples) %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
 
 /*
  RFC 2833
@@ -1665,24 +1665,32 @@ R = reserved (ignore)
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 
-					if (dtmf_end) {
-						fr.frametype = AST_FRAME_DTMF_END;
-						p->dtmf_duration = 0;
+					if (dtmf_end && p->lastwasend) {
+						/* We correctly get a series of END messages. We should skip the
+						   copies */
+						ast_debug(5, "---> Skipping DTMF_END duplicate \n");
+
 					} else {
-						if (p->dtmf_duration == 0) { /* DTMF starts here */
-							fr.frametype = AST_FRAME_DTMF_BEGIN;
+						if (dtmf_end) {
+							fr.frametype = AST_FRAME_DTMF_END;
+							p->lastwasend = 1;
 						} else {
-							fr.frametype = AST_FRAME_DTMF_CONTINUE;
+							p->lastwasend = 0;
+							if (p->dtmf_duration == 0) { /* DTMF starts here */
+								fr.frametype = AST_FRAME_DTMF_BEGIN;
+							} else {
+								fr.frametype = AST_FRAME_DTMF_CONTINUE;
+							}
 						}
 						p->dtmf_duration = duration;
+						fr.subclass.integer = phone_2digit(pdata[12]);
+						if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
+							fr.samples = duration;
+							/* Assuming 8000 samples/second - narrowband alaw or ulaw */
+							fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
+						}
+						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
-					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
-						fr.samples = duration;
-						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
-						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
-					}
-					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
 
