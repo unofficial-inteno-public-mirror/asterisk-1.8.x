@@ -859,15 +859,37 @@ process_keypad_info(unsigned char handset,
 			}
 		}
 
+		/* Get locks in correct order */
 		ast_mutex_lock(&p->lock);
-		sub = brcm_get_active_subchannel(p);
-		if (!sub) {
-			ast_mutex_unlock(&p->lock);
-		} else {
+		struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
+		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+		struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
+		struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
+		ast_mutex_unlock(&p->lock);
+		if (owner && peer_owner) {
+			if (owner && peer_owner) {
+				if (owner < peer_owner) {
+					ast_channel_lock(owner);
+					ast_channel_lock(peer_owner);
+				}
+				else {
+					ast_channel_lock(peer_owner);
+					ast_channel_lock(owner);
+				}
+			}
+		}
+		else if (owner) {
+			ast_channel_lock(owner);
+		}
+		else if (peer_owner) {
+			ast_channel_lock(peer_owner);
+		}
+
+		if (sub) {
 			for (j = 0; j < 2; j++) { // we need to send two events: press and depress
 
 				unsigned int old_state = sub->channel_state;
-				handle_dtmf(dtmfMap->event, sub);
+				handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
 				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 
 					/* DTMF event took channel state to DIALING. Stop dial tone. */
@@ -877,6 +899,15 @@ process_keypad_info(unsigned char handset,
 			}
 		}
 		ast_mutex_unlock(&p->lock);
+
+		if (owner) {
+			ast_channel_unlock(owner);
+			ast_channel_unref(owner);
+		}
+		if (peer_owner) {
+			ast_channel_unlock(peer_owner);
+			ast_channel_unref(peer_owner);
+		}
 	}
 }
 
@@ -1066,11 +1097,13 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	}
 
 	owner = ast_channel_get_by_name(sub->owner_name);
+	if (owner) {
+		sub->channel_state = INCALL;
+	}
 	ast_mutex_unlock(&p->lock);
 
 	if (owner) {
 		ast_queue_control(owner, AST_CONTROL_ANSWER);
- 		sub->channel_state = INCALL;
 		ast_channel_unref(owner);
  	}
 

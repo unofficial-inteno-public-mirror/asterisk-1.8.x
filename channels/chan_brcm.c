@@ -979,9 +979,13 @@ static int cwtimeout_cb(const void *data)
 	owner = ast_channel_get_by_name(sub->owner_name);	
 	ast_mutex_unlock(&sub->parent->lock);
 
-	owner->hangupcause = AST_CAUSE_USER_BUSY;
-	ast_queue_control(owner, AST_CONTROL_BUSY);
-	ast_channel_unref(owner);
+	if (owner) {
+		ast_channel_lock(owner);
+		owner->hangupcause = AST_CAUSE_USER_BUSY;
+		ast_queue_control(owner, AST_CONTROL_BUSY);
+		ast_channel_unlock(owner);
+		ast_channel_unref(owner);
+	}
 
 	return 0;
 }
@@ -1007,7 +1011,7 @@ static int r4hanguptimeout_cb(const void *data)
 	brcm_subchannel_set_state(sub, CALLENDED);
 
 	sub_owner = ast_channel_get_by_name(sub->owner_name);
-	peer_sub_owner = ast_channel_get_by_name(sub->owner_name);
+	peer_sub_owner = ast_channel_get_by_name(peer_sub->owner_name);
 
 	ast_mutex_unlock(&sub->parent->lock);
 
@@ -1015,6 +1019,7 @@ static int r4hanguptimeout_cb(const void *data)
 		ast_queue_control(sub_owner, AST_CONTROL_HANGUP);
 		ast_channel_unref(sub_owner);
 	}
+
 	if (peer_sub_owner) {
 		ast_queue_control(peer_sub_owner, AST_CONTROL_HANGUP);
 		ast_channel_unref(peer_sub_owner);
@@ -1057,7 +1062,6 @@ static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, 
 static void *brcm_event_handler(void *data)
 {
 	struct brcm_pvt *p = iflist;
-	struct brcm_subchannel *sub;
 	struct timeval tim;
 	unsigned int ts;
 
@@ -1066,73 +1070,105 @@ static void *brcm_event_handler(void *data)
 
 		/* loop over all pvt's */
 		while(p) {
+
+			/* Get locks in correct order */
 			ast_mutex_lock(&p->lock);
-			sub = brcm_get_active_subchannel(p);
-
-			if (!sub) {
-				/* Get next channel pvt if there is one */
-				ast_mutex_unlock(&p->lock);
-				p = brcm_get_next_pvt(p);
-				continue;
+			struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
+			struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+			struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
+			struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
+			ast_mutex_unlock(&p->lock);
+			if (owner && peer_owner) {
+				if (owner && peer_owner) {
+					if (owner < peer_owner) {
+						ast_channel_lock(owner);
+						ast_channel_lock(peer_owner);
+					}
+					else {
+						ast_channel_lock(peer_owner);
+						ast_channel_lock(owner);
+					}
+				}
 			}
-
-			/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
-			if (sub->channel_state == OFFHOOK &&  ast_exists_extension(NULL, p->context, p->autodial, 1, p->cid_num)) {
-				//We have a full match in the "direct" context, so have asterisk place a call immediately
-				brcm_stop_dialtone(p);
-				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
-				ast_verbose("Autodial extension matching %s found\n", p->dtmfbuf);
-				brcm_start_calling(p, sub, p->context);
+			else if (owner) {
+				ast_channel_lock(owner);
 			}
-			/*
-			 * Determine if we should tell asterisk to start dialing.
-			 * Used conditions:
-			 * - delta > timeoutmsec		- Interdigit timeout reached
-			 * - ast_exists_extension		- If an extension within the given context(or callerid) with the given priority is found a non zero value will be returned
-			 * - ast_matchmore_extension	- If "exten" *could match* a valid extension in this context with some more digits, return non-zero
-			 * 									Does NOT return non-zero if this is an exact-match only
-			 * 									Basically, when this returns 0, no matter what you add to exten, it's not going to be a valid extension anymore
-			 */
-			else if (sub->channel_state == DIALING) {
-				gettimeofday(&tim, NULL);
-				ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-				int delta = ts - p->last_dtmf_ts;
-				int timeoutmsec = line_config[p->line_id].timeoutmsec;
-				int dtmfbuf_len = strlen(p->dtmfbuf);
-				char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
+			else if (peer_owner) {
+				ast_channel_lock(peer_owner);
+			}
+			ast_mutex_lock(&p->lock);
 
-				if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
-				{
+			if (sub) {
+
+				/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
+				if (sub->channel_state == OFFHOOK &&  ast_exists_extension(NULL, p->context, p->autodial, 1, p->cid_num)) {
 					//We have a full match in the "direct" context, so have asterisk place a call immediately
-					ast_verbose("Direct extension matching %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context_direct);
-				}
-				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
-					//We have a match in the "default" context, and user ended the dialling sequence with a #,
-					// so have asterisk place a call immediately
-					ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
+					brcm_stop_dialtone(p);
+					ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
+					ast_verbose("Autodial extension matching %s found\n", p->dtmfbuf);
 					brcm_start_calling(p, sub, p->context);
 				}
-				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
-				{
-					//We have a full match in the "default" context, so have asterisk place a call immediately,
-					//since no more digits can be added to the number
-					//(this is unlikely to happen since there is probably a "catch-all" extension)
-					ast_verbose("Unique extension matching %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context);
-				}
-				else if ((delta > timeoutmsec) && ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
-				{
-					//We have at least one matching extension in "default" context,
-					//and interdigit timeout has passed, so have asterisk start calling.
-					//Asterisk will select the best matching extension if there are more than one possibility.
-					ast_verbose("Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context);
+				/*
+				 * Determine if we should tell asterisk to start dialing.
+				 * Used conditions:
+				 * - delta > timeoutmsec		- Interdigit timeout reached
+				 * - ast_exists_extension		- If an extension within the given context(or callerid) with the given priority is found a non zero value will be returned
+				 * - ast_matchmore_extension	- If "exten" *could match* a valid extension in this context with some more digits, return non-zero
+				 * 									Does NOT return non-zero if this is an exact-match only
+				 * 									Basically, when this returns 0, no matter what you add to exten, it's not going to be a valid extension anymore
+				 */
+				else if (sub->channel_state == DIALING) {
+					gettimeofday(&tim, NULL);
+					ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+					int delta = ts - p->last_dtmf_ts;
+					int timeoutmsec = line_config[p->line_id].timeoutmsec;
+					int dtmfbuf_len = strlen(p->dtmfbuf);
+					char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
+
+					if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
+					{
+						//We have a full match in the "direct" context, so have asterisk place a call immediately
+						ast_verbose("Direct extension matching %s found\n", p->dtmfbuf);
+						brcm_start_calling(p, sub, p->context_direct);
+					}
+					else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
+						//We have a match in the "default" context, and user ended the dialling sequence with a #,
+						// so have asterisk place a call immediately
+						ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
+						brcm_start_calling(p, sub, p->context);
+					}
+					else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+					{
+						//We have a full match in the "default" context, so have asterisk place a call immediately,
+						//since no more digits can be added to the number
+						//(this is unlikely to happen since there is probably a "catch-all" extension)
+						ast_verbose("Unique extension matching %s found\n", p->dtmfbuf);
+						brcm_start_calling(p, sub, p->context);
+					}
+					else if ((delta > timeoutmsec) && ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+					{
+						//We have at least one matching extension in "default" context,
+						//and interdigit timeout has passed, so have asterisk start calling.
+						//Asterisk will select the best matching extension if there are more than one possibility.
+						ast_verbose("Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
+						brcm_start_calling(p, sub, p->context);
+					}
 				}
 			}
 
 			/* Get next channel pvt if there is one */
 			ast_mutex_unlock(&p->lock);
+
+			if (owner) {
+				ast_channel_unlock(owner);
+				ast_channel_unref(owner);
+			}
+
+			if (peer_owner) {
+				ast_channel_unlock(peer_owner);
+				ast_channel_unref(peer_owner);
+			}
+
 			p = brcm_get_next_pvt(p);
 		}
 
@@ -1460,7 +1496,7 @@ void handle_dtmf(EPEVT event,
 			/* HF while not in a call doesn't make sense */
 			if (sub->channel_state == INCALL &&
 				(brcm_in_callwaiting(p) || brcm_in_onhold(p))) {
-				handle_hookflash(p, sub, sub_peer, owner, peer_owner);
+				handle_hookflash(sub, sub_peer, owner, peer_owner);
 			} else {
 				ast_log(LOG_DEBUG, "DTMF after HF while not in call. state: %d, callwaiting: %d, onhold: %d\n",
 					sub->channel_state,
@@ -1552,8 +1588,8 @@ static void *brcm_monitor_packets(void *data)
 			/* Get locks in correct order */
 			ast_mutex_lock(&sub->parent->lock);
 			struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
-			struct ast_channel *owner = ast_channel_get_by_name(sub->owner);
-			struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner);
+			struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
+			struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
 			ast_mutex_unlock(&sub->parent->lock);
 			if (owner && peer_owner) {
 				if (owner && peer_owner) {
@@ -1765,7 +1801,7 @@ static void *brcm_monitor_events(void *data)
 							struct ast_transfer_remote_data data;
 							strcpy(data.exten, sub_peer->parent->ext);
 							data.replaces[0] = '\0'; //Not replacing any call
-							ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE);
+							ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
 							brcm_subchannel_set_state(sub_peer, TRANSFERING);
 						}
 					}
@@ -1832,7 +1868,7 @@ static void *brcm_monitor_events(void *data)
 							p->hf_detected = 0;
 						} else {
 							p->hf_detected = 1;
-							handle_hookflash(p, sub, sub_peer, owner, peer_owner);
+							handle_hookflash(sub, sub_peer, owner, peer_owner);
 						}
 					}
 					break;
@@ -1858,13 +1894,13 @@ static void *brcm_monitor_events(void *data)
 		ast_debug(9, "me: unlocked mutex\n");
 
 		if (owner) {
-			ast_channel_unref(owner);
 			ast_channel_unlock(owner);
+			ast_channel_unref(owner);
 		}
 
 		if (peer_owner) {
-			ast_channel_unref(peer_owner);
 			ast_channel_unlock(peer_owner);
+			ast_channel_unref(peer_owner);
 		}
 	}
 
