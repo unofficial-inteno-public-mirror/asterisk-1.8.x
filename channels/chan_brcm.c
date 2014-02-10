@@ -1096,15 +1096,13 @@ static void *brcm_event_handler(void *data)
 			struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
 			ast_mutex_unlock(&p->lock);
 			if (owner && peer_owner) {
-				if (owner && peer_owner) {
-					if (owner < peer_owner) {
-						ast_channel_lock(owner);
-						ast_channel_lock(peer_owner);
-					}
-					else {
-						ast_channel_lock(peer_owner);
-						ast_channel_lock(owner);
-					}
+				if (owner < peer_owner) {
+					ast_channel_lock(owner);
+					ast_channel_lock(peer_owner);
+				}
+				else {
+					ast_channel_lock(peer_owner);
+					ast_channel_lock(owner);
 				}
 			}
 			else if (owner) {
@@ -1455,8 +1453,6 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
 						strcpy(data.exten, sub->parent->ext);
 						strcpy(data.replaces, bridged_chan->name);
 
-						ast_channel_unlock(peer_owner);
-
 						ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
 					}
 					else {
@@ -1485,7 +1481,7 @@ void handle_dtmf(EPEVT event,
 	const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
 	struct timeval tim;
 
-	/* Lookup event to find coresponding DTMF */
+	/* Lookup event to find corresponding DTMF */
 	while (dtmfMap->event != event) {
 		dtmfMap++;
 		if (dtmfMap->event == EPEVT_LAST) {
@@ -1609,15 +1605,13 @@ static void *brcm_monitor_packets(void *data)
 			struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
 			ast_mutex_unlock(&sub->parent->lock);
 			if (owner && peer_owner) {
-				if (owner && peer_owner) {
-					if (owner < peer_owner) {
-						ast_channel_lock(owner);
-						ast_channel_lock(peer_owner);
-					}
-					else {
-						ast_channel_lock(peer_owner);
-						ast_channel_lock(owner);
-					}
+				if (owner < peer_owner) {
+					ast_channel_lock(owner);
+					ast_channel_lock(peer_owner);
+				}
+				else {
+					ast_channel_lock(peer_owner);
+					ast_channel_lock(owner);
 				}
 			}
 			else if (owner) {
@@ -1725,15 +1719,13 @@ static void *brcm_monitor_events(void *data)
 		struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
 		ast_mutex_unlock(&p->lock);
 		if (owner && peer_owner) {
-			if (owner && peer_owner) {
-				if (owner < peer_owner) {
-					ast_channel_lock(owner);
-					ast_channel_lock(peer_owner);
-				}
-				else {
-					ast_channel_lock(peer_owner);
-					ast_channel_lock(owner);
-				}
+			if (owner < peer_owner) {
+				ast_channel_lock(owner);
+				ast_channel_lock(peer_owner);
+			}
+			else {
+				ast_channel_lock(peer_owner);
+				ast_channel_lock(owner);
 			}
 		}
 		else if (owner) {
