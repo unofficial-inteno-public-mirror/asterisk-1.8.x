@@ -231,7 +231,21 @@ static struct brcm_channel_tech fxs_tech = {
 };
 
 
+static int pvt_lock(struct brcm_subchannel *sub)
+{
+	ast_debug(7, "----> Trying to lock port %d\n", sub->parent->lineid);
+	ast_mutex_lock(&sub->parent->lock)
+	ast_debug(7, "----> Locking pvt port %d\n", sub->parent->lineid);
+	return 1;
+}
 
+
+static int pvt_unlock(struct brcm_subchannel *sub)
+{
+	ast_mutex_unlock(&sub->parent->lock)
+	ast_debug(10, "----> Unlocking pvt port %d\n", sub->parent->lineid);
+	return 1;
+}
 
 
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
@@ -239,7 +253,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
 
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
 	case AST_CONTROL_UNHOLD:
@@ -264,7 +278,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		res = -1;
 		break;
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 	return res;
 }
 
@@ -338,7 +352,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	line_settings* s;
 
 	sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 
 	ast_debug(3, "===> Receiving DTMF BEGIN from bridge: %d \n", (int) digit);
 	res = 0;
@@ -358,7 +372,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 			break;
 	}
 
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 	return res;
 }
 
@@ -370,7 +384,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 	line_settings* s;
 
 	sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 	ast_debug(3, "===> Receiving DTMF END from bridge: %d (Duration %d)\n", (int) digit, duration);
 
 	res = 0;
@@ -390,7 +404,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 			break;
 	}
 
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 	return res;
 }
 
@@ -413,7 +427,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 		return -1;
 	}
 
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 
 	p = sub->parent;
 	if (cw && brcm_in_call(p)) {
@@ -442,7 +456,7 @@ static int brcm_call(struct ast_channel *ast, char *dest, int timeout)
 	  	ast_setstate(ast, AST_STATE_RINGING);
 		ast_queue_control(ast, AST_CONTROL_RINGING);
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 
 	return 0;
 }
@@ -457,7 +471,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
 	}
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 
 	p = sub->parent;
 	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
@@ -512,14 +526,14 @@ static int brcm_answer(struct ast_channel *ast)
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 
 	struct brcm_subchannel *sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 	if (ast->_state != AST_STATE_UP) {
 		ast_setstate(ast, AST_STATE_UP);
 		ast_log(LOG_DEBUG, "brcm_answer(%s) set state to up\n", ast->name);
 	}
 	ast->rings = 0;
 	brcm_subchannel_set_state(sub, INCALL);
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 	return 0;
 }
 
@@ -984,11 +998,11 @@ static int cwtimeout_cb(const void *data)
 	ast_log(LOG_DEBUG, "No response to call waiting, hanging up\n");
 
 	sub = (struct brcm_subchannel *) data;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 	sub->cw_timer_id = -1;
 	sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
 	ast_queue_control(sub->owner, AST_CONTROL_BUSY);
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 
 	return 0;
 }
@@ -1002,7 +1016,7 @@ static int r4hanguptimeout_cb(const void *data)
 	ast_log(LOG_DEBUG, "No hangup from remote after remote transfer using R4, hanging up\n");
 
 	sub = (struct brcm_subchannel *) data;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub);
 	sub->r4_hangup_timer_id = -1;
 	if (sub->owner) {
 		ast_queue_control(sub->owner, AST_CONTROL_HANGUP);
@@ -1015,7 +1029,7 @@ static int r4hanguptimeout_cb(const void *data)
 		brcm_subchannel_set_state(peer_sub, CALLENDED);
 	}
 	brcm_subchannel_set_state(sub, CALLENDED);
-	ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub);
 
 	return 0;
 }
@@ -1748,14 +1762,21 @@ R = reserved (ignore)
 				/* try to lock channel and send frame */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 				//&& !ast_channel_trylock(p->owner)) {
+					int counter = 100;
 					/* and enque frame if channel is up */
 					while(p->owner && ast_channel_trylock(p->owner)) {
+						if (counter-- == 0) {
+							ast_debug("--- FAILING to lock owner - dropping frame. Me solly.\n");
+							break;
+						}
 						ast_mutex_unlock(&p->parent->lock);
 						usleep(1);	/* Be nice. Give way */
 						ast_mutex_lock(&p->parent->lock);
 					}
-					ast_queue_frame(p->owner, &fr);
-					ast_channel_unlock(p->owner);
+					if (counter > 0) {
+						ast_queue_frame(p->owner, &fr);
+						ast_channel_unlock(p->owner);
+					}
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
