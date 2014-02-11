@@ -2587,7 +2587,6 @@ static char *brcm_show_dialtone_status(struct ast_cli_entry *e, int cmd, struct 
  */
 static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	struct ast_config *cfg = NULL;
 
 	if (cmd == CLI_INIT) {
 		e->command = "brcm reload";
@@ -2601,6 +2600,8 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 
 void reload()
 {
+	struct ast_config *cfg = NULL;
+
 	ast_mutex_lock(&iflock);
 
 	/* Acquire locks for all pvt:s to prevent nasty things from happening */
