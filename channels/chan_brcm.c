@@ -1735,6 +1735,7 @@ R = reserved (ignore)
 						//ast_mutex_lock(&p->parent->lock);
 					}
 					if (counter > 0) {
+						ast_debug(8, "--> Really queuing frame. Counter %d\n", counter);
 						ast_queue_frame(p->owner, &fr);
 						ast_channel_unlock(p->owner);
 					}
