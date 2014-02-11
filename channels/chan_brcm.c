@@ -224,9 +224,9 @@ static struct brcm_channel_tech fxs_tech = {
 
 static int pvt_lock(struct brcm_subchannel *sub)
 {
-	ast_debug(7, "----> Trying to lock port %d\n", sub->parent->lineid);
+	ast_debug(7, "----> Trying to lock port %d\n", sub->parent->line_id);
 	ast_mutex_lock(&sub->parent->lock)
-	ast_debug(7, "----> Locking pvt port %d\n", sub->parent->lineid);
+	ast_debug(7, "----> Locking pvt port %d\n", sub->parent->line_id);
 	return 1;
 }
 
@@ -234,7 +234,7 @@ static int pvt_lock(struct brcm_subchannel *sub)
 static int pvt_unlock(struct brcm_subchannel *sub)
 {
 	ast_mutex_unlock(&sub->parent->lock)
-	ast_debug(10, "----> Unlocking pvt port %d\n", sub->parent->lineid);
+	ast_debug(10, "----> Unlocking pvt port %d\n", sub->parent->line_id);
 	return 1;
 }
 
@@ -1570,7 +1570,7 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rtp_packet_type  = BRCM_UNKNOWN;
-	RTPPACKET *rtp;
+	//RTPPACKET *rtp;
 	int current_dtmf_digit = -1;
 	
 	rtp = (RTPPACKET *)pdata;
@@ -2707,10 +2707,11 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 		return NULL;
 	}
 
-void reload()
+static int reload()
 {
 	struct ast_config *cfg = NULL;
 
+	ast_debug(5, "STARTING RELOAD - locking all PVTs\n");
 	ast_mutex_lock(&iflock);
 
 	/* Acquire locks for all pvt:s to prevent nasty things from happening */
@@ -2720,7 +2721,7 @@ void reload()
 	if (load_settings(&cfg)) {
 		brcm_unlock_pvts();
 		ast_mutex_unlock(&iflock);
-		return CLI_FAILURE;
+		return 0;
 	}
 
 	/* Provision endpoints */
@@ -2733,7 +2734,9 @@ void reload()
 	}
 
 	brcm_unlock_pvts();
+	ast_debug(5, "RELOAD DONE\n");
 	ast_mutex_unlock(&iflock);
+	return 1;
 }
 
 /*! \brief CLI for reloading brcm config.
@@ -2755,7 +2758,9 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	} else if (cmd == CLI_GENERATE) {
 		return NULL;
 	}
-	reload();
+	if(!reload()) {
+		return CLI_FAILURE;
+	}
 
 	ast_verbose("BRCM reload done\n");
 
