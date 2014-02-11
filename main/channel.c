@@ -4063,9 +4063,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			}
 			break;
 		case AST_FRAME_DTMF_CONTINUE:
-			/* No manager event at this point
-				send_dtmf_event(chan, "Received", f->subclass, "Yes", "No");
-			*/
 			ast_log(LOG_DTMF, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
 			if (!ast_test_flag(chan, AST_FLAG_IN_DTMF)) {
 				/* We got CONTINUE, but no BEGIN */
@@ -4878,6 +4875,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		ast_clear_flag(chan, AST_FLAG_BLOCKING);
 		ast_channel_unlock(chan);
 		res = ast_senddigit_begin(chan, fr->subclass.integer);
+		ast_debug(3, "---BEGIN FRAME received, forwarding to channel %s\n", chan->name);
 		ast_channel_lock(chan);
 		CHECK_BLOCKING(chan);
 		break;
@@ -4888,7 +4886,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 			if (old_frame != fr)
 				f = fr;
 		}
-		ast_log(LOG_DEBUG, "---Continue FRAME received, forwarding to channel %s\n", chan->name);
+		ast_debug(3, "---Continue FRAME received, forwarding to channel %s\n", chan->name);
 		// Skip manager for continue events (at least for now)
 		//send_dtmf_event(chan, "Sent", fr->subclass, "Yes", "No");
 		ast_clear_flag(chan, AST_FLAG_BLOCKING);
@@ -4907,6 +4905,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 			}
 		}
 		send_dtmf_event(chan, "Sent", fr->subclass.integer, "No", "Yes");
+		ast_debug(3, "---END FRAME received, forwarding to channel %s\n", chan->name);
 		ast_clear_flag(chan, AST_FLAG_BLOCKING);
 		ast_channel_unlock(chan);
 		res = ast_senddigit_end(chan, fr->subclass.integer, fr->len);
@@ -7182,7 +7181,7 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 				*fo = f;
 				*rc = who;
 				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
-					f->frametype == AST_FRAME_DTMF_END ? "end" : (AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
 					who->name);
 
 				break;
