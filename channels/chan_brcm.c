@@ -1000,17 +1000,11 @@ static int cwtimeout_cb(const void *data)
 	sub = (struct brcm_subchannel *) data;
 	pvt_lock(sub);
 	sub->cw_timer_id = -1;
-<<<<<<< HEAD
 	if (sub->owner) {
 		ast_channel_ref(sub->owner);
 		owner = sub->owner;
 	}
-	ast_mutex_unlock(&sub->parent->lock);
-=======
-	sub->owner->hangupcause = AST_CAUSE_USER_BUSY;
-	ast_queue_control(sub->owner, AST_CONTROL_BUSY);
 	pvt_unlock(sub);
->>>>>>> Adding wrappers around pvt lock/unlock functions and a bail-out for dropping frames.
 
 	if (owner) {
 		ast_channel_lock(owner);
@@ -1035,14 +1029,9 @@ static int r4hanguptimeout_cb(const void *data)
 	ast_log(LOG_DEBUG, "No hangup from remote after remote transfer using R4, hanging up\n");
 
 	sub = (struct brcm_subchannel *) data;
-<<<<<<< HEAD
 	peer_sub = brcm_subchannel_get_peer(sub);
 
-	ast_mutex_lock(&sub->parent->lock);
-
-=======
 	pvt_lock(sub);
->>>>>>> Adding wrappers around pvt lock/unlock functions and a bail-out for dropping frames.
 	sub->r4_hangup_timer_id = -1;
 	brcm_subchannel_set_state(peer_sub, CALLENDED);
 	brcm_subchannel_set_state(sub, CALLENDED);
@@ -1055,12 +1044,7 @@ static int r4hanguptimeout_cb(const void *data)
 		ast_channel_ref(peer_sub->owner);
 		peer_sub_owner = peer_sub->owner;
 	}
-<<<<<<< HEAD
-	ast_mutex_unlock(&sub->parent->lock);
-=======
-	brcm_subchannel_set_state(sub, CALLENDED);
 	pvt_unlock(sub);
->>>>>>> Adding wrappers around pvt lock/unlock functions and a bail-out for dropping frames.
 
 	if (sub_owner) {
 		ast_queue_control(sub_owner, AST_CONTROL_HANGUP);
@@ -1648,7 +1632,8 @@ static void *brcm_monitor_packets(void *data)
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 #ifdef SKREP_EPEVT_DTMF
 				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
-				ast_mutex_unlock(&p->parent->lock);
+				pvt_lock(p);
+				//ast_mutex_unlock(&p->parent->lock);
 				continue;
 #endif
 
@@ -1743,9 +1728,11 @@ R = reserved (ignore)
 							ast_debug(7,"--- FAILING to lock owner - dropping frame. Me solly.\n");
 							break;
 						}
-						ast_mutex_unlock(&p->parent->lock);
+						pvt_unlock(p);
+						//ast_mutex_unlock(&p->parent->lock);
 						usleep(1);	/* Be nice. Give way */
-						ast_mutex_lock(&p->parent->lock);
+						pvt_lock(p);
+						//ast_mutex_lock(&p->parent->lock);
 					}
 					if (counter > 0) {
 						ast_queue_frame(p->owner, &fr);
@@ -1755,9 +1742,10 @@ R = reserved (ignore)
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
+			pvt_unlock(p);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
-		//usleep(100);
+		//usleep(5);	/* OEJ changed to 5 */
 	} /* while */
 
 	ast_verbose("Packets thread ended\n");
@@ -1997,7 +1985,6 @@ static void *brcm_monitor_events(void *data)
 							handle_hookflash(sub, sub_peer, owner, peer_owner);
 						}
 					}
-<<<<<<< HEAD
 					break;
 				case EPEVT_EARLY_ONHOOK:
 					ast_verbose("EPEVT_EARLY_ONHOOK\n");
@@ -2009,54 +1996,6 @@ static void *brcm_monitor_events(void *data)
 					ast_verbose("EPEVT_VBD_START\n");
 					if (owner) {
 						ast_jb_destroy(owner);
-=======
-				}
-				break;
-
-			case EPEVT_DTMF0:
-			case EPEVT_DTMF1:
-			case EPEVT_DTMF2:
-			case EPEVT_DTMF3:
-			case EPEVT_DTMF4:
-			case EPEVT_DTMF5:
-			case EPEVT_DTMF6:
-			case EPEVT_DTMF7:
-			case EPEVT_DTMF8:
-			case EPEVT_DTMF9:
-			case EPEVT_DTMFA:
-			case EPEVT_DTMFB:
-			case EPEVT_DTMFC:
-			case EPEVT_DTMFD:
-			case EPEVT_DTMFS:
-			case EPEVT_DTMFH:
-			{
-				unsigned int old_state = sub->channel_state;
-		
-				ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event-1);
-				handle_dtmf(tEventParm.event, sub);
-				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
-					/* DTMF event took channel state to DIALING. Stop dial tone. */
-					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-					brcm_stop_dialtone(p); 
-				}
-				break;
-			}
-			case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
-			case EPEVT_FLASH:
-				//Ignore, handle via early off/on hook
-				break;
-			case EPEVT_EARLY_OFFHOOK:
-				ast_verbose("EPEVT_EARLY_OFFHOOK\n");
-				gettimeofday(&tim, NULL);
-				unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-				if (now - p->last_early_onhook_ts < hfmaxdelay) {
-					p->last_early_onhook_ts = 0;
-					if (p->hf_detected == 1) {
-						p->hf_detected = 0;
-					} else {
-						p->hf_detected = 1;
-						handle_hookflash(p);
->>>>>>> The DTMF packets seemed to disappear in the brcm channel because of
 					}
 					break;
 				default:
