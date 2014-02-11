@@ -2553,6 +2553,8 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 
 void reload()
 {
+	struct ast_config *cfg = NULL;
+
 	ast_mutex_lock(&iflock);
 
 	/* Acquire locks for all pvt:s to prevent nasty things from happening */
@@ -2588,7 +2590,6 @@ void reload()
  */
 static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	struct ast_config *cfg = NULL;
 
 	if (cmd == CLI_INIT) {
 		e->command = "brcm reload";
