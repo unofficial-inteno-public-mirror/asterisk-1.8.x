@@ -1749,10 +1749,13 @@ R = reserved (ignore)
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 				//&& !ast_channel_trylock(p->owner)) {
 					/* and enque frame if channel is up */
-					// OEJ - don't think we need a channel lock here.
-					//ast_channel_lock(p->owner);
+					while(p->owner && ast_channel_trylock(p->owner)) {
+						ast_mutex_unlock(&p->parent->lock);
+						usleep(1);	/* Be nice. Give way */
+						ast_mutex_lock(&p->parent->lock);
+					}
 					ast_queue_frame(p->owner, &fr);
-					//ast_channel_unlock(p->owner);
+					ast_channel_unlock(p->owner);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
