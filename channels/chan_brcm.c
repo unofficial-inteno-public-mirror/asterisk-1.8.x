@@ -1674,7 +1674,8 @@ static void *brcm_monitor_packets(void *data)
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 #ifdef SKREP_EPEVT_DTMF
 				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
-				ast_mutex_unlock(&p->parent->lock);
+				pvt_lock(p);
+				//ast_mutex_unlock(&p->parent->lock);
 				continue;
 #endif
 
@@ -1769,9 +1770,11 @@ R = reserved (ignore)
 							ast_debug(7,"--- FAILING to lock owner - dropping frame. Me solly.\n");
 							break;
 						}
-						ast_mutex_unlock(&p->parent->lock);
+						pvt_unlock(p);
+						//ast_mutex_unlock(&p->parent->lock);
 						usleep(1);	/* Be nice. Give way */
-						ast_mutex_lock(&p->parent->lock);
+						pvt_lock(p);
+						//ast_mutex_lock(&p->parent->lock);
 					}
 					if (counter > 0) {
 						ast_queue_frame(p->owner, &fr);
@@ -1781,10 +1784,11 @@ R = reserved (ignore)
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
-			ast_mutex_unlock(&p->parent->lock);
+			pvt_unlock(p);
+			//ast_mutex_unlock(&p->parent->lock);
 		}
 		sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
-		usleep(100);
+		usleep(5);	/* OEJ changed to 5 */
 	} /* while */
 
 	ast_verbose("Packets thread ended\n");
