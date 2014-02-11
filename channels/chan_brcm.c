@@ -1746,10 +1746,15 @@ R = reserved (ignore)
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
 				/* try to lock channel and send frame */
-				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)) && !ast_channel_trylock(p->owner)) {
+				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
+				//&& !ast_channel_trylock(p->owner)) {
 					/* and enque frame if channel is up */
+					// OEJ - don't think we need a channel lock here.
+					//ast_channel_lock(p->owner);
 					ast_queue_frame(p->owner, &fr);
-					ast_channel_unlock(p->owner);
+					//ast_channel_unlock(p->owner);
+				} else {
+					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
 			ast_mutex_unlock(&p->parent->lock);
@@ -1923,7 +1928,7 @@ static void *brcm_monitor_events(void *data)
 			{
 				unsigned int old_state = sub->channel_state;
 		
-				ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event);
+				ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event-1);
 				handle_dtmf(tEventParm.event, sub);
 				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 					/* DTMF event took channel state to DIALING. Stop dial tone. */
