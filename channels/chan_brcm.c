@@ -2579,7 +2579,6 @@ static char *brcm_show_dialtone_status(struct ast_cli_entry *e, int cmd, struct 
  */
 static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
-	struct ast_config *cfg = NULL;
 
 	if (cmd == CLI_INIT) {
 		e->command = "brcm reload";
@@ -2590,6 +2589,10 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	} else if (cmd == CLI_GENERATE) {
 		return NULL;
 	}
+
+void reload()
+{
+	struct ast_config *cfg = NULL;
 
 	ast_mutex_lock(&iflock);
 
@@ -2614,6 +2617,28 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 
 	brcm_unlock_pvts();
 	ast_mutex_unlock(&iflock);
+}
+
+/*! \brief CLI for reloading brcm config.
+ * Note that the contry setting will not be reloaded. In order to do that the following
+ * sequence must be carried out: vrgEndptDeinit(), vrgEndptDriverClose(), vrgEndptDriverOpen()
+ * and then vrgEndptInit(). This is the same actions as for unload_module() followed by
+ * load_module() which causes the instability that we're trying to avoid using the reolad feature.
+ */
+static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	struct ast_config *cfg = NULL;
+
+	if (cmd == CLI_INIT) {
+		e->command = "brcm reload";
+		e->usage =
+			"Usage: brcm reload\n"
+			"       Reload chan_brcm configuration.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE) {
+		return NULL;
+	}
+	reload();
 
 	ast_verbose("BRCM reload done\n");
 
@@ -4302,4 +4327,8 @@ static int extension_state_cb(char *context, char *exten, int state, void *data)
 	return 0;
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "BRCM SLIC channel driver (BRCM)",
+		.load = load_module,
+		.unload = unload_module,
+		.reload = reload,
+	       );
