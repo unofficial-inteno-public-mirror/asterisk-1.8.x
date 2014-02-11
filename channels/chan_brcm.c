@@ -1719,10 +1719,12 @@ R = reserved (ignore)
 						if (dtmf_end) {
 							fr.frametype = AST_FRAME_DTMF_END;
 							p->dtmf_lastwasend = 1;
+							p->dtmf_sending = 0;
 						} else {
 							p->dtmf_lastwasend = 0;
-							if (p->dtmf_duration == 0) { /* DTMF starts here */
+							if (p->dtmf_sending == 0) { /* DTMF starts here */
 								fr.frametype = AST_FRAME_DTMF_BEGIN;
+								p->dtmf_sending = 1;
 							} else {
 								fr.frametype = AST_FRAME_DTMF_CONTINUE;
 							}
@@ -1752,7 +1754,7 @@ R = reserved (ignore)
 			}
 			ast_mutex_unlock(&p->parent->lock);
 		}
-		//sched_yield();
+		sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		usleep(100);
 	} /* while */
 

@@ -4072,9 +4072,9 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				ast_set_flag(chan, AST_FLAG_IN_DTMF);
 				send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
 				chan->dtmf_tv = ast_tvnow();
-				ast_debug(4, "DTMF continue '%c' received on %s (No BEGIN)\n", f->subclass.integer, chan->name);
+				ast_debug(4, "DTMF continue '%c' received on %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, f->len);
 			} else {
-				ast_debug(4, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
+				ast_debug(4, "DTMF continue '%c' received on %s Dur %d\n", f->subclass.integer, chan->name, f->len);
 			}
 			break;
 		case AST_FRAME_DTMF_BEGIN:
