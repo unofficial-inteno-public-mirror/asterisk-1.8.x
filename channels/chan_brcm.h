@@ -82,6 +82,7 @@ struct brcm_subchannel {
 	int dtmf_duration;		/* Duration of the DTMF currently sending. Should be zero when not sending */
 	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
 					   in sequence and we only need to react on the first one */
+	int dtmf_sending;		/* A marker if we are sending DTMF or not */
 };
 
 

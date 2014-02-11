@@ -1624,10 +1624,12 @@ static void *brcm_monitor_packets(void *data)
 					if (dtmf_end) {
 						fr.frametype = AST_FRAME_DTMF_END;
 						sub->dtmf_lastwasend = 1;
+						sub->dtmf_sending = 0;
 					} else {
 						sub->dtmf_lastwasend = 0;
-						if (sub->dtmf_duration == 0) { /* DTMF starts here */
+						if (sub->dtmf_sending == 0) { /* DTMF starts here */
 							fr.frametype = AST_FRAME_DTMF_BEGIN;
+							sub->dtmf_sending = 1;
 						} else {
 							fr.frametype = AST_FRAME_DTMF_CONTINUE;
 						}
