@@ -225,7 +225,7 @@ static struct brcm_channel_tech fxs_tech = {
 static int pvt_lock(struct brcm_subchannel *sub)
 {
 	ast_debug(7, "----> Trying to lock port %d\n", sub->parent->line_id);
-	ast_mutex_lock(&sub->parent->lock)
+	ast_mutex_lock(&sub->parent->lock);
 	ast_debug(7, "----> Locking pvt port %d\n", sub->parent->line_id);
 	return 1;
 }
@@ -233,7 +233,7 @@ static int pvt_lock(struct brcm_subchannel *sub)
 
 static int pvt_unlock(struct brcm_subchannel *sub)
 {
-	ast_mutex_unlock(&sub->parent->lock)
+	ast_mutex_unlock(&sub->parent->lock);
 	ast_debug(10, "----> Unlocking pvt port %d\n", sub->parent->line_id);
 	return 1;
 }
@@ -1570,7 +1570,7 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rtp_packet_type  = BRCM_UNKNOWN;
-	//RTPPACKET *rtp;
+	RTPPACKET *rtp;
 	int current_dtmf_digit = -1;
 	
 	rtp = (RTPPACKET *)pdata;
@@ -1740,7 +1740,7 @@ R = reserved (ignore)
 					/* and enque frame if channel is up */
 					while(p->owner && ast_channel_trylock(p->owner)) {
 						if (counter-- == 0) {
-							ast_debug("--- FAILING to lock owner - dropping frame. Me solly.\n");
+							ast_debug(7,"--- FAILING to lock owner - dropping frame. Me solly.\n");
 							break;
 						}
 						ast_mutex_unlock(&p->parent->lock);
