@@ -4067,7 +4067,15 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				send_dtmf_event(chan, "Received", f->subclass, "Yes", "No");
 			*/
 			ast_log(LOG_DTMF, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
-			ast_debug(4, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
+			if (!ast_test_flag(chan, AST_FLAG_IN_DTMF)) {
+				/* We got CONTINUE, but no BEGIN */
+				ast_set_flag(chan, AST_FLAG_IN_DTMF);
+				send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
+				chan->dtmf_tv = ast_tvnow();
+				ast_debug(4, "DTMF continue '%c' received on %s (No BEGIN)\n", f->subclass.integer, chan->name);
+			} else {
+				ast_debug(4, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
+			}
 			break;
 		case AST_FRAME_DTMF_BEGIN:
 			send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
@@ -4625,7 +4633,7 @@ int ast_senddigit_begin(struct ast_channel *chan, char digit)
 int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration)
 {
 
-	ast_debug(4, "--- Continue frame passed on to tech for %s\n", chan->name);
+	ast_debug(4, "--- Continue frame passed on to tech for %s (duration %s)\n", chan->name, duration);
 	if (chan->tech->send_digit_continue) {
 		chan->tech->send_digit_continue(chan, digit, duration);
 	}
@@ -7169,6 +7177,7 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 
 			if (monitored_source &&
 				(f->frametype == AST_FRAME_DTMF_END ||
+				f->frametype == AST_FRAME_DTMF_CONTINUE ||
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
