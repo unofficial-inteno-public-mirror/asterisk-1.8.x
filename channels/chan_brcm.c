@@ -1698,6 +1698,19 @@ R = reserved (ignore)
 
 			if (owner) {
 				ast_channel_unref(owner);
+			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
+
+				/* try to lock channel and send frame */
+				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
+				//&& !ast_channel_trylock(p->owner)) {
+					/* and enque frame if channel is up */
+					// OEJ - don't think we need a channel lock here.
+					//ast_channel_lock(p->owner);
+					ast_queue_frame(p->owner, &fr);
+					//ast_channel_unlock(p->owner);
+				} else {
+					ast_debug(8, "--> Not queuing frame\n");
+				}
 			}
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
@@ -1941,6 +1954,7 @@ static void *brcm_monitor_events(void *data)
 							handle_hookflash(sub, sub_peer, owner, peer_owner);
 						}
 					}
+<<<<<<< HEAD
 					break;
 				case EPEVT_EARLY_ONHOOK:
 					ast_verbose("EPEVT_EARLY_ONHOOK\n");
@@ -1952,6 +1966,54 @@ static void *brcm_monitor_events(void *data)
 					ast_verbose("EPEVT_VBD_START\n");
 					if (owner) {
 						ast_jb_destroy(owner);
+=======
+				}
+				break;
+
+			case EPEVT_DTMF0:
+			case EPEVT_DTMF1:
+			case EPEVT_DTMF2:
+			case EPEVT_DTMF3:
+			case EPEVT_DTMF4:
+			case EPEVT_DTMF5:
+			case EPEVT_DTMF6:
+			case EPEVT_DTMF7:
+			case EPEVT_DTMF8:
+			case EPEVT_DTMF9:
+			case EPEVT_DTMFA:
+			case EPEVT_DTMFB:
+			case EPEVT_DTMFC:
+			case EPEVT_DTMFD:
+			case EPEVT_DTMFS:
+			case EPEVT_DTMFH:
+			{
+				unsigned int old_state = sub->channel_state;
+		
+				ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event-1);
+				handle_dtmf(tEventParm.event, sub);
+				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+					/* DTMF event took channel state to DIALING. Stop dial tone. */
+					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+					brcm_stop_dialtone(p); 
+				}
+				break;
+			}
+			case EPEVT_DTMFL: ast_verbose("EPEVT_DTMFL\n"); break;
+			case EPEVT_FLASH:
+				//Ignore, handle via early off/on hook
+				break;
+			case EPEVT_EARLY_OFFHOOK:
+				ast_verbose("EPEVT_EARLY_OFFHOOK\n");
+				gettimeofday(&tim, NULL);
+				unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+				if (now - p->last_early_onhook_ts < hfmaxdelay) {
+					p->last_early_onhook_ts = 0;
+					if (p->hf_detected == 1) {
+						p->hf_detected = 0;
+					} else {
+						p->hf_detected = 1;
+						handle_hookflash(p);
+>>>>>>> The DTMF packets seemed to disappear in the brcm channel because of
 					}
 					break;
 				default:

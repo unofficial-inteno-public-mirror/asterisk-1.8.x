@@ -6693,6 +6693,7 @@ static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned 
 {
 	struct sip_pvt *p = ast->tech_pvt;
 	int res = 0;
+	ast_debug(1, "Asked to continue DTMF on channel %s Digit %c Duration %l\n", ast->name, digit, duration);
 
 	if (!p) {
 		ast_debug(1, "Asked to continue DTMF on channel %s with no pvt, ignoring\n", ast->name);
@@ -6704,6 +6705,7 @@ static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned 
 	case SIP_DTMF_RFC2833:
 		if (p->rtp) {
 			ast_rtp_instance_dtmf_continue(p->rtp, digit, duration);
+			ast_debug(1, "Sent DTMF continue\n");
 		}
 		break;
 	}
