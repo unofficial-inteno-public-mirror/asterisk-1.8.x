@@ -815,9 +815,9 @@ own situation. That's generally considered bad behaviour amongst SIP devices.
 		we need to calculate this based on the current sample rate and the rtp 
 		stream packetization. Please help me figure this out :-)
 	 */
-	if (!rtp->send_endflag && rtp->send_duration  160 > rtp->received_duration) {
-		/* We need to wait with sending this continue, as we're sending 160 frames */
-		ast_debug(4, "---- Send duration %d Received duration %d - Skipping this continue frame until we have a proper 20 ms/160 samples to send\n", rtp->send_duration, rtp->received_duration);
+	if (!rtp->send_endflag && rtp->send_duration + 160 > rtp->received_duration) {
+		/* We need to wait with sending this continue, as we're sending 160 samples */
+		ast_debug(4, "---- Digit %d Send duration %d Received duration %d - Skipping this continue frame until we have a proper 20 ms/160 samples to send\n", rtp->send_digit, rtp->send_duration, rtp->received_duration);
 		return -1;
 	}
 	if (rtp->received_duration == 0 || rtp->send_duration  160 < rtp->received_duration) {
