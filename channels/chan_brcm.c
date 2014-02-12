@@ -1733,6 +1733,8 @@ R = reserved (ignore)
 				ast_channel_unref(owner);
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
+				pvt_unlock(p->parent);
+				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
 					ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
@@ -1740,8 +1742,9 @@ R = reserved (ignore)
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
+			} else {
+				pvt_unlock(p->parent);
 			}
-			pvt_unlock(p->parent);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		//usleep(5);	/* OEJ changed to 5 */
