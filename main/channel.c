@@ -1405,6 +1405,10 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 
 	ast_channel_lock(chan);
 
+	if (fin && fin->frametype == AST_FRAME_CONTROL) {
+		ast_debug(9, "==> Got control frame type %d\n", fin->frametype);
+	}
+
 	/*
 	 * Check the last frame on the queue if we are queuing the new
 	 * frames after it.
@@ -3679,6 +3683,7 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 	if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF | AST_FLAG_EMULATE_DTMF)) {
 		/* We're in the middle of emulating a digit, or DTMF has been
 		 * explicitly deferred.  Skip this digit, then. */
+		ast_debug(8, "!!!!! Skipping DTMF from readq \n");
 		return 1;
 	}
 			
@@ -3686,6 +3691,7 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 			ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 		/* We're not in the middle of a digit, but it hasn't been long enough
 		 * since the last digit, so we'll have to skip DTMF for now. */
+		ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP \n");
 		return 1;
 	}
 
@@ -3856,7 +3862,8 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			 * there are cases where we want to leave DTMF frames on the queue until
 			 * some later time. */
 
-			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_CONTINUE || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
+			/* We should not skip DTMF_CONTINUE ever */
+			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
 				continue;
 			}
 
