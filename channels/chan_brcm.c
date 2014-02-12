@@ -1737,13 +1737,13 @@ R = reserved (ignore)
 
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					ast_debug(8, "--> Really queuing frame for line %d.\n", p->line_id);
+					ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
 					ast_queue_frame(p->owner, &fr);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
-			pvt_unlock(p);
+			pvt_unlock(p->parent);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		//usleep(5);	/* OEJ changed to 5 */
