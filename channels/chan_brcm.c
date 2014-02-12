@@ -269,13 +269,19 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
+		ast_debug(8, "****** AST_CONTROL_SRCUPDATE \n");
+		res = 1; //We still want asterisk core to play tone
+		break;
 	case AST_CONTROL_UNHOLD:
-		ast_debug(8, "****** AST_CONTROL_UNHOLD \n");
-		pvt_lock(sub->parent,"indicate unhold");
+		if (condition == AST_CONTROL_UNHOLD) {
+			ast_debug(8, "****** AST_CONTROL_UNHOLD \n");
+		}
+		/* Taking the chance of not locking the pvt here. */
+		//pvt_lock(sub->parent,"indicate unhold or srcupdate");
 		//Asterisk (adaptive) jitter buffer causes one way audio
 		//This is a workaround until jitter buffer is handled by DSP.
 		ast_jb_destroy(sub->owner);
-		pvt_unlock(sub->parent);
+		//pvt_unlock(sub->parent);
 		break;
 	case AST_CONTROL_RINGING:
 		ast_debug(8, "****** AST_CONTROL_RINGING \n");
