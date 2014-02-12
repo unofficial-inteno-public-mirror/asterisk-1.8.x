@@ -228,7 +228,7 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 	int i = 10;
 	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	while (i--) {
-		if (ast_mutex_trylock(&pvt->lock)) {
+		if (!ast_mutex_trylock(&pvt->lock)) {
 			ast_debug(7, "----> Successfully locked pvt port %d\n", pvt->line_id);
 			return 1;
 		}
