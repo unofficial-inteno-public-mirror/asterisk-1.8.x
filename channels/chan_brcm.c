@@ -1649,10 +1649,8 @@ static void *brcm_monitor_packets(void *data)
 			} else if  (rtp_packet_type == BRCM_DTMF) {
 #ifdef SKREP_EPEVT_DTMF
 				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
-				//ast_mutex_unlock(&p->parent->lock);
 				continue;
 #endif
-				pvt_lock(p, "DTMF");
 
 				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
 
