@@ -697,7 +697,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
 
-		ast_mutex_lock(&sub->parent);
+		ast_mutex_lock(&sub->parent->lock);
 		/* set rtp id sent to endpoint */
 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
