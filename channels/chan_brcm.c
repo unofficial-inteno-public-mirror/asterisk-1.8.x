@@ -231,6 +231,21 @@ static struct brcm_channel_tech fxs_tech = {
 };
 
 
+/* Tries to lock 10 timees, then gives up */
+static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
+{
+	int i = 10;
+	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
+	while (i--) {
+		if (ast_mutex_trylock(&pvt_lock)) {
+			ast_debug(7, "----> Successfully locked pvt port %d\n", pvt->line_id);
+			return 1;
+		}
+	}
+	ast_debug(7, "----> Failed Locking pvt port %d\n", pvt->line_id);
+	return 0;
+}
+
 static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
 	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
@@ -1077,12 +1092,22 @@ static void *brcm_event_handler(void *data)
 
 		/* loop over all pvt's */
 		while(p) {
-			pvt_lock(p, "event_handler loop");
+			/* OEJ hack: Try locking. If it fails, move to the next channel 
+			 *	A question here is if we should make SURE we get back to the pvt at some point. If it 
+			 *	stays locked, we may never ever get back to it. A skip counter in the pvt and a
+			 *	ERROR message after 10 skips maybe.
+			 */
+			if(!pvt_trylock(p, "event_handler loop")) {
+				p = brcm_get_next_pvt(p);
+				usleep(10);
+				continue;
+			}
 			sub = brcm_get_active_subchannel(p);
 
 			if (!sub) {
 				/* Get next channel pvt if there is one */
 				pvt_unlock(p);
+				usleep(10);
 				p = brcm_get_next_pvt(p);
 				continue;
 			}
