@@ -540,14 +540,14 @@ static int brcm_answer(struct ast_channel *ast)
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 
 	struct brcm_subchannel *sub = ast->tech_pvt;
-	pvt_lock(sub->parent,"answer");
+	//pvt_lock(sub->parent,"answer");
 	if (ast->_state != AST_STATE_UP) {
 		ast_setstate(ast, AST_STATE_UP);
 		ast_log(LOG_DEBUG, "brcm_answer(%s) set state to up\n", ast->name);
 	}
 	ast->rings = 0;
 	brcm_subchannel_set_state(sub, INCALL);
-	pvt_unlock(sub->parent);
+	//pvt_unlock(sub->parent);
 	return 0;
 }
 
