@@ -222,6 +222,21 @@ static struct brcm_channel_tech fxs_tech = {
 };
 
 
+/* Tries to lock 10 timees, then gives up */
+static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
+{
+	int i = 10;
+	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
+	while (i--) {
+		if (ast_mutex_trylock(&pvt_lock)) {
+			ast_debug(7, "----> Successfully locked pvt port %d\n", pvt->line_id);
+			return 1;
+		}
+	}
+	ast_debug(7, "----> Failed Locking pvt port %d\n", pvt->line_id);
+	return 0;
+}
+
 static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
 	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
@@ -1104,7 +1119,6 @@ static int handle_interdigit_timeout(const void *data)
 	ast_debug(9, "Interdigit timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	pvt_lock(p, "handle_interdigit_timeout");
-	ast_mutex_lock(&p->lock);
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 
 	if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
