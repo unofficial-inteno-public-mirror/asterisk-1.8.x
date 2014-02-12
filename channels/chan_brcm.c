@@ -1773,7 +1773,7 @@ R = reserved (ignore)
 						pvt_unlock(p);
 						//ast_mutex_unlock(&p->parent->lock);
 						usleep(1);	/* Be nice. Give way */
-						pvt_lock(p, "DTMF backoff);
+						pvt_lock(p, "DTMF backoff");
 						//ast_mutex_lock(&p->parent->lock);
 					}
 					if (counter > 0) {
@@ -2121,7 +2121,8 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 	if (tmp) {
 		struct brcm_subchannel *sub;
 		int i;
-		ast_mutex_init(&p->lock);
+
+		ast_mutex_init(&tmp->lock);
 		for (i=0; i<NUM_SUBCHANNELS; i++) {
 			sub = ast_calloc(1, sizeof(*sub));
 			if (sub) {
@@ -2937,7 +2938,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 		if (p->line_id == (a->argv[3][0]-'0')) {
 			pvt_lock(p, "change autodial settings");
 			ast_copy_string(p->autodial, a->argv[4], sizeof(p->autodial));
-			pvt_unlock();
+			pvt_unlock(p);
 		}
 		p = brcm_get_next_pvt(p);
 	}
