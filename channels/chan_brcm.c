@@ -235,14 +235,13 @@ static struct brcm_channel_tech fxs_tech = {
 static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 {
 	int i = 10;
-	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	while (i--) {
 		if (!ast_mutex_trylock(&pvt->lock)) {
-			ast_debug(7, "----> Successfully locked pvt port %d\n", pvt->line_id);
+			ast_debug(7, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
 			return 1;
 		}
 	}
-	ast_debug(7, "----> Failed Locking pvt port %d\n", pvt->line_id);
+	ast_debug(7, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
 
@@ -250,7 +249,7 @@ static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
 	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	ast_mutex_lock(&pvt->lock);
-	ast_debug(7, "----> Locking pvt port %d\n", pvt->line_id);
+	ast_debug(7, "----> Locked pvt port %d\n", pvt->line_id);
 	return 1;
 }
 
@@ -847,6 +846,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 	tmp = ast_channel_alloc(1, state, i->parent->cid_num, i->parent->cid_name, "", i->parent->ext, i->parent->context, linkedid, 0, "BRCM/%d/%d", i->parent->line_id, i->connection_id);
 
 	if (tmp) {
+		ast_debug(7, "--> BRCM new %s \n", tmp->name);
 		tmp->tech = cur_tech;
 		/* ast_channel_set_fd(tmp, 0, i->fd); */
 
@@ -891,6 +891,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 		i->owner = tmp;
 		ast_module_ref(ast_module_info->self);
 		if (state != AST_STATE_DOWN) {
+			ast_debug(7, "--> BRCM new starting pbx on %s \n", tmp->name);
 			if (ast_pbx_start(tmp)) {
 				ast_log(LOG_WARNING, "Unable to start PBX on %s\n", tmp->name);
 				ast_hangup(tmp);
@@ -1056,6 +1057,7 @@ static int r4hanguptimeout_cb(const void *data)
 static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, char* context)
 {
 	ast_verbose("Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
+	ast_debug(4, "Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
 	sub->channel_state = DIALING;
 	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 
@@ -1117,7 +1119,7 @@ static void *brcm_event_handler(void *data)
 				//We have a full match in the "direct" context, so have asterisk place a call immediately
 				brcm_stop_dialtone(p);
 				ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
-				ast_verbose("Autodial extension matching %s found\n", p->dtmfbuf);
+				ast_debug(1,"Autodial extension matching %s found\n", p->dtmfbuf);
 				brcm_start_calling(p, sub, p->context);
 			}
 			/*
@@ -1655,6 +1657,7 @@ static void *brcm_monitor_packets(void *data)
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
+		
 			if (p->channel_state == ONHOLD) {
 				pvt_unlock(p->parent);
 				continue;
@@ -1785,35 +1788,17 @@ R = reserved (ignore)
 
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
-				/* try to lock channel and send frame */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
-				//&& !ast_channel_trylock(p->owner)) {
-					int counter = 100;
-					/* and enque frame if channel is up */
-					while(p->owner && ast_channel_trylock(p->owner)) {
-						if (counter-- == 0) {
-							ast_debug(7,"--- FAILING to lock owner - dropping frame. Me solly.\n");
-							break;
-						}
-						pvt_unlock(p);
-						//ast_mutex_unlock(&p->parent->lock);
-						usleep(1);	/* Be nice. Give way */
-						pvt_lock(p, "DTMF backoff");
-						//ast_mutex_lock(&p->parent->lock);
-					}
-					if (counter > 0) {
-						ast_debug(8, "--> Really queuing frame. Counter %d\n", counter);
-						ast_queue_frame(p->owner, &fr);
-						ast_channel_unlock(p->owner);
-					}
+					/* We don't need to lock the channel. Ast_queue_frame does */
+					ast_debug(8, "--> Really queuing frame for line %d.\n", p->line_id);
+					ast_queue_frame(p->owner, &fr);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
 			pvt_unlock(p);
-			//ast_mutex_unlock(&p->parent->lock);
 		}
-		sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
+		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		usleep(5);	/* OEJ changed to 5 */
 	} /* while */
 
