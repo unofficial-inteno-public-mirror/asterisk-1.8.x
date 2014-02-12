@@ -122,7 +122,6 @@ struct brcm_pvt {
 	int *dialtone_extension_cb_data;
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
-	char locked_by[256];
 };
 
 enum rtp_type {
