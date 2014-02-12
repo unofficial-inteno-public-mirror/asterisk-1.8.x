@@ -226,14 +226,13 @@ static struct brcm_channel_tech fxs_tech = {
 static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 {
 	int i = 10;
-	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	while (i--) {
 		if (!ast_mutex_trylock(&pvt->lock)) {
-			ast_debug(7, "----> Successfully locked pvt port %d\n", pvt->line_id);
+			ast_debug(7, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
 			return 1;
 		}
 	}
-	ast_debug(7, "----> Failed Locking pvt port %d\n", pvt->line_id);
+	ast_debug(7, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
 
@@ -241,7 +240,7 @@ static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
 	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	ast_mutex_lock(&pvt->lock);
-	ast_debug(7, "----> Locking pvt port %d\n", pvt->line_id);
+	ast_debug(7, "----> Locked pvt port %d\n", pvt->line_id);
 	return 1;
 }
 
@@ -843,7 +842,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 	tmp = ast_channel_alloc(1, state, i->parent->cid_num, i->parent->cid_name, "", i->parent->ext, i->parent->context, linkedid, 0, "BRCM/%d/%d", i->parent->line_id, i->connection_id);
 
 	if (tmp) {
-
+		ast_debug(7, "--> BRCM new %s \n", tmp->name);
 		tmp->tech = cur_tech;
 		/* ast_channel_set_fd(tmp, 0, i->fd); */
 
@@ -892,6 +891,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 		ast_module_ref(ast_module_info->self);
 
 		if (state != AST_STATE_DOWN) {
+			ast_debug(7, "--> BRCM new starting pbx on %s \n", tmp->name);
 			if (ast_pbx_start(tmp)) {
 				ast_log(LOG_WARNING, "Unable to start PBX on %s\n", tmp->name);
 				ast_hangup(tmp);
@@ -1090,6 +1090,7 @@ static int dialtone_init_cb(const void *data)
 static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, char* context)
 {
 	ast_verbose("Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
+	ast_debug(4, "Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
 	sub->channel_state = DIALING;
 	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 
@@ -1142,7 +1143,6 @@ static int handle_autodial_timeout(const void *data)
 	ast_debug(9, "Autodial timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	pvt_lock(p, "handle_autodial_timeout");
-	ast_mutex_lock(&p->lock);
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 	line_settings *s = &line_config[p->line_id];
 
@@ -1735,27 +1735,10 @@ R = reserved (ignore)
 				ast_channel_unref(owner);
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
-				/* try to lock channel and send frame */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
-				//&& !ast_channel_trylock(p->owner)) {
-					int counter = 100;
-					/* and enque frame if channel is up */
-					while(p->owner && ast_channel_trylock(p->owner)) {
-						if (counter-- == 0) {
-							ast_debug(7,"--- FAILING to lock owner - dropping frame. Me solly.\n");
-							break;
-						}
-						pvt_unlock(p);
-						//ast_mutex_unlock(&p->parent->lock);
-						usleep(1);	/* Be nice. Give way */
-						pvt_lock(p, "DTMF backoff");
-						//ast_mutex_lock(&p->parent->lock);
-					}
-					if (counter > 0) {
-						ast_debug(8, "--> Really queuing frame. Counter %d\n", counter);
-						ast_queue_frame(p->owner, &fr);
-						ast_channel_unlock(p->owner);
-					}
+					/* We don't need to lock the channel. Ast_queue_frame does */
+					ast_debug(8, "--> Really queuing frame for line %d.\n", p->line_id);
+					ast_queue_frame(p->owner, &fr);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
