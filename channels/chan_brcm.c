@@ -267,32 +267,41 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
 
-	pvt_lock(sub->parent,"indicate");
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
 	case AST_CONTROL_UNHOLD:
+		ast_debug(8, "****** AST_CONTROL_UNHOLD \n");
+		pvt_lock(sub->parent,"indicate unhold");
 		//Asterisk (adaptive) jitter buffer causes one way audio
 		//This is a workaround until jitter buffer is handled by DSP.
 		ast_jb_destroy(sub->owner);
+		pvt_unlock(sub->parent);
 		break;
 	case AST_CONTROL_RINGING:
+		ast_debug(8, "****** AST_CONTROL_RINGING \n");
+		pvt_lock(sub->parent,"indicate ringing");
 		brcm_subchannel_set_state(sub, RINGBACK);
 		res = 1; //We still want asterisk core to play tone
+		pvt_unlock(sub->parent);
 		break;
 	case AST_CONTROL_TRANSFER:
+		ast_debug(8, "****** AST_CONTROL_TRANSFER \n");
 		res = -1;
+		pvt_lock(sub->parent,"indicate transfr");
 		if (datalen != sizeof(enum ast_control_transfer)) {
 			ast_log(LOG_ERROR, "Invalid datalen for AST_CONTROL_TRANSFER. Expected %d, got %d\n", (int) sizeof(enum ast_control_transfer), (int) datalen);
 		} else {
 			enum ast_control_transfer *message = data;
 			brcm_finish_transfer(sub, *message);
 		}
+		pvt_unlock(sub->parent);
 		break;
 	default:
+		/* No reason to lock anything here */
+		ast_debug(8, "****** AST_CONTROL_<unknown> %d \n", condition);
 		res = -1;
 		break;
 	}
-	pvt_unlock(sub->parent);
 	return res;
 }
 
