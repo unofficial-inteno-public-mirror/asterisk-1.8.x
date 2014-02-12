@@ -1734,7 +1734,7 @@ R = reserved (ignore)
 						pvt_unlock(p);
 						//ast_mutex_unlock(&p->parent->lock);
 						usleep(1);	/* Be nice. Give way */
-						pvt_lock(p, "DTMF backoff);
+						pvt_lock(p, "DTMF backoff");
 						//ast_mutex_lock(&p->parent->lock);
 					}
 					if (counter > 0) {
@@ -2118,7 +2118,8 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 	if (tmp) {
 		struct brcm_subchannel *sub;
 		int i;
-		ast_mutex_init(&p->lock);
+
+		ast_mutex_init(&tmp->lock);
 		for (i=0; i<NUM_SUBCHANNELS; i++) {
 			sub = ast_calloc(1, sizeof(*sub));
 			if (sub) {
