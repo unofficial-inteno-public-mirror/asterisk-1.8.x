@@ -493,7 +493,7 @@ static int brcm_hangup(struct ast_channel *ast)
 		brcm_stop_conference(peer_sub);
 	}
 	memset(p->ext, 0, sizeof(p->ext));
-	sub->owner_name = NULL;
+	sub->owner = NULL;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
@@ -863,7 +863,7 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 
 		//Setup jitter buffer
 		ast_jb_configure(tmp, &global_jbconf);
-		i->owner_name = ast_strdup(tmp->name);
+		i->owner = tmp;
 
 		ast_module_ref(ast_module_info->self);
 
@@ -984,18 +984,20 @@ static struct brcm_subchannel *brcm_get_onhold_subchannel(const struct brcm_pvt 
 static int cwtimeout_cb(const void *data)
 {
 	struct brcm_subchannel *sub;
-	struct ast_channel *owner;
+	struct ast_channel *owner = NULL;
 
 	ast_log(LOG_DEBUG, "No response to call waiting, hanging up\n");
 
 	sub = (struct brcm_subchannel *) data;
 	lock_mutex(sub->parent, "cwtimeout_cb");
 	sub->cw_timer_id = -1;
-	owner = ast_channel_get_by_name(sub->owner_name);	
+	if (sub->owner) {
+		ast_channel_ref(sub->owner);
+		owner = sub->owner;
+	}
 	unlock_mutex(sub->parent);
 
 	if (owner) {
-		CHECK_BLOCKING(owner);
 		ast_channel_lock(owner);
 		owner->hangupcause = AST_CAUSE_USER_BUSY;
 		ast_queue_control(owner, AST_CONTROL_BUSY);
@@ -1012,8 +1014,8 @@ static int r4hanguptimeout_cb(const void *data)
 	struct brcm_subchannel *sub;
 	struct brcm_subchannel *peer_sub;
 
-	struct ast_channel *sub_owner;
-	struct ast_channel *peer_sub_owner;
+	struct ast_channel *sub_owner = NULL;
+	struct ast_channel *peer_sub_owner = NULL;
 
 	ast_log(LOG_DEBUG, "No hangup from remote after remote transfer using R4, hanging up\n");
 
@@ -1026,19 +1028,22 @@ static int r4hanguptimeout_cb(const void *data)
 	brcm_subchannel_set_state(peer_sub, CALLENDED);
 	brcm_subchannel_set_state(sub, CALLENDED);
 
-	sub_owner = ast_channel_get_by_name(sub->owner_name);
-	peer_sub_owner = ast_channel_get_by_name(peer_sub->owner_name);
-
+	if (sub->owner) {
+		ast_channel_ref(sub->owner);
+		sub_owner = sub->owner;
+	}
+	if (peer_sub->owner) {
+		ast_channel_ref(peer_sub->owner);
+		peer_sub_owner = peer_sub->owner;
+	}
 	unlock_mutex(sub->parent);
 
 	if (sub_owner) {
-		CHECK_BLOCKING(sub_owner);
 		ast_queue_control(sub_owner, AST_CONTROL_HANGUP);
 		ast_channel_unref(sub_owner);
 	}
 
 	if (peer_sub_owner) {
-		CHECK_BLOCKING(peer_sub_owner);
 		ast_queue_control(peer_sub_owner, AST_CONTROL_HANGUP);
 		ast_channel_unref(peer_sub_owner);
 	}
@@ -1202,7 +1207,7 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
 			brcm_subchannel_set_state(sub_peer, OFFHOOK);
 
 		/* If offhook/dialing/calling and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING)
+		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING || sub->channel_state == RINGBACK)
 				&& sub_peer->channel_state == ONHOLD) {
 
 			ast_log(LOG_DEBUG, "R while offhook/dialing and peer subchannel on hold\n");
@@ -1569,7 +1574,11 @@ static void *brcm_monitor_packets(void *data)
 			}
 
 			lock_mutex(sub->parent, "brcm_monitor_packets");
-			struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
+			struct ast_channel *owner = NULL;
+			if (sub->owner) {
+				ast_channel_ref(sub->owner);
+				owner = sub->owner;
+			}
 			unlock_mutex(sub->parent);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
@@ -1608,7 +1617,6 @@ static void *brcm_monitor_packets(void *data)
 				}
 
 				if (owner && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
-					CHECK_BLOCKING(owner);
 					ast_queue_frame(owner, &fr);
 				}
 			}
@@ -1658,29 +1666,32 @@ static void *brcm_monitor_events(void *data)
 		lock_mutex(p, "brcm_monitor_events");
 		sub = brcm_get_active_subchannel(p);
 		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
-		struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
-		struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
+		struct ast_channel *owner = NULL;
+		struct ast_channel *peer_owner = NULL;
+		if (sub->owner) {
+			ast_channel_ref(sub->owner);
+			owner = sub->owner;
+		}
+		if (sub_peer->owner) {
+			ast_channel_ref(sub_peer->owner);
+			peer_owner = sub_peer->owner;
+		}
 		unlock_mutex(p);
+
 		if (owner && peer_owner) {
 			if (owner < peer_owner) {
-				CHECK_BLOCKING(owner);
 				ast_channel_lock(owner);
-				CHECK_BLOCKING(peer_owner);
 				ast_channel_lock(peer_owner);
 			}
 			else {
-				CHECK_BLOCKING(peer_owner);
 				ast_channel_lock(peer_owner);
-				CHECK_BLOCKING(owner);
 				ast_channel_lock(owner);
 			}
 		}
 		else if (owner) {
-			CHECK_BLOCKING(owner);
-			ast_channel_lock(owner); //this is blocking mofo dippen
+			ast_channel_lock(owner);
 		}
 		else if (peer_owner) {
-			CHECK_BLOCKING(peer_owner);
 			ast_channel_lock(peer_owner);
 		}
 		lock_mutex(p, "brcm_monitor_events2");
@@ -1984,7 +1995,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 			sub = ast_calloc(1, sizeof(*sub));
 			if (sub) {
 				sub->id = i;
-				sub->owner_name = NULL;
+				sub->owner = NULL;
 				sub->connection_id = -1;
 				sub->connection_init = 0;
 				sub->channel_state = ONHOOK;
@@ -2280,7 +2291,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "Subchannel: %d\n", sub->id);
 		ast_cli(a->fd, "  Connection id       : %d\n", sub->connection_id);
 
-		ast_cli(a->fd, "  Owner name          : %s\n", sub->owner_name);
+		ast_cli(a->fd, "  Owner               : %d\n", sub->owner);
 		ast_cli(a->fd, "  Channel state       : ");
 		switch (sub->channel_state) {
 			case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
@@ -2292,6 +2303,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 			case RINGING:	ast_cli(a->fd, "RINGING\n"); break;
 			case CALLWAITING:	ast_cli(a->fd, "CALLWAITING\n"); break;
 			case ONHOLD:	ast_cli(a->fd, "ONHOLD\n"); break;
+			case RINGBACK:	ast_cli(a->fd, "RINGBACK\n"); break;
 			default:	ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
@@ -2304,7 +2316,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 	}
 }
 
-static void brcm_show_pvt_locks(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+static char *brcm_show_pvt_locks(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	if (cmd == CLI_INIT) {
 		e->command = "brcm show pvtlocks";
@@ -2312,8 +2324,10 @@ static void brcm_show_pvt_locks(struct ast_cli_entry *e, int cmd, struct ast_cli
 			"Usage: brcm show pvtlocks\n"
 			"       Shows the current pvt locks.\n";
 		return NULL;
-	} else if (cmd == CLI_GENERATE)
+	}
+	else if (cmd == CLI_GENERATE) {
 		return NULL;
+	}
 
 	struct brcm_pvt *p = iflist;
 	int i = 0;
@@ -2323,6 +2337,8 @@ static void brcm_show_pvt_locks(struct ast_cli_entry *e, int cmd, struct ast_cli
 		p = brcm_get_next_pvt(p);
 		i++;
 	}
+
+	return CLI_SUCCESS;
 }
 
 static void brcm_show_pvts(struct ast_cli_args *a)
@@ -2822,8 +2838,9 @@ static int unload_module(void)
 			int i;
 			lock_mutex(p, "unload_module");
 			for (i=0; i<NUM_SUBCHANNELS; i++) {
-				struct ast_channel *owner = ast_channel_get_by_name(p->sub[i]->owner_name);
+				struct ast_channel *owner = p->sub[i]->owner;
 				if (owner) {
+					ast_channel_ref(owner);
 					unlock_mutex(p);
 					ast_softhangup(owner, AST_SOFTHANGUP_APPUNLOAD);
 					ast_channel_unref(owner);
@@ -2958,24 +2975,20 @@ static void build_xlaw_table(uint8_t *linear_to_xlaw,
  * useful when configuring a connection in preparation for an
  * outgoing call.
  */
-static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *p)
+static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 {
-	struct ast_channel *owner = NULL;
 	EPZCNXPARAM epCnxParms = {0};
-	line_settings *s = &line_config[p->parent->line_id];
+	line_settings *s = &line_config[sub->parent->line_id];
 
 	epCnxParms.mode = EPCNXMODE_SNDRX;
 
-	owner = ast_channel_get_by_name(p->owner_name);
-
-	if (owner) {
-		//p is owned by a ast_channel, so we need to configure endpoint with the settings from there
-		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(owner->readformat);
-		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(owner->readformat);
+	if (sub->owner) {
+		//sub is owned by a ast_channel, so we need to configure endpoint with the settings from there
+		epCnxParms.cnxParmList.send.codecs[0].type		= map_codec_ast_to_brcm(sub->owner->readformat);
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType	= map_codec_ast_to_brcm_rtp(sub->owner->readformat);
 		epCnxParms.cnxParmList.send.numCodecs = 1;
 		epCnxParms.cnxParmList.send.period[0] = s->period;
 		epCnxParms.cnxParmList.send.numPeriods = 1;
-		ast_channel_unref(owner);
 	}
 	else {
 		//Select our preferred codec. This may result in asterisk transcoding if remote SIP peer doesn't support this codec,
@@ -3950,31 +3963,31 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-int brcm_create_connection(struct brcm_subchannel *p) {
+int brcm_create_connection(struct brcm_subchannel *sub) {
 
 	/* generate random nr for rtp header */
-	p->ssrc = rand();
+	sub->ssrc = rand();
 
 	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
-	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(p); //Create a parameter list for this pvt
+	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(sub); //Create a parameter list for this pvt
 
-	ast_verbose("Creating connection for pvt line_id=%i connection_id=%d\n", p->parent->line_id, p->connection_id);
+	ast_verbose("Creating connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
 	ast_verbose("Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
 	ast_verbose("Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
 
-	tConnectionParm.cnxId      = p->connection_id;
+	tConnectionParm.cnxId      = sub->connection_id;
 	tConnectionParm.cnxParam   = &epCnxParms;
-	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->parent->line_id];
+	tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
 	tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
 	tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
-	if (!p->connection_init) {
+	if (!sub->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
 			ast_verbose("%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_verbose("Connection %d created\n",p->connection_id);
-			p->connection_init = 1;
+			ast_verbose("Connection %d created\n", sub->connection_id);
+			sub->connection_init = 1;
 		}
 	}
 

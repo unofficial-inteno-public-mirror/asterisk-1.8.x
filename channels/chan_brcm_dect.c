@@ -861,21 +861,28 @@ process_keypad_info(unsigned char handset,
 
 		/* Get locks in correct order */
 		ast_mutex_lock(&p->lock);
+
 		struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
-		struct ast_channel *owner = ast_channel_get_by_name(sub->owner_name);
-		struct ast_channel *peer_owner = ast_channel_get_by_name(sub_peer->owner_name);
+		struct ast_channel *owner = sub->owner;
+		struct ast_channel *peer_owner = sub_peer->owner;
+
+		if (sub->owner) {
+			ast_channel_ref(owner);
+		}
+		if (sub_peer->owner) {
+			ast_channel_ref(peer_owner);
+		}
 		ast_mutex_unlock(&p->lock);
+
 		if (owner && peer_owner) {
-			if (owner && peer_owner) {
-				if (owner < peer_owner) {
-					ast_channel_lock(owner);
-					ast_channel_lock(peer_owner);
-				}
-				else {
-					ast_channel_lock(peer_owner);
-					ast_channel_lock(owner);
-				}
+			if (owner < peer_owner) {
+				ast_channel_lock(owner);
+				ast_channel_lock(peer_owner);
+			}
+			else {
+				ast_channel_lock(peer_owner);
+				ast_channel_lock(owner);
 			}
 		}
 		else if (owner) {
@@ -1096,9 +1103,10 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 		brcm_create_connection(sub);
 	}
 
-	owner = ast_channel_get_by_name(sub->owner_name);
+	owner = sub->owner;
 	if (owner) {
 		sub->channel_state = INCALL;
+		ast_channel_ref(owner);
 	}
 	ast_mutex_unlock(&p->lock);
 

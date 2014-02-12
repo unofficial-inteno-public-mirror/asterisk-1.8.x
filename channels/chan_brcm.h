@@ -63,7 +63,7 @@ typedef enum dialtone_state {
 
 struct brcm_subchannel {
 	int id;
-	char *owner_name;		/* Name of channel we bleong to, possibly NULL */
+	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int connection_id;		/* Current connection id, may be -1 */
 	unsigned int channel_state;	/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
