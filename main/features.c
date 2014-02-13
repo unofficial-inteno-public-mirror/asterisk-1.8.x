@@ -4157,14 +4157,6 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 				}
 				break;
 			}
-#ifdef TESTING
-		} else if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
-			if (sendingdtmfdigit == 1) {
-				/* We let the BEGIN go through happily, so let's not bother with the CONTINUE,
-				 * since we already know it's not something we bother with */
-				ast_write(other, f);
-			}
-#endif
 		} else if (f->frametype == AST_FRAME_DTMF_BEGIN) {
 			struct ast_flags *cfg;
 			char dtmfcode[2] = { f->subclass.integer, };
@@ -4183,7 +4175,7 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 			if (featurelen == 0
 				&& feature_check(chan, cfg, &dtmfcode[0]) == AST_FEATURE_RETURN_PASSDIGITS) {
 				if (option_debug > 3) {
-					ast_log(LOG_DEBUG, "Passing DTMF through, since it is not a feature code\n");
+					ast_log(LOG_DEBUG, "Passing DTMF BEGIN through, since it is not a feature code\n");
 				}
 				ast_write(other, f);
 				sendingdtmfdigit = 1;
@@ -4197,6 +4189,15 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 				if (option_debug > 3) {
 					ast_log(LOG_DEBUG, "Not passing DTMF through, since it may be a feature code\n");
 				}
+			}
+		} else if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
+			if (sendingdtmfdigit == 1) {
+				/* We let the BEGIN go through happily, so let's not bother with the CONTINUE,
+				 * since we already know it's not something we bother with */
+				ast_debug(8, "Passing DTMF CONTINUE  through, since it is not a feature code\n");
+				ast_write(other, f);
+			} else {
+				ast_debug(9, "===> Dropping DTMF continue. Feature code \n");
 			}
 		} else if (f->frametype == AST_FRAME_DTMF_END) {
 			char *featurecode;
