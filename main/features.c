@@ -4197,7 +4197,7 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 				ast_debug(8, "Passing DTMF CONTINUE  through, since it is not a feature code\n");
 				ast_write(other, f);
 			} else {
-				ast_debug(9, "===> Dropping DTMF continue. Feature code \n");
+				ast_debug(8, "===> Dropping DTMF continue. Feature code \n");
 			}
 		} else if (f->frametype == AST_FRAME_DTMF_END) {
 			char *featurecode;
