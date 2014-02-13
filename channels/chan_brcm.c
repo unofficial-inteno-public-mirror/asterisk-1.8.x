@@ -269,6 +269,10 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
+		/* Björn added jitter buffer destroy on SRCUPDATE in 
+		   08944db04bb1f94b902b8728a967e0ac4a848a2f 
+		   in my code, it caused a deadlock, so I removed it again. Propably
+		   need testing with th case #3365 */
 		ast_debug(8, "****** AST_CONTROL_SRCUPDATE \n");
 		res = 1; //We still want asterisk core to play tone
 		break;
