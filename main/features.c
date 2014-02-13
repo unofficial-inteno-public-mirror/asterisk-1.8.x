@@ -4195,7 +4195,7 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 				/* We let the BEGIN go through happily, so let's not bother with the CONTINUE,
 				 * since we already know it's not something we bother with */
 				ast_debug(8, "Passing DTMF CONTINUE  through, since it is not a feature code\n");
-				ast_write(other, f);
+				//ast_write(other, f);
 			} else {
 				ast_debug(9, "===> Dropping DTMF continue. Feature code \n");
 			}
