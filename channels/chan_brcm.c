@@ -1118,22 +1118,12 @@ static void *brcm_event_handler(void *data)
 			 *	stays locked, we may never ever get back to it. A skip counter in the pvt and a
 			 *	ERROR message after 10 skips maybe.
 			 */
-			/* Take a sneek preview without locking */
-			sub = brcm_get_active_subchannel(p);
-			if (sub == NULL) {
-				p = brcm_get_next_pvt(p);
-				usleep(10);
-				ast_debug(10,"---------> Not locking, no subchannels on %d\n", p->line_id);
-				continue;
-			}
 			if(!pvt_trylock(p, "event_handler loop")) {
 				/* If we fail to gt the lock, just continue */
 				p = brcm_get_next_pvt(p);
 				usleep(10);
 				continue;
 			}
-
-			/* Check again, the subchannel may have disappeared while waiting */
 			sub = brcm_get_active_subchannel(p);
 
 			if (!sub) {
