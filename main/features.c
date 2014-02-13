@@ -1927,6 +1927,7 @@ static int play_message_on_chan(struct ast_channel *play_to, struct ast_channel 
 		return -1;
 	}
 	ast_autoservice_ignore(other, AST_FRAME_DTMF_BEGIN);
+	ast_autoservice_ignore(other, AST_FRAME_DTMF_CONTINUE);
 	ast_autoservice_ignore(other, AST_FRAME_DTMF_END);
 	if (ast_stream_and_wait(play_to, audiofile, "")) {
 		ast_log(LOG_WARNING, "Failed to play %s '%s'!\n", msg, audiofile);
@@ -4155,6 +4156,12 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 					}
 				}
 				break;
+			}
+		} else if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
+			if (sendingdtmfdigit == 1) {
+				/* We let the BEGIN go through happily, so let's not bother with the END,
+				 * since we already know it's not something we bother with */
+				ast_write(other, f);
 			}
 		} else if (f->frametype == AST_FRAME_DTMF_BEGIN) {
 			struct ast_flags *cfg;

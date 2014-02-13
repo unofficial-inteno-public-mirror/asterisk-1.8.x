@@ -1405,8 +1405,8 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 
 	ast_channel_lock(chan);
 
-	if (fin && fin->frametype == AST_FRAME_CONTROL) {
-		ast_debug(9, "==> Got control frame type %d\n", fin->frametype);
+	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
+		ast_debug(9, "==> Got DTMF frame type %d\n", fin->frametype);
 	}
 
 	/*
@@ -3683,7 +3683,6 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 	if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF | AST_FLAG_EMULATE_DTMF)) {
 		/* We're in the middle of emulating a digit, or DTMF has been
 		 * explicitly deferred.  Skip this digit, then. */
-		ast_debug(8, "!!!!! Skipping DTMF from readq \n");
 		return 1;
 	}
 			
@@ -3864,6 +3863,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 
 			/* We should not skip DTMF_CONTINUE ever */
 			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
+				ast_debug(8, "===== Skipping DTMF. \n");
 				continue;
 			}
 
