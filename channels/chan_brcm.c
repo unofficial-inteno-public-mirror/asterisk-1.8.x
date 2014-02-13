@@ -241,15 +241,15 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 			return 1;
 		}
 	}
-	ast_debug(7, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
+	ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
 
 static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
-	ast_debug(7, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
+	ast_debug(9, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
 	ast_mutex_lock(&pvt->lock);
-	ast_debug(7, "----> Locked pvt port %d\n", pvt->line_id);
+	ast_debug(9, "----> Locked pvt port %d - reason %s\n", pvt->line_id, reason);
 	return 1;
 }
 
@@ -1123,7 +1123,7 @@ static void *brcm_event_handler(void *data)
 			if (sub == NULL) {
 				p = brcm_get_next_pvt(p);
 				usleep(10);
-				ast_log("---------> Not locking, no subchannels on %d\n", p->line_id);
+				ast_debug(10,"---------> Not locking, no subchannels on %d\n", p->line_id);
 				continue;
 			}
 			if(!pvt_trylock(p, "event_handler loop")) {
