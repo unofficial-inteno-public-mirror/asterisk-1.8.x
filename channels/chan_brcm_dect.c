@@ -891,6 +891,7 @@ process_keypad_info(unsigned char handset,
 		else if (peer_owner) {
 			ast_channel_lock(peer_owner);
 		}
+		ast_mutex_lock(&p->lock);
 
 		if (sub) {
 			for (j = 0; j < 2; j++) { // we need to send two events: press and depress
