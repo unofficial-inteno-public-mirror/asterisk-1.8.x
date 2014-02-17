@@ -4819,7 +4819,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		}
 		usleep(1);
 	}
-	if (fr && fr->frametype == AST_FRAME_DTMF_CONT) {
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
 		ast_debug(8, "====> DTMF Continue Locked channel\n");
 	}
 	/* Stop if we're a zombie or need a soft hangup */
@@ -4846,7 +4846,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		res = 0;
 		goto done;
 	}
-	if (fr && fr->frametype == AST_FRAME_DTMF_CONT) {
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
 		ast_debug(8, "====> DTMF Continue Still in ast_write\n");
 	}
 
