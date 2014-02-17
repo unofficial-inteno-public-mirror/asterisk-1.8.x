@@ -4806,7 +4806,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 	struct ast_frame *f = NULL;
 	int count = 0;
 
-	if (fr && fr->frametype == AST_FRAME_DTMF_CONT) {
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
 		ast_debug(8, "====> DTMF Continue in Ast_write Channel %s\n", chan->name);
 	}
 
