@@ -4806,6 +4806,10 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 	struct ast_frame *f = NULL;
 	int count = 0;
 
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue in Ast_write Channel %s\n", chan->name);
+	}
+
 	/*Deadlock avoidance*/
 	while(ast_channel_trylock(chan)) {
 		/*cannot goto done since the channel is not locked*/
@@ -4814,6 +4818,9 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 			return 0;
 		}
 		usleep(1);
+	}
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue Locked channel\n");
 	}
 	/* Stop if we're a zombie or need a soft hangup */
 	if (ast_test_flag(chan, AST_FLAG_ZOMBIE) || ast_check_hangup(chan))
@@ -4838,6 +4845,9 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 	if (!(fr = ast_framehook_list_write_event(chan->framehooks, fr))) {
 		res = 0;
 		goto done;
+	}
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue Still in ast_write\n");
 	}
 
 	if (chan->generatordata && (!fr->src || strcasecmp(fr->src, "ast_prod"))) {
@@ -4901,6 +4911,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		res = ast_senddigit_continue(chan, fr->subclass.integer, fr->len);
 		ast_channel_lock(chan);
 		CHECK_BLOCKING(chan);
+		ast_debug(8, "====> DTMF Continue Sent to ast_senddigit_continue\n");
 		break;
 	case AST_FRAME_DTMF_END:
 		if (chan->audiohooks) {
