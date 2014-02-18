@@ -2412,6 +2412,8 @@ static inline enum ast_t38_state ast_channel_get_t38_state(struct ast_channel *c
 		if (option_debug) \
 			ast_log(LOG_DEBUG, "Thread %ld Blocking '%s', already blocked by thread %ld in procedure %s\n", (long) pthread_self(), (c)->name, (long) (c)->blocker, (c)->blockproc); \
 	} else { \
+		if (option_debug > 5) \
+			ast_log(LOG_DEBUG, "Not blocked by anyone\n"); \
 		(c)->blocker = pthread_self(); \
 		(c)->blockproc = __PRETTY_FUNCTION__; \
 		ast_set_flag(c, AST_FLAG_BLOCKING); \

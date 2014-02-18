@@ -4881,10 +4881,16 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 			goto done;
 		}
 	}
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue happy in ast_write\n");
+	}
 	/* High bit prints debugging */
 	if (chan->fout & DEBUGCHAN_FLAG)
 		ast_frame_dump(chan->name, fr, ">>");
 	CHECK_BLOCKING(chan);
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue happier in ast_write\n");
+	}
 	switch (fr->frametype) {
 	case AST_FRAME_CONTROL:
 		res = (chan->tech->indicate == NULL) ? 0 :
@@ -5130,6 +5136,9 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		chan->fout = FRAMECOUNT_INC(chan->fout);
 	}
 done:
+	if (fr && fr->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "====> DTMF Continue happiest on earth in ast_write\n");
+	}
 	if (chan->audiohooks && ast_audiohook_write_list_empty(chan->audiohooks)) {
 		/* The list gets recreated if audiohooks are added again later */
 		ast_audiohook_detach_list(chan->audiohooks);
