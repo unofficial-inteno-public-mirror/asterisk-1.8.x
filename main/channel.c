@@ -4070,15 +4070,14 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			}
 			break;
 		case AST_FRAME_DTMF_CONTINUE:
-			ast_log(LOG_DTMF, "DTMF continue '%c' received on %s\n", f->subclass.integer, chan->name);
 			if (!ast_test_flag(chan, AST_FLAG_IN_DTMF)) {
 				/* We got CONTINUE, but no BEGIN */
 				ast_set_flag(chan, AST_FLAG_IN_DTMF);
 				send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
 				chan->dtmf_tv = ast_tvnow();
-				ast_debug(4, "DTMF continue '%c' received on %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, f->len);
+				ast_debug(4, "DTMF continue '%c' received from %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, f->len);
 			} else {
-				ast_debug(4, "DTMF continue '%c' received on %s Dur %d\n", f->subclass.integer, chan->name, f->len);
+				ast_debug(4, "DTMF continue '%c' received from %s Dur %d\n", f->subclass.integer, chan->name, f->len);
 			}
 			break;
 		case AST_FRAME_DTMF_BEGIN:
@@ -4264,6 +4263,10 @@ done:
 		chan->audiohooks = NULL;
 	}
 	ast_channel_unlock(chan);
+	if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
+		ast_debug(8, "======>>>> ast_read returning AST_FRAME_DTMF_CONTINUE \n");
+	}
+	
 	return f;
 }
 
@@ -7200,7 +7203,7 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 
 			if (monitored_source &&
 				(f->frametype == AST_FRAME_DTMF_END ||
-				f->frametype == AST_FRAME_DTMF_CONTINUE ||
+				//f->frametype == AST_FRAME_DTMF_CONTINUE ||
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
@@ -7212,8 +7215,9 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 			}
 			/* Write immediately frames, not passed through jb */
 			if (!frame_put_in_jb) {
-		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Writing to SIP channel \n"); }
-				ast_debug(8, "===> Writing to SIP channel \n");
+		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Writing to native channel \n"); }
+				ast_debug(8, "===> Writing to native channel \n");
+				ast_write(other, f);
 			} else {
 		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Frame sent to jitter buffer \n"); }
 			}
