@@ -4426,6 +4426,9 @@ int ast_indicate_data(struct ast_channel *chan, int _condition,
 		}
 		/* See if the channel driver can handle this condition. */
 		res = chan->tech->indicate(chan, condition, data, datalen);
+		if (condition == AST_CONTROL_SRCUPDATE) {
+			ast_debug(8, "*******>>> Done handling a SRC update control frame here \n");
+		}
 	} else {
 		res = -1;
 	}
@@ -7417,8 +7420,8 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 	manager_bridge_event(1, 1, c0, c1);
 
 	/* Before we enter in and bridge these two together tell them both the source of audio has changed */
-	ast_indicate(c0, AST_CONTROL_SRCUPDATE);
-	ast_indicate(c1, AST_CONTROL_SRCUPDATE);
+	//ast_indicate(c0, AST_CONTROL_SRCUPDATE);
+	//ast_indicate(c1, AST_CONTROL_SRCUPDATE);
 
 	for (/* ever */;;) {
 		struct timeval now = { 0, };
@@ -7584,8 +7587,8 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 	ast_clear_flag(c1, AST_FLAG_END_DTMF_ONLY);
 
 	/* Now that we have broken the bridge the source will change yet again */
-	ast_indicate(c0, AST_CONTROL_SRCUPDATE);
-	ast_indicate(c1, AST_CONTROL_SRCUPDATE);
+	////ast_indicate(c0, AST_CONTROL_SRCUPDATE);
+	//ast_indicate(c1, AST_CONTROL_SRCUPDATE);
 
 	c0->_bridge = NULL;
 	c1->_bridge = NULL;
