@@ -287,7 +287,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		   in my code, it caused a deadlock, so I removed it again. Propably
 		   need testing with th case #3365 */
 		ast_debug(8, "****** AST_CONTROL_SRCUPDATE \n");
-		res = 0; //We are donw with this.
+		res = 0; //We are done with this.
 		break;
 	case AST_CONTROL_UNHOLD:
 		if (condition == AST_CONTROL_UNHOLD) {
@@ -1686,13 +1686,13 @@ static void *brcm_monitor_packets(void *data)
 				ast_log(LOG_ERROR, "Failed to find subchannel for connection id %d\n", tPacketParm.cnxId);
 				continue;
 			}
-			pvt_lock(p->parent, "brcm_monitor_packets" );
+			pvt_lock_silent(p->parent);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
 		
 			if (p->channel_state == ONHOLD) {
-				pvt_unlock(p->parent);
+				pvt_unlock_silent(p->parent);
 				continue;
 			}
 
@@ -1817,13 +1817,15 @@ R = reserved (ignore)
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
-			pvt_unlock(p->parent);
+			pvt_unlock_silent(p->parent);
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
+					if (rtp_packet_type == BRCM_DTMF) {
+						ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
+					}
 					ast_queue_frame(p->owner, &fr);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
