@@ -4421,6 +4421,9 @@ int ast_indicate_data(struct ast_channel *chan, int _condition,
 	}
 
 	if (chan->tech->indicate) {
+		if (condition == AST_CONTROL_SRCUPDATE) {
+			ast_debug(8, "******* We are handling a SRC update control frame here \n");
+		}
 		/* See if the channel driver can handle this condition. */
 		res = chan->tech->indicate(chan, condition, data, datalen);
 	} else {
@@ -7205,8 +7208,12 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 				break;
 			}
 			/* Write immediately frames, not passed through jb */
-			if (!frame_put_in_jb)
-				ast_write(other, f);
+			if (!frame_put_in_jb) {
+		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Writing to SIP channel \n"); }
+				ast_debug(8, "===> Writing to SIP channel \n");
+			} else {
+		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Frame sent to jitter buffer \n"); }
+			}
 				
 			/* Check if we have to deliver now */
 			if (jb_in_use)

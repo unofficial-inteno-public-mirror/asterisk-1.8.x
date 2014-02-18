@@ -253,6 +253,7 @@ static int pvt_unlock(struct brcm_pvt *pvt)
 }
 
 
+/* Note: The channel is locked when this is called by the core */
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
 {
 	struct brcm_subchannel *sub = ast->tech_pvt;
@@ -261,7 +262,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
 		ast_debug(8, "****** AST_CONTROL_SRCUPDATE \n");
-		res = 1; //We still want asterisk core to play tone
+		res = 0; //We are donw with this.
 		break;
 	case AST_CONTROL_UNHOLD:
 		if (condition == AST_CONTROL_UNHOLD) {
@@ -285,7 +286,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 	case AST_CONTROL_TRANSFER:
 		ast_debug(8, "****** AST_CONTROL_TRANSFER \n");
 		res = -1;
-		pvt_lock(sub->parent,"indicate transfr");
+		pvt_lock(sub->parent,"indicate transfer");
 		if (datalen != sizeof(enum ast_control_transfer)) {
 			ast_log(LOG_ERROR, "Invalid datalen for AST_CONTROL_TRANSFER. Expected %d, got %d\n", (int) sizeof(enum ast_control_transfer), (int) datalen);
 		} else {
