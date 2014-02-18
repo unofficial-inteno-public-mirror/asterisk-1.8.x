@@ -2520,9 +2520,7 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	}
 
 	/* Provision endpoints */
-	brcm_destroy_endpoints();
 	load_endpoint_settings(cfg);
-	brcm_create_endpoints();
 	struct brcm_pvt *p = iflist;
 	while(p) {
 		brcm_fill_autodial(p);
@@ -4115,7 +4113,7 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 		state = extension_state2dialtone_state(extension_state);
 	}
 	else {
-		/* This means that current pvt was not configured to receive incoming calls from any provider */
+		/* This means that current pvt was not configured to dial out on any provider */
 		brcm_extension_state_unregister(p);
 		ast_log(LOG_DEBUG, "No dialtone hint for pvt %d found (%s@%s)\n", p->line_id, p->dialtone_extension_hint, p->dialtone_extension_hint_context);
 		state = DIALTONE_OFF;
