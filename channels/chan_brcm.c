@@ -244,7 +244,7 @@ static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 	return 1;
 }
 
-static int pvt_lock_silent(struct brcm_pvt *pvt, const char *reason)
+static int pvt_lock_silent(struct brcm_pvt *pvt)
 {
 	ast_mutex_lock(&pvt->lock);
 	return 1;
