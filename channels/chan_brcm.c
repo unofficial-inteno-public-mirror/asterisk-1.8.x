@@ -237,11 +237,11 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 	int i = 10;
 	while (i--) {
 		if (!ast_mutex_trylock(&pvt->lock)) {
-			ast_debug(7, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
+			//ast_debug(7, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
 			return 1;
 		}
 	}
-	ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
+	//ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
 
@@ -253,11 +253,23 @@ static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 	return 1;
 }
 
+static int pvt_lock_silent(struct brcm_pvt *pvt, const char *reason)
+{
+	ast_mutex_lock(&pvt->lock);
+	return 1;
+}
+
 
 static int pvt_unlock(struct brcm_pvt *pvt)
 {
 	ast_mutex_unlock(&pvt->lock);
 	ast_debug(10, "----> Unlocking pvt port %d\n", pvt->line_id);
+	return 1;
+}
+
+static int pvt_unlock_silent(struct brcm_pvt *pvt)
+{
+	ast_mutex_unlock(&pvt->lock);
 	return 1;
 }
 
@@ -1191,7 +1203,7 @@ static void *brcm_event_handler(void *data)
 			}
 
 			/* Get next channel pvt if there is one */
-			pvt_unlock(p);
+			pvt_unlock_silent(p);
 			p = brcm_get_next_pvt(p);
 		}
 
