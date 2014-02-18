@@ -278,7 +278,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		   in my code, it caused a deadlock, so I removed it again. Propably
 		   need testing with th case #3365 */
 		ast_debug(8, "****** AST_CONTROL_SRCUPDATE \n");
-		res = 0; //We are donw with this.
+		res = 0; //We are done with this.
 		break;
 	case AST_CONTROL_UNHOLD:
 		if (condition == AST_CONTROL_UNHOLD) {
@@ -1636,11 +1636,11 @@ static void *brcm_monitor_packets(void *data)
 			}
 
 			pvt_lock(sub->parent, "brcm_monitor_packets" );
+			//pvt_lock_silent(p->parent);
 			struct ast_channel *owner = NULL;
 			if (sub->owner) {
 				ast_channel_ref(sub->owner);
 				owner = sub->owner;
-
 			}
 			pvt_unlock(sub->parent);
 
@@ -1764,12 +1764,15 @@ R = reserved (ignore)
 			if (owner) {
 				ast_channel_unref(owner);
 			pvt_unlock(p->parent);
+			//pvt_unlock_silent(p->parent);
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
+					if (rtp_packet_type == BRCM_DTMF) {
+						ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
+					}
 					ast_queue_frame(p->owner, &fr);
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
