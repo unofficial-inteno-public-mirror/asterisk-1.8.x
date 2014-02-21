@@ -6693,7 +6693,7 @@ static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned 
 {
 	struct sip_pvt *p = ast->tech_pvt;
 	int res = 0;
-	ast_debug(1, "Asked to continue DTMF on channel %s Digit %c Duration %l\n", ast->name, digit, duration);
+	ast_debug(1, "Asked to continue DTMF on channel %s Digit %c Duration %ld \n", ast->name, digit, duration);
 
 	if (!p) {
 		ast_debug(1, "Asked to continue DTMF on channel %s with no pvt, ignoring\n", ast->name);
@@ -7564,7 +7564,7 @@ static struct ast_frame *sip_rtp_read(struct ast_channel *ast, struct sip_pvt *p
 		f = &ast_null_frame;
 	}
 	/* Don't forward RFC2833 if we're not supposed to */
-	if (f && (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_CONT || f->frametype == AST_FRAME_DTMF_END) &&
+	if (f && (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_CONTINUE || f->frametype == AST_FRAME_DTMF_END) &&
 	    (ast_test_flag(&p->flags[0], SIP_DTMF) != SIP_DTMF_RFC2833)) {
 		ast_debug(1, "Ignoring DTMF (%c) RTP frame because dtmfmode is not RFC2833\n", f->subclass.integer);
 		return &ast_null_frame;
