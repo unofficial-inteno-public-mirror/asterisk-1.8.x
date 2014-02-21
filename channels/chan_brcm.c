@@ -1263,8 +1263,7 @@ static void handle_hookflash(struct brcm_pvt *p)
 			brcm_subchannel_set_state(peer_sub, OFFHOOK);
 
 		/* If offhook/dialing/calling and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING || su
-b->channel_state == RINGBACK)
+		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING || sub->channel_state == RINGBACK)
 				&& ((peer_sub = brcm_get_onhold_subchannel(p)) != NULL)) {
 
 			ast_log(LOG_DEBUG, "R while offhook/dialing and peer subchannel on hold\n");
@@ -2649,7 +2648,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 }
 
 
-static int reload()
+static int reload(void *)
 {
 	struct ast_config *cfg = NULL;
 
