@@ -762,6 +762,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
+		pvt_lock(p->parent, "brcm_write");
+
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
 
@@ -777,8 +779,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 		tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-		ast_mutex_unlock(&sub->parent->lock);
-
+		pvt_unlock(p->parent);
 		if (sub->connection_init) {
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
@@ -931,7 +932,6 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 				return NULL;
 			}
 		}
-
 
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
@@ -1550,14 +1550,13 @@ void handle_dtmf(EPEVT event,
 			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
 			p->dtmf_first = -1;
 			if (!dtmf_compatibility) {
-				ast_channel_lock(sub->owner);
+				/* Locking of owner not needed here. ast_queue_frame locks owner */
 				struct ast_frame f = { 0, };
 				f.subclass.integer = dtmf_button;
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
 				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
 				ast_queue_frame(sub->owner, &f);
-				ast_channel_unlock(sub->owner);
 			}
 		}
 		else {
@@ -1637,14 +1636,14 @@ static void *brcm_monitor_packets(void *data)
 				continue;
 			}
 
-			pvt_lock(sub->parent, "brcm_monitor_packets" );
+			//pvt_lock(sub->parent, "brcm_monitor_packets" );
 			//pvt_lock_silent(p->parent);
 			struct ast_channel *owner = NULL;
 			if (sub->owner) {
 				ast_channel_ref(sub->owner);
 				owner = sub->owner;
 			}
-			pvt_unlock(sub->parent);
+			//pvt_unlock(sub->parent);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
@@ -1731,6 +1730,8 @@ R = reserved (ignore)
 
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+					// Lock channel since we are going to manipulate DTMF status in the sub struct
+					pvt_lock(p->parent, "monitor_packet - sending DTMF");
 
 					if (dtmf_end && p->dtmf_lastwasend) {
 						/* We correctly get a series of END messages. We should skip the
@@ -1760,6 +1761,7 @@ R = reserved (ignore)
 						}
 						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
+					pvt_unlock(p->parent);
 				}
 			}
 
@@ -1781,7 +1783,6 @@ R = reserved (ignore)
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
-			pvt_unlock(p->parent);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		//usleep(5);	/* OEJ changed to 5 */
