@@ -2687,7 +2687,7 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 		return NULL;
 	}
 
-static int reload(void *)
+static int reload(void)
 {
 	struct ast_config *cfg = NULL;
 
