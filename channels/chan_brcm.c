@@ -771,6 +771,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
+		pvt_lock(p->parent, "brcm_write");
+
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(p, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
 		
@@ -784,6 +786,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		tPacketParm_send.epPacket    = &epPacket_send;
 		tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 		tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+
+		pvt_unlock(p->parent);
 
 		if (p->connection_init) {
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
@@ -921,6 +925,9 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 			tmp->caller.ani.number.str = ast_strdup(i->parent->cid_num);
 		}
 
+		//Setup jitter buffer
+		ast_jb_configure(tmp, &global_jbconf);
+
 		i->owner = tmp;
 		ast_module_ref(ast_module_info->self);
 		if (state != AST_STATE_DOWN) {
@@ -928,11 +935,9 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 			if (ast_pbx_start(tmp)) {
 				ast_log(LOG_WARNING, "Unable to start PBX on %s\n", tmp->name);
 				ast_hangup(tmp);
+				return NULL;
 			}
 		}
-
-		//Setup jitter buffer
-		ast_jb_configure(tmp, &global_jbconf);
 
 	} else
 		ast_log(LOG_WARNING, "Unable to allocate channel structure\n");
@@ -1258,7 +1263,8 @@ static void handle_hookflash(struct brcm_pvt *p)
 			brcm_subchannel_set_state(peer_sub, OFFHOOK);
 
 		/* If offhook/dialing/calling and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING)
+		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING || su
+b->channel_state == RINGBACK)
 				&& ((peer_sub = brcm_get_onhold_subchannel(p)) != NULL)) {
 
 			ast_log(LOG_DEBUG, "R while offhook/dialing and peer subchannel on hold\n");
@@ -1600,14 +1606,13 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 		} else if (sub->channel_state == INCALL || sub->channel_state == CALLING) {
 			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
 			if (!dtmf_compatibility) {
-				ast_channel_lock(sub->owner);
+				/* Locking of owner not needed here. ast_queue_frame locks owner */
 				struct ast_frame f = { 0, };
 				f.subclass.integer = dtmf_button;
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
 				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
 				ast_queue_frame(sub->owner, &f);
-				ast_channel_unlock(sub->owner);
 			}
 			p->dtmf_first = -1;
 		}
@@ -1688,13 +1693,14 @@ static void *brcm_monitor_packets(void *data)
 				ast_log(LOG_ERROR, "Failed to find subchannel for connection id %d\n", tPacketParm.cnxId);
 				continue;
 			}
-			pvt_lock_(p->parent, "monitor_packet");
+			// Testing without this lock
+			//pvt_lock_(p->parent, "monitor_packet");
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
 		
 			if (p->channel_state == ONHOLD) {
-				pvt_unlock_silent(p->parent);
+				//pvt_unlock(p->parent);
 				continue;
 			}
 
@@ -1785,6 +1791,8 @@ R = reserved (ignore)
 
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+					// Lock channel since we are going to manipulate DTMF status in the sub struct
+					pvt_lock(p->parent, "monitor_packet - sending DTMF");
 
 					if (dtmf_end && p->dtmf_lastwasend) {
 						/* We correctly get a series of END messages. We should skip the
@@ -1814,6 +1822,7 @@ R = reserved (ignore)
 						}
 						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
+					pvt_unlock(p->parent);
 				}
 			} else {
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
@@ -1835,7 +1844,6 @@ R = reserved (ignore)
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
-			pvt_unlock(p->parent);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		usleep(5);	/* OEJ changed to 5 */
@@ -2985,6 +2993,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 	p = iflist;
 	while(p) {
 		if (p->line_id == (a->argv[3][0]-'0')) {
+			// If you change data in the p structure, better lock. 
 			pvt_lock(p, "change autodial settings");
 			ast_copy_string(p->autodial, a->argv[4], sizeof(p->autodial));
 			pvt_unlock(p);
