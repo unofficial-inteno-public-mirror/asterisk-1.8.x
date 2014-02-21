@@ -1401,13 +1401,15 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 	unsigned int new_voice_frames = 0;
 	unsigned int queued_frames = 0;
 	unsigned int queued_voice_frames = 0;
+	int dtmf_debug = 0;
 	AST_LIST_HEAD_NOLOCK(, ast_frame) frames;
 
 	ast_debug(8, "===> queue frame trying to lock channel %s \n", chan->name);
 	ast_channel_lock(chan);
 
 	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
-		ast_debug(9, "==> Got DTMF frame type %d\n", fin->frametype);
+		dtmf_debug = 1;
+		ast_debug(9, "==> 1. Got DTMF frame type %d\n", fin->frametype);
 	}
 
 	/*
@@ -1444,6 +1446,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 			break;
 		}
 	}
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> 2. Got DTMF frame type %d\n", fin->frametype);
+	}
 
 	/* Build copies of all the new frames and count them */
 	AST_LIST_HEAD_INIT_NOLOCK(&frames);
@@ -1462,6 +1467,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 			new_voice_frames++;
 		}
 	}
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> 3. Got DTMF frame \n");
+	}
 
 	/* Count how many frames exist on the queue */
 	AST_LIST_TRAVERSE(&chan->readq, cur, frame_list) {
@@ -1469,6 +1477,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 		if (cur->frametype == AST_FRAME_VOICE) {
 			queued_voice_frames++;
 		}
+	}
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> 4. Got DTMF frame \n");
 	}
 
 	if ((queued_frames + new_frames > 128 || queued_voice_frames + new_voice_frames > 96)) {
@@ -1488,6 +1499,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 		}
 		AST_LIST_TRAVERSE_SAFE_END;
 	}
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> 5. Got DTMF frame \n");
+	}
 
 	if (after) {
 		AST_LIST_INSERT_LIST_AFTER(&chan->readq, &frames, after, frame_list);
@@ -1497,6 +1511,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 			AST_LIST_HEAD_INIT_NOLOCK(&chan->readq);
 		}
 		AST_LIST_APPEND_LIST(&chan->readq, &frames, frame_list);
+	}
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> 6. Got DTMF frame \n");
 	}
 
 	if (chan->alertpipe[1] > -1) {
@@ -1510,12 +1527,13 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 	} else if (chan->timingfd > -1) {
 		ast_timer_enable_continuous(chan->timer);
 	} else if (ast_test_flag(chan, AST_FLAG_BLOCKING)) {
+		ast_debug(9, "==> Shooting the blocker \n");
 		pthread_kill(chan->blocker, SIGURG);
 	}
 
 	ast_channel_unlock(chan);
-	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
-		ast_debug(9, "==> Done processing DTMF frame type %d\n", fin->frametype);
+	if (dtmf_debug == 1) {
+		ast_debug(9, "==> DONE-- . Got DTMF frame \n");
 	}
 
 	return 0;
@@ -7299,13 +7317,14 @@ static void update_bridge_vars(struct ast_channel *c0, struct ast_channel *c1)
 	const char *c0_pvtid = NULL;
 	const char *c1_pvtid = NULL;
 
-	ast_debug(8, "====> UPdate bridge vars C0 %s C1 %s\n", c0->name, c1->name);
+	ast_debug(8, "====> 1. Update bridge vars C0 %s C1 %s\n", c0->name, c1->name);
 	ast_channel_lock(c1);
 	c1_name = ast_strdupa(c1->name);
 	if (c1->tech->get_pvt_uniqueid) {
 		c1_pvtid = ast_strdupa(c1->tech->get_pvt_uniqueid(c1));
 	}
 	ast_channel_unlock(c1);
+	ast_debug(8, "====> 2. Update bridge vars C0 %s C1 %s\n", c0->name, c1->name);
 
 	ast_channel_lock(c0);
 	if (!ast_strlen_zero(pbx_builtin_getvar_helper(c0, "BRIDGEPEER"))) {
@@ -7319,6 +7338,7 @@ static void update_bridge_vars(struct ast_channel *c0, struct ast_channel *c1)
 		c0_pvtid = ast_strdupa(c0->tech->get_pvt_uniqueid(c0));
 	}
 	ast_channel_unlock(c0);
+	ast_debug(8, "====> 3. Update bridge vars C0 %s C1 %s\n", c0->name, c1->name);
 
 	ast_channel_lock(c1);
 	if (!ast_strlen_zero(pbx_builtin_getvar_helper(c1, "BRIDGEPEER"))) {
