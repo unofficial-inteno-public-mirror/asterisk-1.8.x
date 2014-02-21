@@ -758,6 +758,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	if (p->channel_state == ONHOLD) {
 		return 0;
 	}
+	ast_debug(9, "BRCM_WRITE \n");
 
 	if(frame->frametype == AST_FRAME_VOICE) {
 
@@ -1686,7 +1687,7 @@ static void *brcm_monitor_packets(void *data)
 				ast_log(LOG_ERROR, "Failed to find subchannel for connection id %d\n", tPacketParm.cnxId);
 				continue;
 			}
-			pvt_lock_silent(p->parent);
+			pvt_lock_(p->parent, "monitor_packet");
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
@@ -1817,7 +1818,6 @@ R = reserved (ignore)
 				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
-			pvt_unlock_silent(p->parent);
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
@@ -1827,10 +1827,14 @@ R = reserved (ignore)
 						ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
 					}
 					ast_queue_frame(p->owner, &fr);
+					if (rtp_packet_type == BRCM_DTMF) {
+						ast_debug(8, "--> Back from queuing frame for line %d.\n", p->parent->line_id);
+					}
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
+			pvt_unlock(p->parent);
 		}
 		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
 		usleep(5);	/* OEJ changed to 5 */

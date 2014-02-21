@@ -1513,6 +1513,9 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 	}
 
 	ast_channel_unlock(chan);
+	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
+		ast_debug(9, "==> Done processing DTMF frame type %d\n", fin->frametype);
+	}
 
 	return 0;
 }
