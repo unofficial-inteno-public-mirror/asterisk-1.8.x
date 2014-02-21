@@ -4297,6 +4297,9 @@ static int brcm_create_conference(struct brcm_pvt *p)
 			tConnectionParm.cnxId      = p->sub[i]->connection_id;
 			tConnectionParm.cnxParam   = &epCnxParms;
 			tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->line_id];
+			tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
 			} else {
