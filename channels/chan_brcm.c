@@ -953,6 +953,7 @@ struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id)
 	struct brcm_pvt *tmp = p;
 	if (p->line_id == line_id) return p;
 
+
 	tmp = brcm_get_next_pvt(tmp);
 
 	while(tmp) {
@@ -1096,7 +1097,6 @@ static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, 
 
 	/* Reset the dtmf buffer */
 	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-	p->dtmf_len          = 0;
 	p->dtmf_first        = -1;
 	p->dtmfbuf[p->dtmf_len] = '\0';
 
@@ -1183,6 +1183,8 @@ static void *brcm_event_handler(void *data)
 					//We have a match in the "default" context, and user ended the dialling sequence with a #,
 					// so have asterisk place a call immediately
 					ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
+					brcm_start_calling(p, sub, p->context);
+				}
 					brcm_start_calling(p, sub, p->context);
 				}
 				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
@@ -4152,17 +4154,17 @@ int brcm_create_connection(struct brcm_subchannel *p) {
 	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
 	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(p); //Create a parameter list for this pvt
 
-	ast_verbose("Creating connection for pvt line_id=%i connection_id=%d\n", p->parent->line_id, p->connection_id);
+	ast_debug(2, "Creating connection for pvt line_id=%i connection_id=%d\n", p->parent->line_id, p->connection_id);
 	if (p->owner) {
 		char buf[256];
-		ast_verbose("Owner channel raw read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawreadformat));
-		ast_verbose("Owner channel read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->readformat));
-		ast_verbose("Owner channel raw write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawwriteformat));
-		ast_verbose("Owner channel write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->writeformat));
+		ast_debug(2, "Owner channel raw read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawreadformat));
+		ast_debug(2, "Owner channel read format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->readformat));
+		ast_debug(2, "Owner channel raw write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->rawwriteformat));
+		ast_debug(2, "Owner channel write format: %s\n", ast_getformatname_multiple(buf, sizeof(buf), p->owner->writeformat));
 	}
 	
-	ast_verbose("Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
-	ast_verbose("Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
+	ast_debug(2, "Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
+	ast_debug(2, "Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
 
 	tConnectionParm.cnxId      = p->connection_id;
 	tConnectionParm.cnxParam   = &epCnxParms;
@@ -4172,14 +4174,15 @@ int brcm_create_connection(struct brcm_subchannel *p) {
 
 	if (!p->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			ast_log(LOG_ERROR, "%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_verbose("Connection %d created\n",p->connection_id);
+			ast_debug(2, "Connection %d created\n",p->connection_id);
 			p->connection_init = 1;
 		}
 	}
 
+	ast_debug(2, "Done configuring endpoint\n");
 	return 0;
 }
 
@@ -4245,9 +4248,6 @@ static int brcm_create_conference(struct brcm_pvt *p)
 			tConnectionParm.cnxId      = p->sub[i]->connection_id;
 			tConnectionParm.cnxParam   = &epCnxParms;
 			tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->line_id];
-			tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
-			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
-
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
 			} else {
