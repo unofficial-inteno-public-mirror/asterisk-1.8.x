@@ -1770,7 +1770,7 @@ R = reserved (ignore)
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
 					if (rtp_packet_type == BRCM_DTMF) {
-						ast_debug(8, "--> Really queuing frame for line %d.\n", p->parent->line_id);
+						ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", p->parent->line_id, p->owner->name);
 					}
 					ast_queue_frame(p->owner, &fr);
 					if (rtp_packet_type == BRCM_DTMF) {

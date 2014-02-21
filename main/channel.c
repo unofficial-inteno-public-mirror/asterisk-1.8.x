@@ -1403,6 +1403,7 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 	unsigned int queued_voice_frames = 0;
 	AST_LIST_HEAD_NOLOCK(, ast_frame) frames;
 
+	ast_debug(8, "===> queue frame trying to lock channel %s \n", chan->name);
 	ast_channel_lock(chan);
 
 	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
@@ -3740,6 +3741,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			f =  &ast_null_frame;
 		return f;
 	}
+	ast_debug(8, "====> ast_read locking channel %s \n", chan->name);
 
 	/* if here, no masq has happened, lock the channel and proceed */
 	ast_channel_lock(chan);
@@ -7297,6 +7299,7 @@ static void update_bridge_vars(struct ast_channel *c0, struct ast_channel *c1)
 	const char *c0_pvtid = NULL;
 	const char *c1_pvtid = NULL;
 
+	ast_debug(8, "====> UPdate bridge vars C0 %s C1 %s\n", c0->name, c1->name);
 	ast_channel_lock(c1);
 	c1_name = ast_strdupa(c1->name);
 	if (c1->tech->get_pvt_uniqueid) {
@@ -7325,6 +7328,7 @@ static void update_bridge_vars(struct ast_channel *c0, struct ast_channel *c1)
 		pbx_builtin_setvar_helper(c1, "BRIDGEPVTCALLID", c0_pvtid);
 	}
 	ast_channel_unlock(c1);
+	ast_debug(8, "====> Done with updating bridge vars C0 %s C1 %s\n", c0->name, c1->name);
 }
 
 static void bridge_play_sounds(struct ast_channel *c0, struct ast_channel *c1)
