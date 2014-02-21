@@ -1097,6 +1097,7 @@ static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, 
 
 	/* Reset the dtmf buffer */
 	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+	p->dtmf_len          = 0;
 	p->dtmf_first        = -1;
 	p->dtmfbuf[p->dtmf_len] = '\0';
 
@@ -1183,8 +1184,6 @@ static void *brcm_event_handler(void *data)
 					//We have a match in the "default" context, and user ended the dialling sequence with a #,
 					// so have asterisk place a call immediately
 					ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context);
-				}
 					brcm_start_calling(p, sub, p->context);
 				}
 				else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
@@ -4248,6 +4247,9 @@ static int brcm_create_conference(struct brcm_pvt *p)
 			tConnectionParm.cnxId      = p->sub[i]->connection_id;
 			tConnectionParm.cnxParam   = &epCnxParms;
 			tConnectionParm.state      = (ENDPT_STATE*)&endptObjState[p->line_id];
+			tConnectionParm.epStatus   = EPSTATUS_DRIVER_ERROR;
+			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
+
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
 			} else {
