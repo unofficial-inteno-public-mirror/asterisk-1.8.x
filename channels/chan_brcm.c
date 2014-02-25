@@ -237,11 +237,11 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 	int i = 10;
 	while (i--) {
 		if (!ast_mutex_trylock(&pvt->lock)) {
-			//ast_debug(7, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
+			ast_debug(9, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
 			return 1;
 		}
 	}
-	//ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
+	ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
 
@@ -1210,7 +1210,7 @@ static void *brcm_event_handler(void *data)
 			}
 
 			/* Get next channel pvt if there is one */
-			pvt_unlock_silent(p);
+			pvt_unlock(p);
 			p = brcm_get_next_pvt(p);
 		}
 
@@ -1824,7 +1824,7 @@ R = reserved (ignore)
 					pvt_unlock(p->parent);
 				}
 			} else {
-				ast_debug(10, "[%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
+				ast_debug(9, "Unknown RTP: [%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
 			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
