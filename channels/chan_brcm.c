@@ -756,10 +756,10 @@ static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const su
 	return 0;
 }
 
-static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub)
+struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub)
 {
 	struct brcm_subchannel *peer_sub;
-	peer_sub = sub->parent->sub[0] == sub ? sub->parent->sub[1] : sub->parent->sub[0];
+	peer_sub = (sub->parent->sub[0] == sub) ? sub->parent->sub[1] : sub->parent->sub[0];
 	return peer_sub;
 }
 
