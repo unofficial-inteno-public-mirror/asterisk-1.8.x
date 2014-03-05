@@ -1039,6 +1039,14 @@ static int r4hanguptimeout_cb(const void *data)
 	return 0;
 }
 
+void dialtone_init_cb(const void *data)
+{
+	struct brcm_pvt *p = (struct brcm_pvt *) data;
+	ast_mutex_lock(&p->lock);
+	brcm_dialtone_init(p);
+	ast_mutex_unlock(&p->lock);
+}
+
 /*
  * Helper function that tells asterisk to start a call on the provided pvt/sub/context
  * using the content of the dtmf buffer.
@@ -4105,6 +4113,13 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 	char hint[AST_MAX_EXTENSION];
 	dialtone_state state;
 	enum ast_extension_states extension_state;
+
+	if (!ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
+		/* Asterisk is not fully booted, wait for dialplan hints to be read */
+		int id = ast_sched_add(sched, 500, dialtone_init_cb, p);
+		/* No need to store id */
+		return;
+	}
 
 	if (ast_get_hint(hint, sizeof(hint), NULL, 0, NULL, p->dialtone_extension_hint_context, p->dialtone_extension_hint)) {
 		/* Check current extension state and register for future state changes */
