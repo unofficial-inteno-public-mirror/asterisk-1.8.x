@@ -624,7 +624,6 @@ ApiGetInfoElement(ApiInfoElementType *IeBlockPtr,
 	rsuint16 targetIe = Ie;  
 	ast_verbose("ApiGetInfoElement\n");
 	while (NULL != (pIe = ApiGetNextInfoElement(IeBlockPtr, IeBlockLength, pIe))) {
-		ast_verbose("Ie: %x\n", pIe->Ie);
 		if (pIe->Ie == targetIe) {
 			/* Return the pointer to the info element found */
 			return pIe; 
@@ -743,19 +742,6 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	ast_verbose("API_FP_CC_CONNECT_REQ\n");
 	dectDrvWrite(req, sizeof(ApiFpCcConnectReqType) - 1 + NarrowBandCodecIeLen);
 	free(req);
-
-
-
-	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
-	aud_req->Primitive = API_FP_SET_AUDIO_FORMAT_REQ;
-	aud_req->DestinationId = endpt_id;
-	aud_req->AudioDataFormat = AP_DATA_FORMAT_LINEAR_8kHz;
-
-	ast_verbose("API_FP_SET_AUDIO_FORMAT_REQ\n");
-	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
-	free(aud_req);
-
-
 
 	return;
 }
@@ -954,10 +940,20 @@ static void setup_cfm(ApiFpCcSetupCfmType *m) {
 
 static void connect_cfm(ApiFpCcConnectCfmType *m) {  
 
-	int handset;
-  
-	/* handset = ((ApiFpCcConnectCfmType*) buf)->CallReference.HandsetId; */
+	int endpt_id;
+
 	ast_verbose("Connected to handset %d\n", m->CallReference.Instance.Fp );
+	endpt_id = m->CallReference.Instance.Fp - 1;  
+
+	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
+	aud_req->Primitive = API_FP_SET_AUDIO_FORMAT_REQ;
+	aud_req->DestinationId = endpt_id;
+	aud_req->AudioDataFormat = AP_DATA_FORMAT_LINEAR_8kHz;
+
+	ast_verbose("API_FP_SET_AUDIO_FORMAT_REQ\n");
+	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
+	free(aud_req);
+
 }
 
 
@@ -1061,16 +1057,8 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	r->InfoElement[1] = NULL;
 
 					     
-	/* write endpoint id to device */
-	/* *(o_buf + 0) = ((API_FP_CC_CONNECT_RES & 0xff00) >> 8); */
-	/* *(o_buf + 1) = ((API_FP_CC_CONNECT_RES & 0x00ff) >> 0); */
-	/* *(o_buf + 2) = handset; */
-	/* *(o_buf + 3) = 0; */
-	/* *(o_buf + 4) = handset - 1; /\* endpoint id *\/ */
-
 	ast_verbose("API_FP_CC_CONNECT_RES\n");
 	dectDrvWrite(r, sizeof(ApiFpCcConnectResType));
-
 
 
 	ApiFpSetAudioFormatReqType  *aud_req = (ApiFpSetAudioFormatReqType *)malloc(sizeof(ApiFpSetAudioFormatReqType));
@@ -1081,7 +1069,6 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	ast_verbose("API_FP_SET_AUDIO_FORMAT_REQ\n");
 	dectDrvWrite(aud_req, sizeof(ApiFpSetAudioFormatReqType));
 	free(aud_req);
-
 
 
 	p = brcm_get_pvt_from_lineid(iflist, handset - 1);
