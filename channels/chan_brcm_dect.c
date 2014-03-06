@@ -116,7 +116,7 @@ int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 	ast_verbose("Caller id: %s\n", chan->connected.id.number.str);
 	
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return -1;
 	}
 	
@@ -140,8 +140,6 @@ int dect_stop_ringing_callerid_pending(struct brcm_pvt *p) {
 int dect_signal_ringing(struct brcm_pvt *p)
 {
 	ast_verbose("dect_signal_ringing\n");
-
-	const char nr[] = "123";
 	ast_verbose("line_id: %d\n", p->line_id); 
 
 	dect_ring_handset(p->line_id + 1);
@@ -244,7 +242,7 @@ void dectSetupPingingCall(int handset)
 
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -349,7 +347,7 @@ void dectSendClip(char* cid, int handset)
 	ast_verbose("dectSendClip:cid %s handset: %d\n", cid, handset);
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -450,7 +448,7 @@ void dect_ring_handset(int handset) {
         ApiFpCcSetupReqType* m;
 
 	if ((handset < 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -632,7 +630,7 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 	handset = m->TerminalId;
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -691,9 +689,11 @@ static void dect_release_ind(ApiFpCcReleaseIndType *m) {
 	ApiFpCcReleaseResType* r = (ApiFpCcReleaseResType*) malloc(sizeof(ApiFpCcReleaseResType));
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
+
+	ast_verbose("handset: %d\n", handset);
 
 	r->Primitive = API_FP_CC_RELEASE_RES;
 	r->CallReference = m->CallReference;
@@ -717,7 +717,7 @@ static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 	int handset = m->CallReference.Instance.Fp;
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -734,7 +734,7 @@ void dect_hangup(int handset) {
 	ApiFpCcReleaseReqType *m = malloc(sizeof(ApiFpCcReleaseReqType));
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 	
@@ -764,7 +764,7 @@ process_keypad_info(unsigned char handset,
    
 		
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -868,7 +868,7 @@ static void dect_info_ind(ApiFpCcInfoIndType *m) {
 
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -899,7 +899,7 @@ static void connect_cfm(ApiFpCcConnectCfmType *m) {
 
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -924,7 +924,7 @@ static void alert_ind(ApiFpCcAlertIndType *m) {
 	int handset = m->CallReference.Instance.Fp;
 	
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -1001,7 +1001,7 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
@@ -1088,7 +1088,7 @@ static void handset_present_ind(ApiFpMmHandsetPresentIndType *m)
 	int handset = m->TerminalId;
 
 	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %s\n", handset);
+		ast_verbose("Bad handset nr: %d\n", handset);
 		return;
 	}
 
