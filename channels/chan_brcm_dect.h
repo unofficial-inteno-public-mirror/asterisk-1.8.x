@@ -12,7 +12,8 @@
 #define SINGLE_CODECLIST_LENGTH         (sizeof(ApiCodecListType))
 #define NBWB_CODECLIST_LENGTH           (SINGLE_CODECLIST_LENGTH + sizeof(ApiCodecInfoType))
 
-
+#define CID_MAX_LEN 40
+#define MAX_NR_HANDSETS 10
 
 #define MAX_MAIL_SIZE 4098
 
