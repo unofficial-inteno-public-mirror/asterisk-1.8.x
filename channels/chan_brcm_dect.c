@@ -705,6 +705,7 @@ static void dect_release_ind(ApiFpCcReleaseIndType *m) {
 	r->InfoElementLength = 0;
 	r->InfoElement[1] = NULL;
 
+	handsets[handset].CallReference.Instance.Fp = 0;
 
 	/* Signal onhook to endpoint */
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
@@ -742,8 +743,9 @@ void dect_hangup(int handset) {
 	if (bad_handsetnr(handset))
 		return;
 	
-	
-	
+	if (handsets[handset].CallReference.Instance.Fp == 0)
+		return;
+
 	m->Primitive = API_FP_CC_RELEASE_REQ;
 	m->CallReference = handsets[handset].CallReference;
 	m->Reason = API_RR_UNEXPECTED_MESSAGE;
