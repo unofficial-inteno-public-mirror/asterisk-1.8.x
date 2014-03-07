@@ -104,6 +104,15 @@ const struct brcm_channel_tech dect_tech = {
 };
 
 
+static int bad_handsetnr(int handset) {
+
+	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
+		ast_verbose("Bad handset nr: %d\n", handset);
+		return 1;
+	}
+	return 0;
+}
+
 
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 	dect_signal_ringing(p);
@@ -115,10 +124,9 @@ int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 	int handset = s->parent->line_id + 1;
 	ast_verbose("Caller id: %s\n", chan->connected.id.number.str);
 	
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
-		return -1;
-	}
+	if (bad_handsetnr(handset))
+		return;
+
 	
 	strncpy(handsets[handset].cid, chan->connected.id.number.str, CID_MAX_LEN);
 
@@ -240,11 +248,9 @@ void dectSetupPingingCall(int handset)
 	unsigned short pingIeBlockLength       = 0;
 	char callingName[]                     = "HANDSET LOCATOR";
 
-
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	
+	if (bad_handsetnr(handset))
 		return;
-	}
 
 	/************************************************
 	 * create API_IE_CALLING_PARTY_NAME infoElement *
@@ -346,10 +352,9 @@ void dectSendClip(char* cid, int handset)
 
 	ast_verbose("dectSendClip:cid %s handset: %d\n", cid, handset);
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	
 	/* Initialize block variables */
@@ -447,10 +452,9 @@ void dect_ring_handset(int handset) {
 
         ApiFpCcSetupReqType* m;
 
-	if ((handset < 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("dect_ring_handset: %d\n", handset);
 
@@ -629,10 +633,9 @@ static void dect_setup_ind(ApiFpCcSetupIndType * m) {
 
 	handset = m->TerminalId;
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("handset: %d\n", (int) handset);
 
@@ -688,10 +691,9 @@ static void dect_release_ind(ApiFpCcReleaseIndType *m) {
 	int handset = m->CallReference.Instance.Fp;
 	ApiFpCcReleaseResType* r = (ApiFpCcReleaseResType*) malloc(sizeof(ApiFpCcReleaseResType));
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("handset: %d\n", handset);
 
@@ -716,10 +718,9 @@ static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 
 	int handset = m->CallReference.Instance.Fp;
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	/* Signal onhook to endpoint */
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
@@ -733,10 +734,9 @@ void dect_hangup(int handset) {
 
 	ApiFpCcReleaseReqType *m = malloc(sizeof(ApiFpCcReleaseReqType));
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 	
 	m->Primitive = API_FP_CC_RELEASE_REQ;
 	m->CallReference = handsets[handset].CallReference;
@@ -762,13 +762,10 @@ process_keypad_info(unsigned char handset,
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
    
-		
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
 
-	
+
 	if ((IeBlockPtr == NULL) || (IeBlockLength == 0))
 		return;
 
@@ -866,11 +863,9 @@ static void dect_info_ind(ApiFpCcInfoIndType *m) {
 
 	ast_verbose("INPUT: API_FP_CC_INFO_IND\n");
 
-
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 
 	if( (ie_blk_len > 0) ) {
@@ -897,11 +892,9 @@ static void connect_cfm(ApiFpCcConnectCfmType *m) {
 
 	handset = m->CallReference.Instance.Fp;
 
-
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("Connected to handset %d\n", handset);
 
@@ -922,11 +915,10 @@ static void connect_cfm(ApiFpCcConnectCfmType *m) {
 static void alert_ind(ApiFpCcAlertIndType *m) {
 
 	int handset = m->CallReference.Instance.Fp;
-	
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("handset %d ringing\n", handset );
 	
@@ -999,11 +991,8 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	ApiFpCcConnectResType *r;
 	struct ast_channel *owner;
 
-
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
 
 
 	/* Signal offhook to endpoint */
@@ -1087,10 +1076,9 @@ static void handset_present_ind(ApiFpMmHandsetPresentIndType *m)
 	ApiFpMmHandsetPresentIndType *t = NULL;
 	int handset = m->TerminalId;
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
-		ast_verbose("Bad handset nr: %d\n", handset);
+	if (bad_handsetnr(handset))
 		return;
-	}
+
 
 	ast_verbose("INPUT: API_FP_MM_HANDSET_PRESENT_IND from handset (%d)\n", handset);
 	
