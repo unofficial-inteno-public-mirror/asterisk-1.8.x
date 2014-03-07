@@ -464,6 +464,8 @@ void dect_ring_handset(int handset) {
         OutCallReference.Instance.Host = 0;
 	OutCallReference.Instance.Fp = handset;
 
+
+
         OutAudio.IntExtAudio = API_IEA_EXT;
 	OutAudio.AudioEndPointId = handset - 1;
 
@@ -718,9 +720,10 @@ static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 
 	int handset = m->CallReference.Instance.Fp;
 
+	ast_verbose("dect_release_cfm: %d\n", handset);
+
 	if (bad_handsetnr(handset))
 		return;
-
 
 	/* Signal onhook to endpoint */
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
@@ -734,9 +737,12 @@ void dect_hangup(int handset) {
 
 	ApiFpCcReleaseReqType *m = malloc(sizeof(ApiFpCcReleaseReqType));
 
+	ast_verbose("dect_hangup: %d\n", handset);
+
 	if (bad_handsetnr(handset))
 		return;
-
+	
+	
 	
 	m->Primitive = API_FP_CC_RELEASE_REQ;
 	m->CallReference = handsets[handset].CallReference;
@@ -880,8 +886,15 @@ static void dect_info_ind(ApiFpCcInfoIndType *m) {
 
 
 static void setup_cfm(ApiFpCcSetupCfmType *m) {
+	
+	int handset = m->CallReference.Instance.Fp;
+	
+	ast_verbose("setup_cfm: %d\n", handset);
 
+	if (bad_handsetnr(handset))
+		return;
 
+	handsets[handset].CallReference = m->CallReference;
 }
 
 
