@@ -2054,9 +2054,15 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 
 	for (i=0; i<num_fxs_endpoints ; i++) {
 		tmp_next = brcm_allocate_pvt("", FXS);
-		tmp->next = tmp_next;
-		tmp_next->next = NULL;
-		tmp = tmp_next;
+		if (tmp == NULL) {
+			iflist = tmp_next; //First loop round, set iflist to point at first pvt
+			tmp    = tmp_next;
+			tmp->next = NULL;
+		} else {
+			tmp->next = tmp_next;
+			tmp_next->next = NULL;
+			tmp = tmp_next;
+		}
 	}
 }
 
