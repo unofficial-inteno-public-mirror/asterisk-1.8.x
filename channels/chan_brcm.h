@@ -109,10 +109,8 @@ struct brcm_pvt {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
-	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
-	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
@@ -122,6 +120,9 @@ struct brcm_pvt {
 	int *dialtone_extension_cb_data;
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
+
+	int interdigit_timer_id;	/* Id of timer that tracks interdigit timeout */
+	int autodial_timer_id;		/* Id of timer that tracks autodial timeout */
 };
 
 enum rtp_type {
@@ -168,11 +169,6 @@ static const DIALTONE_MAP dialtone_map[] =
 	{DIALTONE_LAST,		"-"},
 };
 
-typedef struct {
-	int		id;
-	char	extension[AST_MAX_EXTENSION];
-} autodial;
-
 /* Struct for individual endpoint settings */
 typedef struct {
 	int silence;
@@ -181,8 +177,8 @@ typedef struct {
 	char cid_name[AST_MAX_EXTENSION];
 	char context_direct[AST_MAX_EXTENSION]; //Context that will be checked for exact matches
 	char context[AST_MAX_EXTENSION]; //Default context for dialtone mode
-	autodial autodial_ext[4];
-	int autodial_nr;
+	char autodial_ext[AST_MAX_EXTENSION];
+	int autodial_timeoutmsec;
 	int echocancel;
 	int txgain;
 	int rxgain;

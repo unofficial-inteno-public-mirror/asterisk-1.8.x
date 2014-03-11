@@ -99,7 +99,7 @@ static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
-struct sched_context *sched; // Scheduling context
+struct ast_sched_thread *sched; //Scheduling thread
 static int pcmShimFile = -1;
 
 /* Call waiting */
@@ -118,12 +118,10 @@ static struct ast_jb_conf global_jbconf;
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
 static unsigned int dect;
-static unsigned int events;
 static unsigned int packets;
 
 static pthread_t monitor_thread = AST_PTHREADT_NULL;
 static pthread_t dect_thread = AST_PTHREADT_NULL;
-static pthread_t event_thread = AST_PTHREADT_NULL;
 static pthread_t packet_thread = AST_PTHREADT_NULL;
 
 static struct ast_channel_tech *cur_tech;
@@ -300,7 +298,7 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 	} else if (peer_sub->channel_state == ONHOLD) {
 		if (result == AST_TRANSFER_SUCCESS) {
 			ast_log(LOG_NOTICE, "Remote transfer completed successfully, wait for remote hangup\n");
-			p->r4_hangup_timer_id = ast_sched_add(sched, r4hanguptimeout, r4hanguptimeout_cb, p);
+			p->r4_hangup_timer_id = ast_sched_thread_add(sched, r4hanguptimeout, r4hanguptimeout_cb, p);
 		} else {
 			//Do nothing. Let calls be up as they were before R4 was attempted (first call on hold, second call active)
 			ast_log(LOG_NOTICE, "Remote transfer failed\n");
@@ -406,7 +404,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 		brcm_subchannel_set_state(sub, CALLWAITING);
 		brcm_signal_callwaiting(p);
 		int cwtimeout_ms = cwtimeout * 1000;
-		sub->cw_timer_id = ast_sched_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
+		sub->cw_timer_id = ast_sched_thread_add(sched, cwtimeout_ms, cwtimeout_cb, sub);
 	  	ast_setstate(chan, AST_STATE_RINGING);
 		ast_queue_control(chan, AST_CONTROL_RINGING);
 	}
@@ -450,7 +448,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	if (sub->channel_state == CALLWAITING) {
 		ast_log(LOG_DEBUG, "stop Call waiting\n");
 		brcm_stop_callwaiting(p);
-		if (ast_sched_del(sched, sub->cw_timer_id)) {
+		if (ast_sched_thread_del(sched, sub->cw_timer_id)) {
 			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer");
 		}
 		sub->cw_timer_id = -1;
@@ -464,7 +462,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	}
 
 	if(sub->r4_hangup_timer_id != -1) {
-		if (ast_sched_del(sched, sub->r4_hangup_timer_id)) {
+		if (ast_sched_thread_del(sched, sub->r4_hangup_timer_id)) {
 			ast_log(LOG_WARNING, "Failed to remove scheduled r4 hangup timer");
 		}
 		sub->r4_hangup_timer_id = -1;
@@ -1039,12 +1037,13 @@ static int r4hanguptimeout_cb(const void *data)
 	return 0;
 }
 
-void dialtone_init_cb(const void *data)
+static int dialtone_init_cb(const void *data)
 {
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	ast_mutex_lock(&p->lock);
 	brcm_dialtone_init(p);
 	ast_mutex_unlock(&p->lock);
+	return 0;
 }
 
 /*
@@ -1058,10 +1057,7 @@ static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, 
 	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 
 	/* Reset the dtmf buffer */
-	memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-	p->dtmf_len          = 0;
-	p->dtmf_first        = -1;
-	p->dtmfbuf[p->dtmf_len] = '\0';
+	brcm_reset_dtmf_buffer(p);
 
 	/* Reset hook flash state */
 	p->hf_detected = 0;
@@ -1075,101 +1071,92 @@ static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, 
 	/* Changed state from AST_STATE_UP to AST_STATE_RING ito get the brcm_answer callback
 	 * which is needed for call waiting. */
 	brcm_new(sub, AST_STATE_RING, context, NULL, 0);
-
 }
 
-static void *brcm_event_handler(void *data)
+/*
+ * Start calling if we have a (partial) match in asterisks dialplan after an interdigit timeout.
+ * Called on scheduler thread.
+ */
+static int handle_interdigit_timeout(const void *data)
 {
-	struct brcm_pvt *p = iflist;
-	struct timeval tim;
-	unsigned int ts;
+	ast_debug(9, "Interdigit timeout\n");
+	struct brcm_pvt *p = (struct brcm_pvt *) data;
+	ast_mutex_lock(&p->lock);
+	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 
-	while(events) {
-		p = iflist;
-
-		/* loop over all pvt's */
-		while(p) {
-
-			/* Get locks in correct order */
-			ast_mutex_lock(&p->lock);
-			struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
-
-			if (sub) {
-
-				/* If autodial is populated copy it to the dtmfbuffer and dial out directly */
-				if (sub->channel_state == OFFHOOK &&  ast_exists_extension(NULL, p->context, p->autodial, 1, p->cid_num)) {
-					//We have a full match in the "direct" context, so have asterisk place a call immediately
-					brcm_stop_dialtone(p);
-					ast_copy_string(p->dtmfbuf, p->autodial, sizeof(p->dtmfbuf));
-					ast_verbose("Autodial extension matching %s found\n", p->dtmfbuf);
-					brcm_start_calling(p, sub, p->context);
-				}
-				/*
-				 * Determine if we should tell asterisk to start dialing.
-				 * Used conditions:
-				 * - delta > timeoutmsec		- Interdigit timeout reached
-				 * - ast_exists_extension		- If an extension within the given context(or callerid) with the given priority is found a non zero value will be returned
-				 * - ast_matchmore_extension	- If "exten" *could match* a valid extension in this context with some more digits, return non-zero
-				 * 									Does NOT return non-zero if this is an exact-match only
-				 * 									Basically, when this returns 0, no matter what you add to exten, it's not going to be a valid extension anymore
-				 */
-				else if (sub->channel_state == DIALING) {
-					gettimeofday(&tim, NULL);
-					ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-					int delta = ts - p->last_dtmf_ts;
-					int timeoutmsec = line_config[p->line_id].timeoutmsec;
-					int dtmfbuf_len = strlen(p->dtmfbuf);
-					char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
-
-					if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
-					{
-						//We have a full match in the "direct" context, so have asterisk place a call immediately
-						ast_verbose("Direct extension matching %s found\n", p->dtmfbuf);
-						brcm_start_calling(p, sub, p->context_direct);
-					}
-					else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
-						//We have a match in the "default" context, and user ended the dialling sequence with a #,
-						// so have asterisk place a call immediately
-						ast_verbose("Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
-						brcm_start_calling(p, sub, p->context);
-					}
-					else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
-					{
-						//We have a full match in the "default" context, so have asterisk place a call immediately,
-						//since no more digits can be added to the number
-						//(this is unlikely to happen since there is probably a "catch-all" extension)
-						ast_verbose("Unique extension matching %s found\n", p->dtmfbuf);
-						brcm_start_calling(p, sub, p->context);
-					}
-					else if ((delta > timeoutmsec) && ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
-					{
-						//We have at least one matching extension in "default" context,
-						//and interdigit timeout has passed, so have asterisk start calling.
-						//Asterisk will select the best matching extension if there are more than one possibility.
-						ast_verbose("Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
-						brcm_start_calling(p, sub, p->context);
-					}
-				}
-			}
-
-			/* Get next channel pvt if there is one */
-			ast_mutex_unlock(&p->lock);
-
-			p = brcm_get_next_pvt(p);
-		}
-
-		/* Give timer scheduler some cycles */
-		ast_sched_runq(sched);
-
-		usleep(100);
-//		sched_yield();
+	if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+	{
+		//We have at least one matching extension in "normal" context,
+		//and interdigit timeout has passed, so have asterisk start calling.
+		//Asterisk will select the best matching extension if there are more than one possibility.
+		ast_debug(9, "Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
+		brcm_start_calling(p, sub, p->context);
 	}
-
-	ast_verbose("Events thread ended\n");
-	/* Never reached */
-	return NULL;
+	ast_mutex_unlock(&p->lock);
+	return 0;
 }
 
+/*
+ * Start autodialing if we have an autodial extension.
+ * Called on scheduler thread.
+ */
+static int handle_autodial_timeout(const void *data)
+{
+	ast_debug(9, "Autodial timeout\n");
+	struct brcm_pvt *p = (struct brcm_pvt *) data;
+	ast_mutex_lock(&p->lock);
+	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
+	line_settings *s = &line_config[p->line_id];
+
+	if (ast_exists_extension(NULL, p->context, s->autodial_ext, 1, p->cid_num))
+	{
+		brcm_stop_dialtone(p);
+		ast_copy_string(p->dtmfbuf, s->autodial_ext, sizeof(p->dtmfbuf));
+		ast_debug(9, "Autodialing extension: %s\n", p->dtmfbuf);
+		brcm_start_calling(p, sub, p->context);
+	}
+	ast_mutex_unlock(&p->lock);
+	return 0;
+}
+
+/*
+ * Start calling if we have a match in asterisks dialplan.
+ * Called after each new DTMF event, from monitor_events thread,
+ * with the required locks already held.
+ */
+static void handle_dtmf_calling(const struct brcm_subchannel *sub)
+{
+	struct brcm_pvt *p = sub->parent;
+	int dtmfbuf_len = strlen(p->dtmfbuf);
+	char dtmf_last_char = p->dtmfbuf[(dtmfbuf_len - 1)];
+
+	if (ast_exists_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context_direct, p->dtmfbuf, 1, p->cid_num))
+	{
+		//We have a full match in the "direct" context, so have asterisk place a call immediately
+		ast_debug(9, "Direct extension matching %s found\n", p->dtmfbuf);
+		brcm_start_calling(p, sub, p->context_direct);
+	}
+	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
+		//We have a match in the "normal" context, and user ended the dialling sequence with a #,
+		//so have asterisk place a call immediately
+		ast_debug(9, "Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
+		brcm_start_calling(p, sub, p->context);
+	}
+	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && !ast_matchmore_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
+	{
+		//We have a full match in the "normal" context, so have asterisk place a call immediately,
+		//since no more digits can be added to the number
+		//(this is unlikely to happen since there is probably a "catch-all" extension)
+		ast_debug(9, "Unique extension matching %s found\n", p->dtmfbuf);
+		brcm_start_calling(p, sub, p->context);
+	}
+	else {
+		//No matches. We schedule a (new) interdigit timeout to occur
+		int timeoutmsec = line_config[p->line_id].timeoutmsec;
+		ast_debug(9, "Scheduling new interdigit timeout in %d msec\n", timeoutmsec);
+		p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_interdigit_timeout, p);
+	}
+}
 
 /* 
  * Perform actions for hook flash.
@@ -1268,7 +1255,7 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
 			if (sub->channel_state == INCALL && sub_peer->channel_state == CALLWAITING) {
 				ast_log(LOG_DEBUG, "Sending busy to waiting call\n");
 
-				if (ast_sched_del(sched, sub_peer->cw_timer_id)) {
+				if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
 					ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 				}
 				sub_peer->cw_timer_id = -1;
@@ -1302,7 +1289,7 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
 					/* Stop call waiting tone on current call */
 					brcm_stop_callwaiting(p);
 
-					if (ast_sched_del(sched, sub_peer->cw_timer_id)) {
+					if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
 					sub_peer->cw_timer_id = -1;
@@ -1350,7 +1337,7 @@ static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel
 					brcm_stop_callwaiting(p);
 
 					/* Cancel timer */
-					if (ast_sched_del(sched, sub_peer->cw_timer_id)) {
+					if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
 						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 					}
 					sub_peer->cw_timer_id = -1;
@@ -1468,7 +1455,6 @@ void handle_dtmf(EPEVT event,
 
 	if (p->dtmf_first < 0) {
 		p->dtmf_first = dtmf_button;
-		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 		ast_debug(9,"Pressed DTMF %s\n", dtmfMap->name);
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
@@ -1506,7 +1492,6 @@ void handle_dtmf(EPEVT event,
 			p->dtmf_len++;
 			p->dtmfbuf[p->dtmf_len] = '\0';
 			p->dtmf_first = -1;
-			p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 			if (sub->channel_state == OFFHOOK) {
 				brcm_subchannel_set_state(sub, DIALING);
 			}
@@ -1698,8 +1683,6 @@ static void *brcm_monitor_events(void *data)
 			switch (tEventParm.event) {
 				case EPEVT_OFFHOOK: {
 					ast_debug(9, "EPEVT_OFFHOOK detected\n");
-					gettimeofday(&tim, NULL);
-					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
 					/* Reset the dtmf buffer */
 					memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
@@ -1722,14 +1705,13 @@ static void *brcm_monitor_events(void *data)
 					else if (sub->channel_state == OFFHOOK) {
 						/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
 						brcm_signal_dialtone(p);
+						line_settings *s = &line_config[p->line_id];
+						p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
 					}
-
 					break;
 				}
 				case EPEVT_ONHOOK: {
 					ast_debug(9, "EPEVT_ONHOOK detected\n");
-					gettimeofday(&tim, NULL);
-					p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 
 					int perform_remote_transfer = 0;
 
@@ -1746,6 +1728,16 @@ static void *brcm_monitor_events(void *data)
 					brcm_subchannel_set_state(sub, ONHOOK);
 					ast_verbose("Sending manager event\n");
 					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
+
+					//If we have interdigit timeout, cancel it
+					if (p->interdigit_timer_id > 0) {
+						p->interdigit_timer_id = ast_sched_thread_del(sched, p->interdigit_timer_id);
+					}
+
+					//If we have a autodial timeout, cancel it
+					if (p->autodial_timer_id > 0) {
+						p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
+					}
 
 					/* Reset the dtmf buffer */
 					memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
@@ -1775,7 +1767,7 @@ static void *brcm_monitor_events(void *data)
 
 					/* Hangup peer subchannels in call, on hold or in call waiting */
 					if (sub_peer->channel_state == CALLWAITING) {
-						if (ast_sched_del(sched, sub_peer->cw_timer_id)) {
+						if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
 							ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
 						}
 						sub_peer->cw_timer_id = -1;
@@ -1808,6 +1800,16 @@ static void *brcm_monitor_events(void *data)
 				case EPEVT_DTMFS:
 				case EPEVT_DTMFH:
 				{
+					//If we have interdigit timeout, cancel it
+					if (p->interdigit_timer_id > 0) {
+						p->interdigit_timer_id = ast_sched_thread_del(sched, p->interdigit_timer_id);
+					}
+
+					//If we have a autodial timeout, cancel it
+					if (p->autodial_timer_id > 0) {
+						p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
+					}
+
 					unsigned int old_state = sub->channel_state;
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
 					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
@@ -1815,6 +1817,12 @@ static void *brcm_monitor_events(void *data)
 						ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
 						brcm_stop_dialtone(p);
 					}
+
+					if (sub->channel_state == DIALING) {
+						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
+						handle_dtmf_calling(sub);
+					}
+
 					break;
 				}
 				case EPEVT_DTMFL:
@@ -1928,16 +1936,6 @@ static int start_threads(void)
 		return -1;
 	}
 
-
-	/* Start a new event handler thread */
-	/* This thread processes events recieved by brcm_monitor_events */
-	events = 1;
-	if (ast_pthread_create_background(&event_thread, NULL, brcm_event_handler, NULL) < 0) {
-		ast_mutex_unlock(&monlock);
-		ast_log(LOG_ERROR, "Unable to start event thread.\n");
-		return -1;
-	}
-
 	/* Start a new sound polling thread */
 	/* This thread blocks on ioctl and wakes up when an rpt packet is avaliable from the endpoint  */
 	/* It then enques the packet on the channel which owns the pvt   */
@@ -1966,17 +1964,6 @@ static void brcm_initialize_pvt(struct brcm_pvt *p)
 	ast_copy_string(p->dialtone_extension_hint_context, s->dialtone_extension_hint_context, sizeof(p->dialtone_extension_hint_context));
 	ast_copy_string(p->dialtone_extension_hint, s->dialtone_extension_hint, sizeof(p->dialtone_extension_hint));
 }
-
-static void brcm_fill_autodial(struct brcm_pvt *p) {
-	int i;
-	line_settings *s = &line_config[p->line_id];
-
-	for (i=0 ; i<s->autodial_nr ; i++) {
-		if (p->line_id == s->autodial_ext[i].id)
-			ast_copy_string(p->autodial, s->autodial_ext[i].extension, sizeof(p->autodial));
-	}
-}
-
 
 static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 {
@@ -2015,12 +2002,13 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->lastinput = -1;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		tmp->next = NULL;
-		tmp->last_dtmf_ts = 0;
 		tmp->last_early_onhook_ts = 0;
 		tmp->endpoint_type = endpoint_type;
 		tmp->dialtone = DIALTONE_UNKNOWN;
 		tmp->dialtone_extension_cb_id = -1;
 		tmp->dialtone_extension_cb_data = NULL;
+		tmp->interdigit_timer_id = -1;
+		tmp->autodial_timer_id = -1;
 		ast_mutex_init(&tmp->lock);
 		
 		/* Low level signaling */
@@ -2075,7 +2063,6 @@ static void brcm_assign_line_id(struct brcm_pvt *p)
 	/* Assign line_id's */
 	for (i=0 ; i<num_endpoints ; i++) {
 		tmp->line_id = endptObjState[i].lineId;
-		brcm_fill_autodial(tmp);
 		brcm_initialize_pvt(tmp);
 		brcm_dialtone_init(tmp);
 		int j;
@@ -2338,10 +2325,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
 		ast_cli(a->fd, "Direct context      : %s\n", p->context_direct);
-		ast_cli(a->fd, "Last DTMF timestamp : %d\n", p->last_dtmf_ts);
 		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
-		ast_cli(a->fd, "Autodial extension  : %s\n", p->autodial);
-
 		line_settings* s = &line_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
@@ -2349,6 +2333,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF short          : %s\n", s->dtmf_short ? "on" : "off");
 		ast_cli(a->fd, "DTMF compatibility  : %s\n", s->dtmf_compatibility ? "on" : "off");
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
+		ast_cli(a->fd, "Autodial extension  : %s\n", s->autodial_ext);
+		ast_cli(a->fd, "Autodial msecs      : %d\n", s->autodial_timeoutmsec);
 
 		ast_cli(a->fd, "DTMF relay          : ");
 		switch (s->dtmf_relay) {
@@ -2457,7 +2443,6 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
-	ast_cli(a->fd, "Event thread  : 0x%x[%d]\n", (unsigned int) event_thread, events);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 
 	/* print status for individual pvts */
@@ -2537,7 +2522,6 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	load_endpoint_settings(cfg);
 	struct brcm_pvt *p = iflist;
 	while(p) {
-		brcm_fill_autodial(p);
 		brcm_initialize_pvt(p);
 		brcm_dialtone_init(p);
 		p = brcm_get_next_pvt(p);
@@ -2766,11 +2750,13 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 	
 	p = iflist;
 	while(p) {
-		if (p->line_id == (a->argv[3][0]-'0'))
-			ast_copy_string(p->autodial, a->argv[4], sizeof(p->autodial));
+		if (p->line_id == (a->argv[3][0]-'0')) {
+			line_settings *s = &line_config[p->line_id];
+			ast_copy_string(s->autodial_ext, a->argv[4], sizeof(s->autodial_ext));
+			break;
+		}
 		p = brcm_get_next_pvt(p);
 	}
-	
 	
 	return CLI_SUCCESS;
 }
@@ -2794,7 +2780,7 @@ static int unload_module(void)
 {
 	struct brcm_pvt *p, *pl;
 
-	ast_sched_dump(sched);
+	//ast_sched_dump(sched);
 
 	/* Unregister manager commands */
 	ast_manager_unregister("BRCMDialtoneSet");
@@ -2841,14 +2827,6 @@ static int unload_module(void)
 		}
 		monitor_thread = AST_PTHREADT_STOP;
 		
-		if (events) {
-			events = 0;
-			while (pthread_kill(event_thread, SIGURG) == 0)
-				sched_yield();
-			pthread_join(event_thread, NULL);
-		}
-		event_thread = AST_PTHREADT_STOP;
-		
 		if (packets) {
 			packets = 0;
 			while (pthread_kill(packet_thread, SIGURG) == 0)
@@ -2862,7 +2840,7 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
-	ast_verbose("[%d, %d, %d]\n",monitor, events, packets);
+	ast_verbose("[%d, %d,]\n",monitor, packets);
 
 	if (!ast_mutex_lock(&iflock)) {
 		/* Destroy all the interfaces and free their memory */
@@ -2888,7 +2866,7 @@ static int unload_module(void)
 	endpt_deinit();
 	ast_verbose("Endpoint deinited...\n");
 
-	sched_context_destroy(sched);
+	ast_sched_thread_destroy(sched);
 
 	return 0;
 }
@@ -3019,8 +2997,7 @@ static line_settings line_settings_create(void)
 		.context_direct = "default-direct",
 		.context = "default",
 		.silence = 0,
-		.autodial_ext = {{0}},
-		.autodial_nr = 0,
+		.autodial_ext = "",
 		.echocancel = 1,
 		.txgain = GAIN_DEFAULT,
 		.rxgain = GAIN_DEFAULT,
@@ -3033,6 +3010,7 @@ static line_settings line_settings_create(void)
 		.capability = default_capability,
 		.ringsignal = 1,
 		.timeoutmsec = 4000,
+		.autodial_timeoutmsec = 60000,
 		.period = CODEC_PTIME_20,
 		.comfort_noise = 0,
 		.jitterFixed = 0,
@@ -3067,12 +3045,7 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 		} else if (!strcasecmp(v->name, "context_direct")) {
 			ast_copy_string(line_config->context_direct, v->value, sizeof(line_config->context_direct));
 		} else if (!strcasecmp(v->name, "autodial")) {
-			if (line_config->autodial_nr < 4) {
-				line_config->autodial_ext[line_config->autodial_nr].id = v->value[0] - '0';
-				autodial* ad = &(line_config->autodial_ext[line_config->autodial_nr]);
-				ast_copy_string(ad->extension, &v->value[2], sizeof(autodial));
-				line_config->autodial_nr++;
-			}
+			ast_copy_string(line_config->autodial_ext, v->value, sizeof(line_config->autodial_ext));
 		} else if (!strcasecmp(v->name, "echocancel")) {
 			line_config->echocancel = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "txgain")) {
@@ -3130,6 +3103,8 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 			line_config->ringsignal = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "dialoutmsec")) {
 			line_config->timeoutmsec = atoi(v->value);
+		} else if (!strcasecmp(v->name, "autodial_timeoutmsec")) {
+			line_config->autodial_timeoutmsec = atoi(v->value);
 		} else if (!strcasecmp(v->name, "period")) {
 			switch(atoi(v->value)) {
 				case 5:
@@ -3289,9 +3264,9 @@ static int load_module(void)
 	struct ast_config *cfg;
 	int result;
 
-	/* Setup scheduler */
-	if (!(sched = sched_context_create())) {
-		ast_log(LOG_ERROR, "Unable to create scheduler context. Aborting.\n");
+	/* Setup scheduler thread */
+	if (!(sched = ast_sched_thread_create())) {
+		ast_log(LOG_ERROR, "Unable to create scheduler thread/context. Aborting.\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
@@ -4122,7 +4097,7 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 
 	if (!ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
 		/* Asterisk is not fully booted, wait for dialplan hints to be read */
-		int id = ast_sched_add(sched, 500, dialtone_init_cb, p);
+		int id = ast_sched_thread_add(sched, 500, dialtone_init_cb, p);
 		/* No need to store id */
 		return;
 	}
