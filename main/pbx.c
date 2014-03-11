@@ -4313,7 +4313,6 @@ enum ast_extension_states ast_devstate_to_extenstate(enum ast_device_state devst
 	case AST_DEVICE_BUSY:
 		return AST_EXTENSION_BUSY;
 	case AST_DEVICE_UNKNOWN:
-		return AST_EXTENSION_NOT_INUSE;
 	case AST_DEVICE_UNAVAILABLE:
 	case AST_DEVICE_INVALID:
 		return AST_EXTENSION_UNAVAILABLE;
