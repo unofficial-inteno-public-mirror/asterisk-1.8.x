@@ -1190,6 +1190,7 @@ struct sip_peer {
 		AST_STRING_FIELD(accountcode);  /*!< Account code */
 		AST_STRING_FIELD(tohost);       /*!< If not dynamic, IP address */
 		AST_STRING_FIELD(regexten);     /*!< Extension to register (if regcontext is used) */
+		AST_STRING_FIELD(registered_extension); /*!< Extension to match incoming INVITE request URI against (if we register with peer) */
 		AST_STRING_FIELD(fromuser);     /*!< From: user when calling this peer */
 		AST_STRING_FIELD(fromdomain);   /*!< From: domain when calling this peer */
 		AST_STRING_FIELD(fullcontact);  /*!< Contact registered with us (not in sip.conf) */
