@@ -45,6 +45,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <sys/ioctl.h>
 #include <signal.h>
 
+#include <sys/syscall.h>
+#include <sys/types.h>
+
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
 #include "asterisk/cli.h"
@@ -273,6 +276,14 @@ static int pvt_unlock_silent(struct brcm_pvt *pvt)
 	return 1;
 }
 
+static long mythreadid()
+{
+
+	pid_t myid;
+	myid = syscall(SYS_gettid);
+
+	return (long) myid;
+}
 
 /* Note: The channel is locked when this is called by the core */
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
@@ -1128,6 +1139,8 @@ static void *brcm_event_handler(void *data)
 	struct timeval tim;
 	unsigned int ts;
 
+	ast_log(LOG_ERROR, "Event handler thread starting ID %ld\n", mythreadid());
+
 	while(events) {
 		p = iflist;
 
@@ -1560,7 +1573,9 @@ static void handle_hookflash(struct brcm_pvt *p)
 	p->dtmfbuf[p->dtmf_len] = '\0';
 }
 
-/*! \brief Handle incoming DTMF from Broadcom and send it to Asterisk core */
+/*! \brief Handle incoming DTMF from Broadcom and send it to Asterisk core 
+	Note: The PVT is locked by the event thread when calling this function
+*/
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p;
@@ -1611,7 +1626,9 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub)
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
 				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
+				pvt_unlock(p, "Sending DTMF");
 				ast_queue_frame(sub->owner, &f);
+				pvt_lock(p, "Back from Sending DTMF - relocking");
 			}
 			p->dtmf_first = -1;
 		}
@@ -1665,7 +1682,7 @@ static void *brcm_monitor_packets(void *data)
 	
 	rtp = (RTPPACKET *)pdata;
 	
-	ast_verbose("Packets thread starting\n");
+	ast_log(LOG_ERROR, "Packet monitor thread starting - ID %ld\n", mythreadid());
 
 	while(packets) {
 		struct ast_frame fr  = {0};
@@ -1832,9 +1849,7 @@ R = reserved (ignore)
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					if (rtp_packet_type == BRCM_DTMF) {
-						ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", p->parent->line_id, p->owner->name);
-					}
+					ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", p->parent->line_id, p->owner->name);
 					ast_queue_frame(p->owner, &fr);
 					if (rtp_packet_type == BRCM_DTMF) {
 						ast_debug(8, "--> Back from queuing frame for line %d.\n", p->parent->line_id);
@@ -1861,6 +1876,8 @@ static void *brcm_monitor_events(void *data)
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	struct timeval tim;
+
+	ast_log(LOG_ERROR, "Packet monitor thread starting - ID %ld\n", mythreadid());
 
 	while (monitor) {
 		tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
