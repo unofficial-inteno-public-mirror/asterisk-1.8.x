@@ -1570,7 +1570,7 @@ void handle_dtmf(EPEVT event,
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
 				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
-				pvt_unlock(p, "Sending DTMF");
+				pvt_unlock(p);
 				ast_queue_frame(sub->owner, &f);
 				pvt_lock(p, "Back from Sending DTMF - relocking");
 			}
