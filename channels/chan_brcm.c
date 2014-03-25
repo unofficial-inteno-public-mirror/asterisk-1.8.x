@@ -291,9 +291,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		res = 0; //We are done with this.
 		break;
 	case AST_CONTROL_UNHOLD:
-		if (condition == AST_CONTROL_UNHOLD) {
-			ast_debug(8, "****** AST_CONTROL_UNHOLD \n");
-		}
+		ast_debug(8, "****** AST_CONTROL_UNHOLD \n");
 		/* Taking the chance of not locking the pvt here. */
 		//pvt_lock(sub->parent,"indicate unhold or srcupdate");
 		//Asterisk (adaptive) jitter buffer causes one way audio
@@ -1540,7 +1538,7 @@ void handle_dtmf(EPEVT event,
 
 	if (p->dtmf_first < 0) {
 		p->dtmf_first = dtmf_button;
-		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+		//	p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 		ast_debug(5,"Pressed DTMF %s\n", dtmfMap->name);
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
@@ -1703,7 +1701,7 @@ static void *brcm_monitor_packets(void *data)
 				continue;
 #endif
 
-				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
+				int dtmf_short = line_config[sub->parent->line_id].dtmf_short;
 
 				if (dtmf_short) {
 					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
@@ -4218,7 +4216,7 @@ int brcm_create_connection(struct brcm_subchannel *sub) {
 			ast_log(LOG_ERROR, "%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_debug(2, "Connection %d created\n",p->connection_id);
+			ast_debug(2, "Connection %d created\n",sub->connection_id);
 			sub->connection_init = 1;
 		}
 	}
