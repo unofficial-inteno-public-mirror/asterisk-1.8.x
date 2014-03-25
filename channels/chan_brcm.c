@@ -297,7 +297,6 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		//This is a workaround until jitter buffer is handled by DSP.
 		ast_jb_destroy(ast);
 		break;
-	}
 	case AST_CONTROL_RINGING:
 		ast_debug(8, "****** AST_CONTROL_RINGING \n");
 		pvt_lock(sub->parent,"indicate ringing");
