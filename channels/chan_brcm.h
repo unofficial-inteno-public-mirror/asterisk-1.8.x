@@ -67,7 +67,7 @@ typedef enum dialtone_state {
 
 struct brcm_subchannel {
 	int id;
-	struct ast_channel *owner;	/* Channel we belong to, possibly NULL */
+	struct ast_channel *owner;		/* Channel we belong to, possibly NULL */
 	int connection_id;		/* Current connection id, may be -1 */
 	unsigned int channel_state;	/* Channel states */
 	unsigned int connection_init;	/* State for endpoint id connection initialization */
@@ -89,7 +89,7 @@ struct brcm_subchannel {
 struct brcm_channel_tech {
 	int (* signal_ringing)(struct brcm_pvt *p);
 	int (* signal_ringing_callerid_pending)(struct brcm_pvt *p);
-	int (* signal_callerid)(struct brcm_subchannel *s);
+	int (* signal_callerid)(const struct ast_channel *chan, struct brcm_subchannel *s);
 	int (* stop_ringing)(struct brcm_pvt *p);
 	int (* stop_ringing_callerid_pending)(struct brcm_pvt *p);
 };
@@ -117,15 +117,20 @@ struct brcm_pvt {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
-	unsigned int last_dtmf_ts;		/* Timer for initiating dialplan extention lookup */
 	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
-	char autodial[AST_MAX_EXTENSION];	/* Extension to automatically dial when the phone is of hook */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
 	dialtone_state dialtone;		/* Set by manager command */
 	struct brcm_channel_tech *tech;
+	int dialtone_extension_cb_id;
+	int *dialtone_extension_cb_data;
+	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
+	char dialtone_extension_hint[AST_MAX_EXTENSION];
+
+	int interdigit_timer_id;	/* Id of timer that tracks interdigit timeout */
+	int autodial_timer_id;		/* Id of timer that tracks autodial timeout */
 };
 
 enum rtp_type {
@@ -172,11 +177,6 @@ static const DIALTONE_MAP dialtone_map[] =
 	{DIALTONE_LAST,		"-"},
 };
 
-typedef struct {
-	int		id;
-	char	extension[AST_MAX_EXTENSION];
-} autodial;
-
 /* Struct for individual endpoint settings */
 typedef struct {
 	int silence;
@@ -185,8 +185,8 @@ typedef struct {
 	char cid_name[AST_MAX_EXTENSION];
 	char context_direct[AST_MAX_EXTENSION]; //Context that will be checked for exact matches
 	char context[AST_MAX_EXTENSION]; //Default context for dialtone mode
-	autodial autodial_ext[4];
-	int autodial_nr;
+	char autodial_ext[AST_MAX_EXTENSION];
+	int autodial_timeoutmsec;
 	int echocancel;
 	int txgain;
 	int rxgain;
@@ -206,6 +206,8 @@ typedef struct {
 	VRG_UINT32 jitterMax;
 	VRG_UINT32 jitterTarget;
 	int hangup_xfer;
+	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
+	char dialtone_extension_hint[AST_MAX_EXTENSION];
 } line_settings;
 
 
@@ -254,7 +256,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *p);
 static int brcm_close_connection(struct brcm_subchannel *p);
 static int brcm_create_conference(struct brcm_pvt *p);
 static int brcm_stop_conference(struct brcm_subchannel *p);
-static int brcm_finish_transfer(struct brcm_subchannel *p, int result);
+static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchannel *p, int result);
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
@@ -281,7 +283,7 @@ int brcm_signal_ringing_callerid_pending(struct brcm_pvt *p);
 int brcm_stop_ringing_callerid_pending(struct brcm_pvt *p);
 int brcm_signal_callwaiting(const struct brcm_pvt *p);
 int brcm_stop_callwaiting(const struct brcm_pvt *p);
-int brcm_signal_callerid(struct brcm_subchannel *sub);
+int brcm_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *sub);
 int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit);
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit);
 static int brcm_in_call(const struct brcm_pvt *p);
@@ -291,8 +293,9 @@ struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
 struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
 static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
 static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const sub);
-static struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
+struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
-void handle_dtmf(EPEVT event, struct brcm_subchannel *sub);
+void handle_dtmf(EPEVT event, struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
+
 
 #endif /* CHAN_BRCM_H */

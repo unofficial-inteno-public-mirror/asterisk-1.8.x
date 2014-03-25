@@ -182,11 +182,21 @@ static void *handle_tcptls_connection(void *data)
 				X509 *peer;
 				long res;
 				peer = SSL_get_peer_certificate(tcptls_session->ssl);
-				if (!peer)
+				if (!peer) {
 					ast_log(LOG_WARNING, "No peer SSL certificate\n");
+					ast_tcptls_close_session_file(tcptls_session);
+					ao2_ref(tcptls_session, -1);
+					return NULL;
+				}
+
 				res = SSL_get_verify_result(tcptls_session->ssl);
-				if (res != X509_V_OK)
+				if (res != X509_V_OK) {
 					ast_log(LOG_ERROR, "Certificate did not verify: %s\n", X509_verify_cert_error_string(res));
+					X509_free(peer);
+					ast_tcptls_close_session_file(tcptls_session);
+					ao2_ref(tcptls_session, -1);
+					return NULL;				
+				}
 				if (!ast_test_flag(&tcptls_session->parent->tls_cfg->flags, AST_SSL_IGNORE_COMMON_NAME)) {
 					ASN1_STRING *str;
 					unsigned char *str2;
@@ -213,16 +223,13 @@ static void *handle_tcptls_connection(void *data)
 					}
 					if (!found) {
 						ast_log(LOG_ERROR, "Certificate common name did not match (%s)\n", tcptls_session->parent->hostname);
-						if (peer) {
-							X509_free(peer);
-						}
+						X509_free(peer);
 						ast_tcptls_close_session_file(tcptls_session);
 						ao2_ref(tcptls_session, -1);
 						return NULL;
 					}
 				}
-				if (peer)
-					X509_free(peer);
+				X509_free(peer);
 			}
 		}
 		if (!tcptls_session->f)	/* no success opening descriptor stacking */
@@ -338,23 +345,30 @@ static int __ssl_setup(struct ast_tls_config *cfg, int client)
 		cfg->enabled = 0;
 		return 0;
 	}
+
+	SSL_CTX_set_verify(cfg->ssl_ctx,
+		ast_test_flag(&cfg->flags, AST_SSL_VERIFY_CLIENT) ? SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT : SSL_VERIFY_NONE,
+		NULL);
+
 	if (!ast_strlen_zero(cfg->certfile)) {
 		char *tmpprivate = ast_strlen_zero(cfg->pvtfile) ? cfg->certfile : cfg->pvtfile;
 		if (SSL_CTX_use_certificate_file(cfg->ssl_ctx, cfg->certfile, SSL_FILETYPE_PEM) == 0) {
 			if (!client) {
 				/* Clients don't need a certificate, but if its setup we can use it */
-				ast_verb(0, "SSL error loading cert file. <%s>", cfg->certfile);
-				sleep(2);
+				ast_verb(0, "SSL error loading cert file. <%s>\n", cfg->certfile);
 				cfg->enabled = 0;
+				SSL_CTX_free(cfg->ssl_ctx);
+				cfg->ssl_ctx = NULL;
 				return 0;
 			}
 		}
 		if ((SSL_CTX_use_PrivateKey_file(cfg->ssl_ctx, tmpprivate, SSL_FILETYPE_PEM) == 0) || (SSL_CTX_check_private_key(cfg->ssl_ctx) == 0 )) {
 			if (!client) {
 				/* Clients don't need a private key, but if its setup we can use it */
-				ast_verb(0, "SSL error loading private key file. <%s>", tmpprivate);
-				sleep(2);
+				ast_verb(0, "SSL error loading private key file. <%s>\n", tmpprivate);
 				cfg->enabled = 0;
+				SSL_CTX_free(cfg->ssl_ctx);
+				cfg->ssl_ctx = NULL;
 				return 0;
 			}
 		}
@@ -362,9 +376,10 @@ static int __ssl_setup(struct ast_tls_config *cfg, int client)
 	if (!ast_strlen_zero(cfg->cipher)) {
 		if (SSL_CTX_set_cipher_list(cfg->ssl_ctx, cfg->cipher) == 0 ) {
 			if (!client) {
-				ast_verb(0, "SSL cipher error <%s>", cfg->cipher);
-				sleep(2);
+				ast_verb(0, "SSL cipher error <%s>\n", cfg->cipher);
 				cfg->enabled = 0;
+				SSL_CTX_free(cfg->ssl_ctx);
+				cfg->ssl_ctx = NULL;
 				return 0;
 			}
 		}

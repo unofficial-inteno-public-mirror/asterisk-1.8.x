@@ -12,7 +12,8 @@
 #define SINGLE_CODECLIST_LENGTH         (sizeof(ApiCodecListType))
 #define NBWB_CODECLIST_LENGTH           (SINGLE_CODECLIST_LENGTH + sizeof(ApiCodecInfoType))
 
-
+#define CID_MAX_LEN 40
+#define MAX_NR_HANDSETS 10
 
 #define MAX_MAIL_SIZE 4098
 
@@ -43,14 +44,11 @@ void dectRingHandSet( int destHandset, int dspChannel);
 void dect_hangup(int handset);
 int dect_signal_ringing(struct brcm_pvt *p);
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
-int dect_signal_callerid(struct brcm_subchannel *s);
+int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
 int dect_stop_ringing(struct brcm_pvt *p);
 int dect_stop_ringing_callerid_pending(struct brcm_pvt *p);
-static void connect_cfm(unsigned char *buf);
-static void alert_ind(unsigned char *buf);
-static void connect_ind(unsigned char *buf);
-static void nvs_update_ind(unsigned char *mail);
-static void nvs_get_data( unsigned char *pNvsData);
 
+static void nvs_update_ind(unsigned char *mail);
+void dect_ring_handset(int handset);
 
 #endif /* CHAN_BRCM_DECT_H */

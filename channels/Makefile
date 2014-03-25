@@ -90,34 +90,19 @@ chan_h323.so: chan_h323.o h323/libchanh323.a
 endif
 endif
 
-# dect flags
-BRCM_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx
-DECTD_DIR=$(ASTTOPDIR)/../bcmkernel-3.4-4.14/bcm963xx/userspace/private/apps/dectd
 
-chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= -I$(DECTD_DIR)                       	\
-           -I$(DECTD_DIR)/inc                   		\
-           -I$(DECTD_DIR)/dectI/inc               		\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix               	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api               	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/CodecList     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpCc          	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpFwu         	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpMm          	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpNoEmission  	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/GenEveNot     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/FpGeneral     	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Las           	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/LasDb         	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Project       	\
-           -I$(DECTD_DIR)/dectI/inc/Phoenix/Api/Types         	\
-	-I$(BRCM_DIR)/bcmdrivers/broadcom/include/bcm963xx/ \
-	-I$(BRCM_DIR)/bcmdrivers/opensource/include/bcm963xx/ \
-	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/endpt/inc/ \
-	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/inc \
-	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/codec \
-	-I$(BRCM_DIR)/xChange/dslx_common/xchg_common/bos/publicInc/ \
-	-I$(BRCM_DIR)/xChange/dslx_common/voice_res_gw/casCtl/inc/ \
-	-I$(BRCM_DIR)/xChange/dslx_common/xchg_drivers/inc \
+chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= \
+	-I$(STAGING_DIR)/usr/include/natalie-dect/ \
+	-I$(STAGING_DIR)/usr/include/natalie-dect/Phoenix  \
+	-DRS_ENDIAN_TYPE=RS_BIG_ENDIAN \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/bcmdrivers/broadcom/include/bcm963xx/ \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/bcmdrivers/opensource/include/bcm963xx/ \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/voice_res_gw/endpt/inc/ \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/voice_res_gw/inc \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/voice_res_gw/codec \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/xchg_common/bos/publicInc/ \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/voice_res_gw/casCtl/inc/ \
+	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/xchg_drivers/inc \
 	-DBOS_OS_LINUXUSER -DBOS_CFG_TIME -DNTR_SUPPORT \
 
 

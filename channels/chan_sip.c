@@ -1110,6 +1110,7 @@ static struct ao2_container *threadt;
 /*! \brief  The peer list: Users, Peers and Friends */
 static struct ao2_container *peers;
 static struct ao2_container *peers_by_ip;
+static struct ao2_container *peers_by_registered_extension;
 
 /*! \brief  The register list: Other SIP proxies we register with and receive calls from */
 static struct ast_register_list {
@@ -1436,7 +1437,7 @@ static void sip_destroy_peer_fn(void *peer);
 static void set_peer_defaults(struct sip_peer *peer);
 static struct sip_peer *temp_peer(const char *name);
 static void register_peer_exten(struct sip_peer *peer, int onoff);
-static struct sip_peer *find_peer(const char *peer, struct ast_sockaddr *addr, int realtime, int forcenamematch, int devstate_only, int transport);
+static struct sip_peer *find_peer(const char *peer, struct ast_sockaddr *addr, int realtime, int forcenamematch, int devstate_only, int transport, const char *extension);
 static int sip_poke_peer_s(const void *data);
 static enum parse_register_result parse_register_contact(struct sip_pvt *pvt, struct sip_peer *p, struct sip_request *req);
 static void reg_source_db(struct sip_peer *peer);
@@ -1463,6 +1464,7 @@ static int __sip_do_register(struct sip_registry *r);
 static int sip_reg_timeout(const void *data);
 static void sip_send_all_registers(void);
 static int sip_reinvite_retry(const void *data);
+static int peer_is_registered(const struct sip_peer *peer);
 
 /*--- Parsing SIP requests and responses */
 static void append_date(struct sip_request *req);	/* Append date to SIP packet */
@@ -2896,6 +2898,8 @@ static void unlink_peers_from_tables(peer_unlink_flag_t flag)
 		match_and_cleanup_peer_sched, &flag, "initiating callback to remove marked peers");
 	ao2_t_callback(peers_by_ip, OBJ_NODATA | OBJ_UNLINK | OBJ_MULTIPLE,
 		match_and_cleanup_peer_sched, &flag, "initiating callback to remove marked peers");
+	ao2_t_callback(peers_by_registered_extension, OBJ_NODATA | OBJ_UNLINK | OBJ_MULTIPLE,
+		match_and_cleanup_peer_sched, &flag, "initiating callback to remove marked peers");
 }
 
 /* \brief Unlink all marked peers from ao2 containers */
@@ -2915,6 +2919,7 @@ static void unlink_peer_from_tables(struct sip_peer *peer)
 	ao2_t_unlink(peers, peer, "ao2_unlink of peer from peers table");
 	if (!ast_sockaddr_isnull(&peer->addr)) {
 		ao2_t_unlink(peers_by_ip, peer, "ao2_unlink of peer from peers_by_ip table");
+		ao2_t_unlink(peers_by_registered_extension, peer, "ao2_unlink of peer from peers_by_registered_extension table");
 	}
 }
 
@@ -4984,6 +4989,9 @@ static struct sip_peer *realtime_peer(const char *newpeername, struct ast_sockad
 		if (!ast_sockaddr_isnull(&peer->addr)) {
 			ao2_t_link(peers_by_ip, peer, "link peer into peers_by_ip table");
 		}
+		if (!ast_strlen_zero(peer->registered_extension)) {
+			ao2_t_link(peers_by_registered_extension, peer, "link peer into peers_by_registered_extension table");
+		}
 	}
 	peer->is_realtime = 1;
 
@@ -5035,7 +5043,7 @@ static int find_by_name(void *obj, void *arg, void *data, int flags)
  * \note Avoid using this function in new functions if there is a way to avoid it,
  * since it might cause a database lookup.
  */
-static struct sip_peer *find_peer(const char *peer, struct ast_sockaddr *addr, int realtime, int which_objects, int devstate_only, int transport)
+static struct sip_peer *find_peer(const char *peer, struct ast_sockaddr *addr, int realtime, int which_objects, int devstate_only, int transport, const char *extension)
 {
 	struct sip_peer *p = NULL;
 	struct sip_peer tmp_peer;
@@ -5055,6 +5063,14 @@ static struct sip_peer *find_peer(const char *peer, struct ast_sockaddr *addr, i
 				return p;
 			}
 		}
+	} else if (extension) { /* search by registered extension? */
+		if (ast_string_field_init(&tmp_peer, 512)) {
+			ast_log(LOG_ERROR, "Failed to search peer by registered extension\n");
+			return NULL;
+		}
+		ast_string_field_set(&tmp_peer, registered_extension, extension);
+		p = ao2_t_find(peers_by_registered_extension, &tmp_peer, OBJ_POINTER, "ao2_find in peers_by_registered_extension table");
+		ast_string_field_free_memory(&tmp_peer);
 	}
 
 	if (!p && (realtime || devstate_only)) {
@@ -5423,7 +5439,7 @@ static int create_addr(struct sip_pvt *dialog, const char *opeer, struct ast_soc
 
 	dialog->timer_t1 = global_t1; /* Default SIP retransmission timer T1 (RFC 3261) */
 	dialog->timer_b = global_timer_b; /* Default SIP transaction timer B (RFC 3261) */
-	peer = find_peer(peername, NULL, TRUE, FINDPEERS, FALSE, 0);
+	peer = find_peer(peername, NULL, TRUE, FINDPEERS, FALSE, 0, NULL);
 
 	if (peer) {
 		int res;
@@ -13321,7 +13337,7 @@ static int sip_reg_timeout(const void *data)
 		/* If the registration has timed out, maybe the IP changed.  Force a refresh. */
 		ast_dnsmgr_refresh(r->dnsmgr);
 		/* If we are resolving a peer, we have to make sure the refreshed address gets copied */
-		if ((peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0))) {
+		if ((peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0, NULL))) {
 			ast_sockaddr_copy(&peer->addr, &r->us);
 			if (r->portno) {
 				ast_sockaddr_set_port(&peer->addr, r->portno);
@@ -13365,6 +13381,7 @@ static int sip_reg_timeout(const void *data)
 		ast_log(LOG_NOTICE, "   -- Registration for '%s@%s' timed out, trying again (Attempt #%d)\n", r->username, r->hostname, r->regattempts);
 	}
 	manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nUsername: %s\r\nDomain: %s\r\nStatus: %s\r\n", r->username, r->hostname, regstate2str(r->regstate));
+	ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 	registry_unref(r, "unreffing registry_unref r");
 	return 0;
 }
@@ -13407,7 +13424,7 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 
 	if (r->dnsmgr == NULL) {
 		char transport[MAXHOSTNAMELEN];
-		peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0);
+		peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0, NULL);
 		snprintf(transport, sizeof(transport), "_%s._%s",get_srv_service(r->transport), get_srv_protocol(r->transport)); /* have to use static get_transport function */
 		r->us.ss.ss_family = get_address_family_filter(&bindaddr); /* Filter address family */
 
@@ -13453,6 +13470,8 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 			append_history(p, "RegistryInit", "Account: %s@%s", r->username, r->hostname);
 		}
 
+		p->socket.type = r->transport;
+
 		/* Use port number specified if no SRV record was found */
 		if (!ast_sockaddr_isnull(&r->us)) {
 			if (!ast_sockaddr_port(&r->us) && r->portno) {
@@ -13463,7 +13482,7 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 			 * Here, if we've updated the address in the registry via manually calling
 			 * ast_dnsmgr_lookup_cb() above, then we call the same function that dnsmgr would
 			 * call if it was updating a peer's address */
-			if ((peer = find_peer(S_OR(r->peername, r->hostname), NULL, TRUE, FINDPEERS, FALSE, 0))) {
+			if ((peer = find_peer(S_OR(r->peername, r->hostname), NULL, TRUE, FINDPEERS, FALSE, 0, NULL))) {
 				if (peer->outboundproxy) {
 					proxy_update(peer->outboundproxy);
 				}
@@ -14352,6 +14371,7 @@ static enum parse_register_result parse_register_contact(struct sip_pvt *pvt, st
 	if (!peer->rt_fromcontact || !sip_cfg.peer_rtupdate)
 		ast_db_put("SIP/Registry", peer->name, data);
 	manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: SIP\r\nPeer: SIP/%s\r\nPeerStatus: Registered\r\nAddress: %s\r\n", peer->name,  ast_sockaddr_stringify(&peer->addr));
+	ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", peer->name);
 
 	/* Is this a new IP address for us? */
 	if (VERBOSITY_ATLEAST(2) && ast_sockaddr_cmp(&peer->addr, &oldsin)) {
@@ -15014,7 +15034,7 @@ static enum check_auth_result register_verify(struct sip_pvt *p, struct ast_sock
 			return 0;
 		}
 	}
-	peer = find_peer(name, NULL, TRUE, FINDPEERS, FALSE, 0);
+	peer = find_peer(name, NULL, TRUE, FINDPEERS, FALSE, 0, NULL);
 
 	if (!(peer && ast_apply_ha(peer->ha, addr))) {
 		/* Peer fails ACL check */
@@ -16139,14 +16159,19 @@ static enum check_auth_result check_peer_ok(struct sip_pvt *p, char *of,
 		/* For subscribes, match on device name only; for other methods,
 	 	* match on IP address-port of the incoming request.
 	 	*/
-		peer = find_peer(of, NULL, TRUE, FINDALLDEVICES, FALSE, 0);
+		peer = find_peer(of, NULL, TRUE, FINDALLDEVICES, FALSE, 0, NULL);
 	} else {
 		/* First find devices based on username (avoid all type=peer's) */
-		peer = find_peer(of, NULL, TRUE, FINDUSERS, FALSE, 0);
+		peer = find_peer(of, NULL, TRUE, FINDUSERS, FALSE, 0, NULL);
+
+		/* Then find devices based on Request URI user against 'registered_extension' */
+		if (!peer) {
+			peer = find_peer(NULL, NULL, TRUE, FINDPEERS, FALSE, 0, p->exten);
+		}
 
 		/* Then find devices based on IP */
 		if (!peer) {
-			peer = find_peer(NULL, &p->recv, TRUE, FINDPEERS, FALSE, p->socket.type);
+			peer = find_peer(NULL, &p->recv, TRUE, FINDPEERS, FALSE, p->socket.type, NULL);
 		}
 	}
 
@@ -17095,6 +17120,8 @@ static char *sip_show_objects(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ao2_t_callback(peers, OBJ_NODATA, peer_dump_func, a, "initiate ao2_callback to dump peers");
 	ast_cli(a->fd, "-= Peer objects by IP =-\n\n"); 
 	ao2_t_callback(peers_by_ip, OBJ_NODATA, peer_dump_func, a, "initiate ao2_callback to dump peers_by_ip");
+	ast_cli(a->fd, "-= Peer objects by registered extension =-\n\n"); 
+	ao2_t_callback(peers_by_registered_extension, OBJ_NODATA, peer_dump_func, a, "initiate ao2_callback to dump peers_by_registered_extension");
 	ast_cli(a->fd, "-= Registry objects: %d =-\n\n", regobjs);
 	ASTOBJ_CONTAINER_DUMP(a->fd, tmp, sizeof(tmp), &regl);
 	ast_cli(a->fd, "-= Dialog objects:\n\n");
@@ -17523,7 +17550,7 @@ static char *_sip_qualify_peer(int type, int fd, struct mansession *s, const str
 		return CLI_SHOWUSAGE;
 
 	load_realtime = (argc == 5 && !strcmp(argv[4], "load")) ? TRUE : FALSE;
-	if ((peer = find_peer(argv[3], NULL, load_realtime, FINDPEERS, FALSE, 0))) {
+	if ((peer = find_peer(argv[3], NULL, load_realtime, FINDPEERS, FALSE, 0, NULL))) {
 		sip_poke_peer(peer, 1);
 		unref_peer(peer, "qualify: done with peer");
 	} else if (type == 0) {
@@ -17619,7 +17646,7 @@ static char *_sip_show_peer(int type, int fd, struct mansession *s, const struct
 		return CLI_SHOWUSAGE;
 
 	load_realtime = (argc == 5 && !strcmp(argv[4], "load")) ? TRUE : FALSE;
-	peer = find_peer(argv[3], NULL, load_realtime, FINDPEERS, FALSE, 0);
+	peer = find_peer(argv[3], NULL, load_realtime, FINDPEERS, FALSE, 0, NULL);
 
 	if (s) { 	/* Manager */
 		if (peer) {
@@ -17728,6 +17755,7 @@ static char *_sip_show_peer(int type, int fd, struct mansession *s, const struct
 		ast_cli(fd, "  Allowed.Trsp : %s\n", get_transport_list(peer->transports));
 		if (!ast_strlen_zero(sip_cfg.regcontext))
 			ast_cli(fd, "  Reg. exten   : %s\n", peer->regexten);
+		ast_cli(fd, "  Regd. exten  : %s\n", peer->registered_extension);
 		ast_cli(fd, "  Def. Username: %s\n", peer->username);
 		ast_cli(fd, "  SIP Options  : ");
 		if (peer->sipoptions) {
@@ -17835,6 +17863,7 @@ static char *_sip_show_peer(int type, int fd, struct mansession *s, const struct
 		astman_append(s, "Default-Username: %s\r\n", peer->username);
 		if (!ast_strlen_zero(sip_cfg.regcontext))
 			astman_append(s, "RegExtension: %s\r\n", peer->regexten);
+		astman_append(s, "RegisteredExtension: %s\r\n", peer->registered_extension);
 		astman_append(s, "Codecs: ");
 		ast_getformatname_multiple(codec_buf, sizeof(codec_buf) -1, peer->capability);
 		astman_append(s, "%s\r\n", codec_buf);
@@ -17939,7 +17968,7 @@ static char *sip_show_user(struct ast_cli_entry *e, int cmd, struct ast_cli_args
 	/* Load from realtime storage? */
 	load_realtime = (a->argc == 5 && !strcmp(a->argv[4], "load")) ? TRUE : FALSE;
 
-	if ((user = find_peer(a->argv[3], NULL, load_realtime, FINDUSERS, FALSE, 0))) {
+	if ((user = find_peer(a->argv[3], NULL, load_realtime, FINDUSERS, FALSE, 0, NULL))) {
 		ao2_lock(user);
 		ast_cli(a->fd, "\n\n");
 		ast_cli(a->fd, "  * Name       : %s\n", user->name);
@@ -18106,7 +18135,7 @@ static char *sip_unregister(struct ast_cli_entry *e, int cmd, struct ast_cli_arg
 	if (a->argc != 3)
 		return CLI_SHOWUSAGE;
 	
-	if ((peer = find_peer(a->argv[2], NULL, load_realtime, FINDPEERS, TRUE, 0))) {
+	if ((peer = find_peer(a->argv[2], NULL, load_realtime, FINDPEERS, TRUE, 0, NULL))) {
 		if (peer->expire > 0) {
 			AST_SCHED_DEL_UNREF(sched, peer->expire,
 				unref_peer(peer, "remove register expire ref"));
@@ -19136,7 +19165,7 @@ static char *sip_do_debug_ip(int fd, const char *arg)
 /*! \brief  Turn on SIP debugging for a given peer */
 static char *sip_do_debug_peer(int fd, const char *arg)
 {
-	struct sip_peer *peer = find_peer(arg, NULL, TRUE, FINDPEERS, FALSE, 0);
+	struct sip_peer *peer = find_peer(arg, NULL, TRUE, FINDPEERS, FALSE, 0, NULL);
 	if (!peer)
 		ast_cli(fd, "No such peer '%s'\n", arg);
 	else if (ast_sockaddr_isnull(&peer->addr))
@@ -19632,7 +19661,7 @@ static int function_sippeer(struct ast_channel *chan, const char *cmd, char *dat
 	else
 		colname = "ip";
 
-	if (!(peer = find_peer(data, NULL, TRUE, FINDPEERS, FALSE, 0)))
+	if (!(peer = find_peer(data, NULL, TRUE, FINDPEERS, FALSE, 0, NULL)))
 		return -1;
 
 	if (!strcasecmp(colname, "ip")) {
@@ -19645,6 +19674,8 @@ static int function_sippeer(struct ast_channel *chan, const char *cmd, char *dat
 		ast_copy_string(buf, peer->language, len);
 	} else  if (!strcasecmp(colname, "regexten")) {
 		ast_copy_string(buf, peer->regexten, len);
+	} else  if (!strcasecmp(colname, "registered_extension")) {
+		ast_copy_string(buf, peer->registered_extension, len);
 	} else  if (!strcasecmp(colname, "limit")) {
 		snprintf(buf, len, "%d", peer->call_limit);
 	} else  if (!strcasecmp(colname, "busylevel")) {
@@ -20030,6 +20061,30 @@ static int sip_reinvite_retry(const void *data)
 	}
 	dialog_unref(p, "unref the dialog ptr from sip_reinvite_retry, because it held a dialog ptr");
 	return 0;
+}
+
+/*!
+ * \brief Find out if peer is registered (outbound)
+ *
+ * \retval -1 unknown peer
+ * \retval 0 peer is not registered
+ * \retval 1 peer is registered
+ */
+static int peer_is_registered(const struct sip_peer *peer)
+{
+	int res = -1;
+
+	ASTOBJ_CONTAINER_TRAVERSE(&regl, 1, do {  /* regl is locked */
+			ASTOBJ_WRLOCK(iterator); /* now regl is locked, and the object is also locked */
+			if (!strcmp(peer->name, iterator->hostname)) {
+				res = iterator->regstate == REG_STATE_REGISTERED ? 1 : 0;
+				ASTOBJ_UNLOCK(iterator);
+				break;
+			}
+			ASTOBJ_UNLOCK(iterator);
+	} while(0));
+
+	return res;
 }
 
 /*!
@@ -20901,6 +20956,7 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 			transmit_register(r, SIP_REGISTER, NULL, NULL);
 		}
 		manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nUsername: %s\r\nDomain: %s\r\nStatus: %s\r\n", r->username, r->hostname, regstate2str(r->regstate));
+		ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 		break;
 	case 479:	/* SER: Not able to process the URI - address is wrong in register*/
 		ast_log(LOG_WARNING, "Got error 479 on register to %s@%s, giving up (check config)\n", p->registry->username, p->registry->hostname);
@@ -20920,6 +20976,7 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 		r->regstate = REG_STATE_REGISTERED;
 		r->regtime = ast_tvnow();		/* Reset time of last successful registration */
 		manager_event(EVENT_FLAG_SYSTEM, "Registry", "ChannelType: SIP\r\nDomain: %s\r\nStatus: %s\r\n", r->hostname, regstate2str(r->regstate));
+		ast_devstate_changed(AST_DEVICE_UNKNOWN, "SIP/%s", r->hostname);
 		r->regattempts = 0;
 		ast_debug(1, "Registration successful\n");
 		if (r->timeout > -1) {
@@ -22056,7 +22113,7 @@ static int handle_request_notify(struct sip_pvt *p, struct sip_request *req, str
 		char *c = ast_strdupa(get_body(req, "Voice-Message", ':'));
 
 		if (!p->mwi) {
-			struct sip_peer *peer = find_peer(NULL, &p->recv, TRUE, FINDPEERS, FALSE, p->socket.type);
+			struct sip_peer *peer = find_peer(NULL, &p->recv, TRUE, FINDPEERS, FALSE, p->socket.type, NULL);
 
 			if (peer) {
 				mailbox = ast_strdupa(peer->unsolicited_mailbox);
@@ -26588,7 +26645,7 @@ static int sip_devicestate(void *data)
 	 * load it BACK into memory, thus defeating the point of trying to clear dead
 	 * hosts out of memory.
 	 */
-	if ((p = find_peer(host, NULL, FALSE, FINDALLDEVICES, TRUE, 0))) {
+	if ((p = find_peer(host, NULL, FALSE, FINDALLDEVICES, TRUE, 0, NULL))) {
 		if (!(ast_sockaddr_isnull(&p->addr) && ast_sockaddr_isnull(&p->defaddr))) {
 			/* we have an address for the peer */
 		
@@ -26621,7 +26678,10 @@ static int sip_devicestate(void *data)
 			else if (p->maxms && ((p->lastms > p->maxms) || (p->lastms < 0)))
 				/* We don't have a call. Are we reachable at all? Requires qualify= */
 				res = AST_DEVICE_UNAVAILABLE;
-			else	/* Default reply if we're registered and have no other data */
+			else if (!peer_is_registered(p))
+				/* Peer is not registered */
+				res = AST_DEVICE_UNAVAILABLE;
+			else 	/* Default reply if we're registered and have no other data */
 				res = AST_DEVICE_NOT_INUSE;
 		} else {
 			/* there is no address, it's unavailable */
@@ -27314,6 +27374,7 @@ static void set_peer_defaults(struct sip_peer *peer)
 	ast_string_field_set(peer, fromdomain, "");
 	ast_string_field_set(peer, fromuser, "");
 	ast_string_field_set(peer, regexten, "");
+	ast_string_field_set(peer, registered_extension, "");
 	peer->callgroup = 0;
 	peer->pickupgroup = 0;
 	peer->maxms = default_qualify;
@@ -27442,6 +27503,9 @@ static struct sip_peer *build_peer(const char *name, struct ast_variable *v, str
 		  this leads to a wrong refcounter and the peer object is never destroyed */
 		if (!ast_sockaddr_isnull(&peer->addr)) {
 			ao2_t_unlink(peers_by_ip, peer, "ao2_unlink peer from peers_by_ip table");
+		}
+		if (!ast_strlen_zero(peer->registered_extension)) {
+			ao2_t_unlink(peers_by_registered_extension, peer, "ao2_unlink peer from peers_by_registered_extension table");
 		}
 		if (!(peer->the_mark))
 			firstpass = 0;
@@ -27704,6 +27768,8 @@ static struct sip_peer *build_peer(const char *name, struct ast_variable *v, str
 				ast_string_field_set(peer, language, v->value);
 			} else if (!strcasecmp(v->name, "regexten")) {
 				ast_string_field_set(peer, regexten, v->value);
+			} else if (!strcasecmp(v->name, "registered_extension")) {
+				ast_string_field_set(peer, registered_extension, v->value);
 			} else if (!strcasecmp(v->name, "callbackextension")) {
 				ast_copy_string(callback, v->value, sizeof(callback));
 			} else if (!strcasecmp(v->name, "amaflags")) {
@@ -29075,6 +29141,9 @@ static int reload_config(enum channelreloadreason reason)
 						if ((peer->type & SIP_TYPE_PEER) && !ast_sockaddr_isnull(&peer->addr)) {
 							ao2_t_link(peers_by_ip, peer, "link peer into peers_by_ip table");
 						}
+						if (!ast_strlen_zero(peer->registered_extension)) {
+							ao2_t_link(peers_by_registered_extension, peer, "link peer into peers_by_registered_extension table");
+						}
 						
 						unref_peer(peer, "unref_peer: from reload_config");
 						peer_count++;
@@ -29150,6 +29219,10 @@ static int reload_config(enum channelreloadreason reason)
 				if ((peer->type & SIP_TYPE_PEER) && !ast_sockaddr_isnull(&peer->addr)) {
 					ao2_t_link(peers_by_ip, peer, "link peer into peers_by_ip table");
 				}
+				if (!ast_strlen_zero(peer->registered_extension)) {
+					ao2_t_link(peers_by_registered_extension, peer, "link peer into peers_by_registered_extension table");
+				}
+
 				unref_peer(peer, "unref the result of the build_peer call. Now, the links from the tables are the only ones left.");
 				peer_count++;
 			}
@@ -30021,6 +30094,24 @@ static int peer_ipcmp_cb(void *obj, void *arg, int flags)
 			(CMP_MATCH | CMP_STOP) : 0;
 }
 
+static int peer_registered_extension_hash_cb(const void *obj, const int flags)
+{
+	const struct sip_peer *peer = obj;
+
+	return ast_str_case_hash(peer->registered_extension);
+}
+
+static int peer_registered_extension_cmp_cb(void *obj, void *arg, int flags)
+{
+	struct sip_peer *peer = obj, *peer2 = arg;
+
+	if (strcmp(peer->registered_extension, peer2->registered_extension)) {
+		/* Registered extension doesn't match */
+		return 0;
+	}
+
+	return (CMP_MATCH | CMP_STOP);
+}
 
 static int threadt_hash_cb(const void *obj, const int flags)
 {
@@ -30343,6 +30434,7 @@ AST_TEST_DEFINE(test_sip_peers_get)
 	MEMBER(sip_peer, accountcode, AST_DATA_STRING)		\
 	MEMBER(sip_peer, tohost, AST_DATA_STRING)		\
 	MEMBER(sip_peer, regexten, AST_DATA_STRING)		\
+	MEMBER(sip_peer, registered_extension, AST_DATA_STRING)	\
 	MEMBER(sip_peer, fromuser, AST_DATA_STRING)		\
 	MEMBER(sip_peer, fromdomain, AST_DATA_STRING)		\
 	MEMBER(sip_peer, fullcontact, AST_DATA_STRING)		\
@@ -30505,10 +30597,11 @@ static int load_module(void)
 	/* if the number of objects gets above MAX_XXX_BUCKETS, things will slow down */
 	peers = ao2_t_container_alloc(HASH_PEER_SIZE, peer_hash_cb, peer_cmp_cb, "allocate peers");
 	peers_by_ip = ao2_t_container_alloc(HASH_PEER_SIZE, peer_iphash_cb, peer_ipcmp_cb, "allocate peers_by_ip");
+	peers_by_registered_extension = ao2_t_container_alloc(HASH_PEER_SIZE, peer_registered_extension_hash_cb, peer_registered_extension_cmp_cb, "allocate peers_by_registered_extension");
 	dialogs = ao2_t_container_alloc(HASH_DIALOG_SIZE, dialog_hash_cb, dialog_cmp_cb, "allocate dialogs");
 	dialogs_to_destroy = ao2_t_container_alloc(1, NULL, NULL, "allocate dialogs_to_destroy");
 	threadt = ao2_t_container_alloc(HASH_DIALOG_SIZE, threadt_hash_cb, threadt_cmp_cb, "allocate threadt table");
-	if (!peers || !peers_by_ip || !dialogs || !dialogs_to_destroy || !threadt) {
+	if (!peers || !peers_by_ip || !peers_by_registered_extension || !dialogs || !dialogs_to_destroy || !threadt) {
 		ast_log(LOG_ERROR, "Unable to create primary SIP container(s)\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
@@ -30777,6 +30870,7 @@ static int unload_module(void)
 
 	ao2_t_ref(peers, -1, "unref the peers table");
 	ao2_t_ref(peers_by_ip, -1, "unref the peers_by_ip table");
+	ao2_t_ref(peers_by_registered_extension, -1, "unref the peers_by_registered_extension table");
 	ao2_t_ref(dialogs, -1, "unref the dialogs table");
 	ao2_t_ref(dialogs_to_destroy, -1, "unref dialogs_to_destroy");
 	ao2_t_ref(threadt, -1, "unref the thread table");
