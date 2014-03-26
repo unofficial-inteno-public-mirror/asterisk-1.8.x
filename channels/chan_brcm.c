@@ -2703,6 +2703,11 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 	} else if (cmd == CLI_GENERATE) {
 		return NULL;
 	}
+	if (reload()) {
+		return CLI_SUCCESS;
+	}
+	return NULL;
+}
 
 static int reload(void)
 {
