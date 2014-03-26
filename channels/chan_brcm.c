@@ -1538,7 +1538,7 @@ void handle_dtmf(EPEVT event,
 
 	if (p->dtmf_first < 0) {
 		p->dtmf_first = dtmf_button;
-		p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+		//p->last_dtmf_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 		ast_debug(5,"Pressed DTMF %s\n", dtmfMap->name);
 		/* Do not send AST_FRAME_DTMF_BEGIN to allow DSP-generated tone to pass through */
 	}
@@ -1775,13 +1775,13 @@ R = reserved (ignore)
 						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
 					pvt_unlock(sub->parent);
-				}
-			} else {
-				ast_debug(9, "Unknown RTP: [%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
-			}
+			//} else {
+			//	ast_debug(9, "Unknown RTP: [%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
+			//}
 
 			if (owner) {
 				ast_channel_unref(owner);
+			}
 			if (sub->owner && (sub->owner->_state == AST_STATE_UP || sub->owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
