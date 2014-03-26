@@ -85,6 +85,7 @@ static int brcm_extension_state_register(struct brcm_pvt *p);
 static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
+static int reload(void);
 
 /* Global brcm channel parameters */
 
@@ -2739,34 +2740,6 @@ static int reload(void)
 	ast_debug(5, "RELOAD DONE\n");
 	ast_mutex_unlock(&iflock);
 	return 1;
-}
-
-/*! \brief CLI for reloading brcm config.
- * Note that the contry setting will not be reloaded. In order to do that the following
- * sequence must be carried out: vrgEndptDeinit(), vrgEndptDriverClose(), vrgEndptDriverOpen()
- * and then vrgEndptInit(). This is the same actions as for unload_module() followed by
- * load_module() which causes the instability that we're trying to avoid using the reolad feature.
- */
-static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
-{
-	struct ast_config *cfg = NULL;
-
-	if (cmd == CLI_INIT) {
-		e->command = "brcm reload";
-		e->usage =
-			"Usage: brcm reload\n"
-			"       Reload chan_brcm configuration.\n";
-		return NULL;
-	} else if (cmd == CLI_GENERATE) {
-		return NULL;
-	}
-	if(!reload()) {
-		return CLI_FAILURE;
-	}
-
-	ast_verbose("BRCM reload done\n");
-
-	return CLI_SUCCESS;
 }
 
 static int manager_brcm_dialtone_set(struct mansession *s, const struct message *m)
