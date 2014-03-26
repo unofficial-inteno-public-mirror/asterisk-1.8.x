@@ -1045,11 +1045,11 @@ int ast_safe_system(const char *s)
 #if defined(HAVE_WORKING_FORK) || defined(HAVE_WORKING_VFORK)
 	ast_replace_sigchld();
 
-#ifdef HAVE_WORKING_FORK
-	pid = fork();
-#else
+//#ifdef HAVE_WORKING_FORK
+//	pid = fork();
+//#else
 	pid = vfork();
-#endif	
+//#endif
 
 	if (pid == 0) {
 #ifdef HAVE_CAP
@@ -1061,12 +1061,12 @@ int ast_safe_system(const char *s)
 		}
 		cap_free(cap);
 #endif
-#ifdef HAVE_WORKING_FORK
-		if (ast_opt_high_priority)
-			ast_set_priority(0);
+//#ifdef HAVE_WORKING_FORK
+//		if (ast_opt_high_priority)
+//			ast_set_priority(0);
 		/* Close file descriptors and launch system command */
-		ast_close_fds_above_n(STDERR_FILENO);
-#endif
+//		ast_close_fds_above_n(STDERR_FILENO);
+//#endif
 		execl("/bin/sh", "/bin/sh", "-c", s, (char *) NULL);
 		_exit(1);
 	} else if (pid > 0) {
