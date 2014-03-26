@@ -211,7 +211,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,				//Channel is locked
 	.write = brcm_write,				//Channel is locked
 	.send_digit_begin = brcm_senddigit_begin,	//Channel is NOT locked
-	.send_digit_continue = brcm_senddigit_continue, //Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
 };
@@ -267,7 +266,7 @@ static int pvt_unlock_silent(struct brcm_pvt *pvt)
 	return 1;
 }
 
-static long mythreadid()
+static long mythreadid( void )
 {
 
 	pid_t myid;
@@ -302,7 +301,6 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		ast_jb_destroy(sub->owner);
 		//pvt_unlock(sub->parent);
 		break;
-	}
 	case AST_CONTROL_RINGING:
 		ast_debug(8, "****** AST_CONTROL_RINGING \n");
 		pvt_lock(sub->parent,"indicate ringing");
@@ -773,12 +771,11 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
-		pvt_lock(p->parent, "brcm_write");
 
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
 
-		ast_mutex_lock(&sub->parent->lock);
+		pvt_lock(sub->parent, "brcm_write");
 		/* set rtp id sent to endpoint */
 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
@@ -790,7 +787,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 		tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-		pvt_unlock(p->parent);
+		pvt_unlock(sub->parent);
 		if (sub->connection_init) {
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
 				ast_verbose("%s: error during ioctl", __FUNCTION__);
@@ -1701,7 +1698,7 @@ static void *brcm_monitor_packets(void *data)
 				continue;
 #endif
 
-				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
+				int dtmf_short = line_config[sub->parent->line_id].dtmf_short;
 
 				if (dtmf_short) {
 					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
@@ -1747,9 +1744,9 @@ R = reserved (ignore)
 					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
 					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
 					// Lock channel since we are going to manipulate DTMF status in the sub struct
-					pvt_lock(p->parent, "monitor_packet - sending DTMF");
+					pvt_lock(sub->parent, "monitor_packet - sending DTMF");
 
-					if (dtmf_end && p->dtmf_lastwasend) {
+					if (dtmf_end && sub->dtmf_lastwasend) {
 						/* We correctly get a series of END messages. We should skip the
 						   copies */
 						ast_debug(5, "---> Skipping DTMF_END duplicate \n");
@@ -1757,18 +1754,18 @@ R = reserved (ignore)
 					} else {
 						if (dtmf_end) {
 							fr.frametype = AST_FRAME_DTMF_END;
-							p->dtmf_lastwasend = 1;
-							p->dtmf_sending = 0;
+							sub->dtmf_lastwasend = 1;
+							sub->dtmf_sending = 0;
 						} else {
-							p->dtmf_lastwasend = 0;
-							if (p->dtmf_sending == 0) { /* DTMF starts here */
+							sub->dtmf_lastwasend = 0;
+							if (sub->dtmf_sending == 0) { /* DTMF starts here */
 								fr.frametype = AST_FRAME_DTMF_BEGIN;
-								p->dtmf_sending = 1;
+								sub->dtmf_sending = 1;
 							} else {
 								fr.frametype = AST_FRAME_DTMF_CONTINUE;
 							}
 						}
-						p->dtmf_duration = duration;
+						sub->dtmf_duration = duration;
 						fr.subclass.integer = phone_2digit(pdata[12]);
 						if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
 							fr.samples = duration;
@@ -1777,7 +1774,7 @@ R = reserved (ignore)
 						}
 						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
-					pvt_unlock(p->parent);
+					pvt_unlock(sub->parent);
 				}
 			} else {
 				ast_debug(9, "Unknown RTP: [%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
@@ -1785,15 +1782,15 @@ R = reserved (ignore)
 
 			if (owner) {
 				ast_channel_unref(owner);
-			if (p->owner && (p->owner->_state == AST_STATE_UP || p->owner->_state == AST_STATE_RING)) {
+			if (sub->owner && (sub->owner->_state == AST_STATE_UP || sub->owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", p->parent->line_id, p->owner->name);
-					ast_queue_frame(p->owner, &fr);
+					ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", sub->parent->line_id, sub->owner->name);
+					ast_queue_frame(sub->owner, &fr);
 					if (rtp_packet_type == BRCM_DTMF) {
-						ast_debug(8, "--> Back from queuing frame for line %d.\n", p->parent->line_id);
+						ast_debug(8, "--> Back from queuing frame for line %d.\n", sub->parent->line_id);
 					}
 				} else {
 					ast_debug(8, "--> Not queuing frame\n");
@@ -1873,6 +1870,7 @@ static void *brcm_monitor_events(void *data)
 		else if (peer_owner) {
 			ast_channel_lock(peer_owner);
 		}
+		pvt_lock(p, "brcm_monitor_events: Relocking");
 		ast_mutex_lock(&p->lock);
 
 		ast_verbose("me: got mutex\n");
