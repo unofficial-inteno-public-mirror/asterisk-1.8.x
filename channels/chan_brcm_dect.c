@@ -846,6 +846,12 @@ process_keypad_info(unsigned char handset,
 					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
 					brcm_stop_dialtone(p);
 				}
+
+				if (sub->channel_state == DIALING) {
+					ast_log(LOG_DEBUG, "Handle DTMF calling\n");
+					handle_dtmf_calling(sub);
+				}
+
 			}
 		}
 		ast_mutex_unlock(&p->lock);

@@ -1124,7 +1124,7 @@ static int handle_autodial_timeout(const void *data)
  * Called after each new DTMF event, from monitor_events thread,
  * with the required locks already held.
  */
-static void handle_dtmf_calling(const struct brcm_subchannel *sub)
+void handle_dtmf_calling(const struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p = sub->parent;
 	int dtmfbuf_len = strlen(p->dtmfbuf);

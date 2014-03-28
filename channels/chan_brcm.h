@@ -288,6 +288,6 @@ static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const su
 struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
-
+void handle_dtmf_calling(const struct brcm_subchannel *sub);
 
 #endif /* CHAN_BRCM_H */
