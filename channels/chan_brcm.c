@@ -569,14 +569,14 @@ static int brcm_answer(struct ast_channel *ast)
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 
 	struct brcm_subchannel *sub = ast->tech_pvt;
-	//pvt_lock(sub->parent,"answer");
+	pvt_lock(sub->parent,"answer");
 	if (ast->_state != AST_STATE_UP) {
 		ast_setstate(ast, AST_STATE_UP);
 		ast_log(LOG_DEBUG, "brcm_answer(%s) set state to up\n", ast->name);
 	}
 	ast->rings = 0;
 	brcm_subchannel_set_state(sub, INCALL);
-	//pvt_unlock(sub->parent);
+	pvt_unlock(sub->parent);
 	return 0;
 }
 
@@ -1058,7 +1058,7 @@ static int cwtimeout_cb(const void *data)
 		ast_channel_ref(sub->owner);
 		owner = sub->owner;
 	}
-	pvt_unlock(sub);
+	pvt_unlock(sub->parent);
 
 	if (owner) {
 		ast_channel_lock(owner);
@@ -1201,7 +1201,7 @@ static int handle_autodial_timeout(const void *data)
  * Called after each new DTMF event, from monitor_events thread,
  * with the required locks already held.
  */
-static void handle_dtmf_calling(const struct brcm_subchannel *sub)
+static void handle_dtmf_calling(struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p = sub->parent;
 	int dtmfbuf_len = strlen(p->dtmfbuf);
@@ -1564,9 +1564,7 @@ void handle_dtmf(EPEVT event,
 				f.src = "BRCM";
 				f.frametype = AST_FRAME_DTMF_END;
 				ast_debug(4, " ====> BRCM sending AST_FRAME_DTMF_END %c \n", dtmf_button);
-				pvt_unlock(p);
 				ast_queue_frame(sub->owner, &f);
-				pvt_lock(p, "Back from Sending DTMF - relocking");
 			}
 		}
 		else {
@@ -1639,13 +1637,13 @@ static void *brcm_monitor_packets(void *data)
 			}
 
 			//pvt_lock(sub->parent, "brcm_monitor_packets" );
-			//pvt_lock_silent(p->parent);
+			pvt_lock_silent(sub->parent);
 			struct ast_channel *owner = NULL;
 			if (sub->owner) {
 				ast_channel_ref(sub->owner);
 				owner = sub->owner;
 			}
-			//pvt_unlock(sub->parent);
+			pvt_unlock(sub->parent);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
@@ -1763,22 +1761,19 @@ R = reserved (ignore)
 						}
 						ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
-				}
 					pvt_unlock(sub->parent);
+				}
 			//} else {
 			//	ast_debug(9, "Unknown RTP: [%d,%d,%d] %X%X%X%X\n",pdata[0], map_rtp_to_ast_codec_id(pdata[1]), tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3]);
 			}
 
-			if (owner) {
-				ast_channel_unref(owner);
-			}
-			if (sub->owner && (sub->owner->_state == AST_STATE_UP || sub->owner->_state == AST_STATE_RING)) {
+			if (owner && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
 
 				/* Sending frames while keeping the line locked can lead to deadlocks strangely enough - OEJ */
 				if(((rtp_packet_type == BRCM_DTMF) || (rtp_packet_type == BRCM_DTMFBE) || (rtp_packet_type == BRCM_AUDIO)))  {
 					/* We don't need to lock the channel. Ast_queue_frame does */
-					ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", sub->parent->line_id, sub->owner->name);
-					ast_queue_frame(sub->owner, &fr);
+					ast_debug(8, "--> Really queuing frame for line %d.Channel %s\n", sub->parent->line_id, owner->name);
+					ast_queue_frame(owner, &fr);
 					if (rtp_packet_type == BRCM_DTMF) {
 						ast_debug(8, "--> Back from queuing frame for line %d.\n", sub->parent->line_id);
 					}
@@ -1786,9 +1781,10 @@ R = reserved (ignore)
 					ast_debug(8, "--> Not queuing frame\n");
 				}
 			}
+			if (owner) {
+				ast_channel_unref(owner);
+			}
 		}
-		//sched_yield();	/* OEJ reinstated for testing. We are too aggressive here */
-		//usleep(5);	/* OEJ changed to 5 */
 	} /* while */
 
 	ast_verbose("Packets thread ended\n");
@@ -1861,7 +1857,6 @@ static void *brcm_monitor_events(void *data)
 			ast_channel_lock(peer_owner);
 		}
 		pvt_lock(p, "brcm_monitor_events: Relocking");
-		ast_mutex_lock(&p->lock);
 
 		ast_verbose("me: got mutex\n");
 		if (sub) {
@@ -2728,73 +2723,6 @@ static int reload(void)
 	ast_debug(5, "RELOAD DONE\n");
 	ast_mutex_unlock(&iflock);
 	return 1;
-}
-
-static int manager_brcm_dialtone_set(struct mansession *s, const struct message *m)
-{
-	struct brcm_pvt *p;
-	struct brcm_pvt *p_tmp;
-	const char *line_id = astman_get_header(m, "LineId");
-	const char *requested_dialtone = astman_get_header(m, "Dialtone");
-	int line;
-
-	if (ast_strlen_zero(line_id)) {
-		astman_send_error(s, m, "BRCMDialtoneSet requires LineId");
-		return 0;
-	}
-
-	if (ast_strlen_zero(requested_dialtone)) {
-		astman_send_error(s, m, "BRCMDialtoneSet requires Dialtone");
-		return 0;
-	}
-
-	/* Find line id */
-	int i;
-        for (i = 0; i < strlen(line_id); i++) {
-                if (!isdigit(line_id[i])) {
-			astman_send_error(s, m, "Invalid LineId");
-			return 0;
-                }
-        }
-	line = atoi(line_id);
-	if (ast_mutex_lock(&iflock)) {
-		astman_send_error(s, m, "Failed to lock iflist");
-		return -1;
-	}
-	p = NULL;
-	p_tmp = iflist;
-	while (p_tmp) {
-		if (p_tmp->line_id == line) {
-			p = p_tmp;
-			break;
-		}
-		p_tmp = p_tmp->next;
-	}
-	ast_mutex_unlock(&iflock);
-	if (!p) {
-		astman_send_error(s, m, "Unknown LineId");
-		return 0;
-	}
-
-	/* Match requested dialtone str with corresponding dialtone enum */
-	const DIALTONE_MAP *dialtone = dialtone_map;
-	while (dialtone->state != DIALTONE_UNKNOWN) {
-		if (strcmp(dialtone->str, requested_dialtone) == 0) {
-			break;
-		}
-		dialtone++;
-	}
-	if (dialtone->state == DIALTONE_UNKNOWN) {
-		astman_send_error(s, m, "Unknown dialtone");
-		return 0;
-	}
-
-	pvt_lock(p, "dialtone set");
-	p->dialtone = dialtone->state;
-	pvt_unlock(p);
-
-	astman_send_ack(s, m, "Dialtone Set");
-	return 0;
 }
 
 static int manager_brcm_ports_show(struct mansession *s, const struct message *m)
