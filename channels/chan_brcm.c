@@ -1635,6 +1635,9 @@ static void *brcm_monitor_packets(void *data)
 			ast_mutex_unlock(&sub->parent->lock);
 
 			if (owner) {
+				if (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING) {
+					ast_queue_frame(owner, &fr);
+				}
 				ast_channel_unref(owner);
 			}
 		}
