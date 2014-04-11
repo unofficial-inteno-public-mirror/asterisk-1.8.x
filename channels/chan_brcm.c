@@ -208,7 +208,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,				//Channel is locked
 	.write = brcm_write,				//Channel is locked
 	.send_digit_begin = brcm_senddigit_begin,	//Channel is NOT locked
-	.send_digit_continue = brcm_senddigit_continue, //Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
 };
@@ -1606,65 +1605,23 @@ static void *brcm_monitor_packets(void *data)
 						break;
 				}
 			} else if  (rtp_packet_type == BRCM_DTMF) {
-#ifdef EPEVT_DTMF
-				/* Ignore BRCM_DTMF since we rely on EPEVT_DTMF instead */
-				ast_mutex_unlock(&p->parent->lock);
-				continue;
-#endif
+                unsigned int duration = (pdata[14] << 8 | pdata[15]);
+                unsigned int dtmf_end = pdata[13] > 0;
+                unsigned int event = phone_2digit(pdata[12]);
 
-				int dtmf_short = line_config[p->parent->line_id].dtmf_short;
+                /* Use DTMFBE instead */
+                ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+                ast_verbose(" === Event %d Duration %d End? %s\n",  event, duration, event ? "Yes" : "no");
 
-				if (dtmf_short) {
-					fr.frametype = pdata[13] ? AST_FRAME_NULL : AST_FRAME_DTMF;
-					fr.subclass.integer = phone_2digit(pdata[12]);
-
-					if ((fr.frametype == AST_FRAME_NULL) && (current_dtmf_digit == fr.subclass.integer))
-						current_dtmf_digit = -1;
-
-					if ((current_dtmf_digit == -1) && (fr.frametype == AST_FRAME_DTMF))
-						current_dtmf_digit = fr.subclass.integer;
-					else
-						fr.frametype = AST_FRAME_NULL;
-
-					ast_debug(9, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF) ? "AST_FRAME_DTMF" : "AST_FRAME_NULL");
-				}
-				else {
-					unsigned int duration = (pdata[14] << 8 | pdata[15]);
-					unsigned int dtmf_end = pdata[13] > 0;
-					unsigned int event = phone_2digit(pdata[12]);
-
-					/* Use DTMFBE instead */
-					ast_verbose("[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
-					ast_verbose(" === Event %d Duration %d End? %s\n",  event, duration, event ? "Yes" : "no");
-
-/*
- RFC 2833
- The payload format is shown in Fig. 1.
-
-    0                   1                   2                   3
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |     event     |E|R| volume    |          duration             |
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-Duration is in timestamp units
-E = End bit
-R = reserved (ignore)
-
- 
-
-*/
-
-					//fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
-					//fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
-					fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
-					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END) {
-						//fr.samples = (pdata[14] << 8 | pdata[15]);
-						//fr.len = fr.samples / 8;
-					}
-					ast_debug(2, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
-				}
+                //fr.seqno = RTPPACKET_GET_SEQNUM(rtp);
+                //fr.ts = RTPPACKET_GET_TIMESTAMP(rtp);
+                fr.frametype = pdata[13] ? AST_FRAME_DTMF_END : AST_FRAME_DTMF_BEGIN;
+                fr.subclass.integer = phone_2digit(pdata[12]);
+                if (fr.frametype == AST_FRAME_DTMF_END) {
+                    //fr.samples = (pdata[14] << 8 | pdata[15]);
+                    //fr.len = fr.samples / 8;
+                }
+                ast_debug(2, "[%c, %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : "AST_FRAME_DTMF_BEGIN");
 			}
 
 			if (owner) {
