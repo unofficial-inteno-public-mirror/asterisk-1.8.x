@@ -227,7 +227,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
-		res = 1; //We still want asterisk core to play tone
+		res = 0; //We still want asterisk core to play tone
 		break;
 	case AST_CONTROL_UNHOLD:
 		//Asterisk (adaptive) jitter buffer causes one way audio
