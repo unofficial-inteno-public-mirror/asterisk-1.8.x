@@ -1088,6 +1088,7 @@ static int handle_interdigit_timeout(const void *data)
 	ast_debug(9, "Interdigit timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	ast_mutex_lock(&p->lock);
+	p->interdigit_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 
 	if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
@@ -1111,6 +1112,7 @@ static int handle_autodial_timeout(const void *data)
 	ast_debug(9, "Autodial timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	ast_mutex_lock(&p->lock);
+	p->autodial_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 	line_settings *s = &line_config[p->line_id];
 
