@@ -224,37 +224,33 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 {
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
-
+	ast_mutex_lock(&sub->parent->lock);
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
-		res = 0; //We still want asterisk core to play tone
-		break;
 	case AST_CONTROL_UNHOLD:
 		//Asterisk (adaptive) jitter buffer causes one way audio
 		//This is a workaround until jitter buffer is handled by DSP.
+		res = 0; //We still want asterisk core to play tone
 		ast_jb_destroy(ast);
 		break;
 	case AST_CONTROL_RINGING:
-		ast_mutex_lock(&sub->parent->lock);
 		brcm_subchannel_set_state(sub, RINGBACK);
-		ast_mutex_unlock(&sub->parent->lock);
 		res = 1; //We still want asterisk core to play tone
 		break;
 	case AST_CONTROL_TRANSFER:
 		res = -1;
-		ast_mutex_lock(&sub->parent->lock);
 		if (datalen != sizeof(enum ast_control_transfer)) {
 			ast_log(LOG_ERROR, "Invalid datalen for AST_CONTROL_TRANSFER. Expected %d, got %d\n", (int) sizeof(enum ast_control_transfer), (int) datalen);
 		} else {
 			enum ast_control_transfer *message = (enum ast_control_transfer *) data;
 			brcm_finish_transfer(ast, sub, *message);
 		}
-		ast_mutex_unlock(&sub->parent->lock);
 		break;
 	default:
 		res = -1;
 		break;
 	}
+	ast_mutex_unlock(&sub->parent->lock);
 	return res;
 }
 
@@ -2029,7 +2025,6 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		struct brcm_subchannel *sub;
 		int i;
 
-		ast_mutex_init(&tmp->lock);
 		for (i=0; i<NUM_SUBCHANNELS; i++) {
 			sub = ast_calloc(1, sizeof(*sub));
 			if (sub) {

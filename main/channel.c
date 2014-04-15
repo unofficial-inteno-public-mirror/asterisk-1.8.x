@@ -4263,10 +4263,6 @@ done:
 		chan->audiohooks = NULL;
 	}
 	ast_channel_unlock(chan);
-	if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
-		ast_debug(8, "======>>>> ast_read returning AST_FRAME_DTMF_CONTINUE \n");
-	}
-	
 	return f;
 }
 
@@ -7199,13 +7195,8 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 			}
 			/* Write immediately frames, not passed through jb */
 			if (!frame_put_in_jb) {
-		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Writing to native channel \n"); }
-				ast_debug(8, "===> Writing to native channel \n");
 				ast_write(other, f);
-			} else {
-		    		if (f->frametype == AST_FRAME_DTMF_CONTINUE) { ast_debug(8, "===> Frame sent to jitter buffer \n"); }
 			}
-				
 			/* Check if we have to deliver now */
 			if (jb_in_use)
 				ast_jb_get_and_deliver(c0, c1);
