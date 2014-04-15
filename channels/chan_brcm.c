@@ -1475,21 +1475,7 @@ void handle_dtmf(EPEVT event,
 					brcm_in_callwaiting(p),
 					brcm_in_onhold(p));
 			}
-		} else if (sub->channel_state == INCALL || sub->channel_state == CALLING) {
-			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
-			p->dtmf_first = -1;
-			if (!dtmf_compatibility) {
-				struct ast_frame f = { 0, };
-				f.subclass.integer = dtmf_button;
-				f.src = "BRCM";
-				f.frametype = AST_FRAME_DTMF_END;
-
-				if (owner) {
-					ast_queue_frame(owner, &f);
-				}
-			}
-		}
-		else {
+		} else {
 			p->dtmfbuf[p->dtmf_len] = dtmf_button;
 			p->dtmf_len++;
 			p->dtmfbuf[p->dtmf_len] = '\0';
