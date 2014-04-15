@@ -4639,7 +4639,7 @@ int ast_senddigit_begin(struct ast_channel *chan, char digit)
 int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration)
 {
 
-	ast_debug(4, "--- Continue frame passed on to tech for %s (duration %s)\n", chan->name, duration);
+	ast_debug(4, "--- Continue frame passed on to tech for %s (duration %d)\n", chan->name, duration);
 	if (chan->tech->send_digit_continue) {
 		chan->tech->send_digit_continue(chan, digit, duration);
 	}
@@ -7183,12 +7183,12 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 
 			if (monitored_source &&
 				(f->frametype == AST_FRAME_DTMF_END ||
-				//f->frametype == AST_FRAME_DTMF_CONTINUE ||
+				f->frametype == AST_FRAME_DTMF_CONTINUE ||
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
 				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
-					f->frametype == AST_FRAME_DTMF_END ? "end" : (AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
 					who->name);
 
 				break;
