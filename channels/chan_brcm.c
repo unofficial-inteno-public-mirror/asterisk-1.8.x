@@ -224,15 +224,16 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 {
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
+
 	ast_mutex_lock(&sub->parent->lock);
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
-	case AST_CONTROL_UNHOLD:
+	case AST_CONTROL_UNHOLD: {
 		//Asterisk (adaptive) jitter buffer causes one way audio
 		//This is a workaround until jitter buffer is handled by DSP.
-		res = 0; //We still want asterisk core to play tone
 		ast_jb_destroy(ast);
 		break;
+	}
 	case AST_CONTROL_RINGING:
 		brcm_subchannel_set_state(sub, RINGBACK);
 		res = 1; //We still want asterisk core to play tone
@@ -316,7 +317,6 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 	return 0;
 }
 
-/*! \brief Incoming DTMF begin event */
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
 	int res;
@@ -347,7 +347,6 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	return res;
 }
 
-/*! \brief Incoming DTMF end */
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration)
 {
 	int res;
@@ -693,11 +692,10 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
-		ast_mutex_lock(&sub->parent->lock);
-
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
 
+		ast_mutex_lock(&sub->parent->lock);
 		/* set rtp id sent to endpoint */
 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
@@ -1084,7 +1082,6 @@ static int handle_interdigit_timeout(const void *data)
 	ast_debug(9, "Interdigit timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	ast_mutex_lock(&p->lock);
-	p->interdigit_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 
 	if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num))
@@ -1108,7 +1105,6 @@ static int handle_autodial_timeout(const void *data)
 	ast_debug(9, "Autodial timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
 	ast_mutex_lock(&p->lock);
-	p->autodial_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 	line_settings *s = &line_config[p->line_id];
 
@@ -1475,7 +1471,21 @@ void handle_dtmf(EPEVT event,
 					brcm_in_callwaiting(p),
 					brcm_in_onhold(p));
 			}
-		} else {
+		} else if (sub->channel_state == INCALL || sub->channel_state == CALLING) {
+			int dtmf_compatibility = line_config[sub->parent->line_id].dtmf_compatibility;
+			p->dtmf_first = -1;
+			if (!dtmf_compatibility) {
+				struct ast_frame f = { 0, };
+				f.subclass.integer = dtmf_button;
+				f.src = "BRCM";
+				f.frametype = AST_FRAME_DTMF_END;
+
+				if (owner) {
+					ast_queue_frame(owner, &f);
+				}
+			}
+		}
+		else {
 			p->dtmfbuf[p->dtmf_len] = dtmf_button;
 			p->dtmf_len++;
 			p->dtmfbuf[p->dtmf_len] = '\0';
@@ -1496,14 +1506,6 @@ static char phone_2digit(char c)
 		return '#';
 	else if (c == 10)
 		return '*';
-	else if (c == 12)
-		return 'A';
-	else if (c == 13)
-		return 'B';
-	else if (c == 14)
-		return 'C';
-	else if (c == 15)
-		return 'D';
 	else if ((c < 10) && (c >= 0))
 		return '0' + c;
 	else
@@ -1525,7 +1527,6 @@ static void *brcm_monitor_packets(void *data)
 	ast_verbose("Packets thread starting\n");
 
 	while(packets) {
-		int drop_frame = 0;
 		struct ast_frame fr  = {0};
 		fr.src = "BRCM";
 
@@ -1557,6 +1558,7 @@ static void *brcm_monitor_packets(void *data)
 				ast_channel_ref(sub->owner);
 				owner = sub->owner;
 			}
+			ast_mutex_unlock(&sub->parent->lock);
 
 			/* We seem to get packets from DSP even if connection is muted (perhaps muting only affects packet callback).
 			 * Drop packets if subchannel is on hold. */
@@ -1592,52 +1594,13 @@ static void *brcm_monitor_packets(void *data)
 						ast_log(LOG_WARNING, "Unknown rtp codec id [%d]\n", pdata[1]);
 						break;
 				}
-			} else if  (rtp_packet_type == BRCM_DTMF) {
-				
-				unsigned int duration = (pdata[14] << 8 | pdata[15]);
-				unsigned int dtmf_end = pdata[13] & 128;
-				unsigned int event = phone_2digit(pdata[12]);
 
-				/* Use DTMFBE instead */
-				ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", rtp_packet_type, tPacketParm.length, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
-				ast_log(LOG_DTMF, " === Event %d Duration (samples) %d End? %s\n",  event, duration, dtmf_end ? "Yes" : "no");
-
-				if (dtmf_end && sub->dtmf_lastwasend) {
-					/* We correctly get a series of END messages. We should skip the
-					   copies */
-					ast_debug(5, "---> Skipping DTMF_END duplicate \n");
-					drop_frame = 1;
-
-				} else {
-					if (dtmf_end) {
-						fr.frametype = AST_FRAME_DTMF_END;
-						sub->dtmf_lastwasend = 1;
-						sub->dtmf_sending = 0;
-					} else {
-						sub->dtmf_lastwasend = 0;
-						if (sub->dtmf_sending == 0) { /* DTMF starts here */
-							fr.frametype = AST_FRAME_DTMF_BEGIN;
-							sub->dtmf_sending = 1;
-						} else {
-							fr.frametype = AST_FRAME_DTMF_CONTINUE;
-						}
-					}
-					sub->dtmf_duration = duration;
-					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
-						fr.samples = duration;
-						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
-						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
-					}
-					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
-				}
-			}
-			ast_mutex_unlock(&sub->parent->lock);
-
-			if (owner) {
-				if (!drop_frame && owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING) {
+				if (owner && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
 					ast_queue_frame(owner, &fr);
 				}
+			}
+
+			if (owner) {
 				ast_channel_unref(owner);
 			}
 		}
@@ -1846,7 +1809,6 @@ static void *brcm_monitor_events(void *data)
 					}
 
 					unsigned int old_state = sub->channel_state;
-					ast_log(LOG_DEBUG, "====> GOT DTMF %d\n", tEventParm.event);
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
 					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 						/* DTMF event took channel state to DIALING. Stop dial tone. */
@@ -2010,7 +1972,6 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 	if (tmp) {
 		struct brcm_subchannel *sub;
 		int i;
-
 		for (i=0; i<NUM_SUBCHANNELS; i++) {
 			sub = ast_calloc(1, sizeof(*sub));
 			if (sub) {
@@ -2735,7 +2696,7 @@ static char *brcm_set_dtmf_mode(struct ast_cli_entry *e, int cmd, struct ast_cli
 	}
 
 	/* Force inband mode, since this is what seems to be working best with Asterisk */
-	/* OEJ  s->dtmf_relay = EPDTMFRFC2833_DISABLED;		*/
+	s->dtmf_relay = EPDTMFRFC2833_DISABLED;
 
 	return CLI_SUCCESS;
 }
@@ -3102,7 +3063,7 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 				line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 			}
 			/* Force inband mode, since this is what seems to be working best with Asterisk */
-			/* line_config->dtmf_relay = EPDTMFRFC2833_DISABLED; */
+			line_config->dtmf_relay = EPDTMFRFC2833_DISABLED;
 		} else if (!strcasecmp(v->name, "shortdtmf")) {
 			line_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "dtmfcompatibility")) {

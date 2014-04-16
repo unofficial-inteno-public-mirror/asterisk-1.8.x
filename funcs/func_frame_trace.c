@@ -54,7 +54,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 336314 $")
 				<para>Below are the different types of frames that can be filtered.</para>
 				<enumlist>
 					<enum name = "DTMF_BEGIN" />
-					<enum name = "DTMF_CONTINUE" />
 					<enum name = "DTMF_END" />
 					<enum name = "VOICE" />
 					<enum name = "VIDEO" />
@@ -84,7 +83,6 @@ static struct {
 	const char *str;
 } frametype2str[] = {
 	{ AST_FRAME_DTMF_BEGIN,   "DTMF_BEGIN" },
-	{ AST_FRAME_DTMF_CONTINUE,   "DTMF_CONTINUE" },
 	{ AST_FRAME_DTMF_END,   "DTMF_END" },
 	{ AST_FRAME_VOICE,   "VOICE" },
 	{ AST_FRAME_VIDEO,   "VIDEO" },
@@ -353,10 +351,6 @@ static void print_frame(struct ast_frame *frame)
 		break;
 	case AST_FRAME_DTMF_BEGIN:
 		ast_verbose("FrameType: DTMF BEGIN\n");
-		ast_verbose("Digit: %d\n", frame->subclass.integer);
-		break;
-	case AST_FRAME_DTMF_CONTINUE:
-		ast_verbose("FrameType: DTMF CONTINUE\n");
 		ast_verbose("Digit: %d\n", frame->subclass.integer);
 		break;
 	}

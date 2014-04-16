@@ -78,9 +78,6 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 328209 $")
 			<parameter name="Digit" required="true">
 				<para>The DTMF digit to play.</para>
 			</parameter>
-			<parameter name="Duration" required="false">
-				<para>The duration in ms for the digit to play.</para>
-			</parameter>
 		</syntax>
 		<description>
 			<para>Plays a dtmf digit on the specified channel.</para>
@@ -137,9 +134,7 @@ static int manager_play_dtmf(struct mansession *s, const struct message *m)
 {
 	const char *channel = astman_get_header(m, "Channel");
 	const char *digit = astman_get_header(m, "Digit");
-	const char *duration = astman_get_header(m, "Duration");
 	struct ast_channel *chan;
-	int dtmfduration = 0;
 
 	if (!(chan = ast_channel_get_by_name(channel))) {
 		astman_send_error(s, m, "Channel not found");
@@ -151,11 +146,8 @@ static int manager_play_dtmf(struct mansession *s, const struct message *m)
 		chan = ast_channel_unref(chan);
 		return 0;
 	}
-	if (!ast_strlen_zero(duration)) {
-		dtmfduration = atoi(duration);
-	}
 
-	ast_senddigit(chan, *digit, dtmfduration);
+	ast_senddigit(chan, *digit, 0);
 
 	chan = ast_channel_unref(chan);
 

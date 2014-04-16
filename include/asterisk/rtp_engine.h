@@ -74,7 +74,6 @@ extern "C" {
 #include "asterisk/netsock2.h"
 #include "asterisk/sched.h"
 #include "asterisk/res_srtp.h"
-#include "asterisk/channel.h"
 
 /* Maximum number of payloads supported */
 #define AST_RTP_MAX_PT 256
@@ -212,14 +211,6 @@ enum ast_rtp_instance_stat {
 	AST_RTP_INSTANCE_STAT_LOCAL_SSRC,
 	/*! Retrieve remote SSRC */
 	AST_RTP_INSTANCE_STAT_REMOTE_SSRC,
-	/*! Retrieve local CNAME */
-	AST_RTP_INSTANCE_STAT_LOCAL_CNAME,
-	/*! Retrieve remote SDES */
-	AST_RTP_INSTANCE_STAT_REMOTE_CNAME,
-	/*! Retrieve start time */
-	AST_RTP_INSTANCE_STAT_START,
-	/*! Retrieve IP Address */
-	AST_RTP_INSTANCE_STAT_IP,
 };
 
 /* Codes for RTP-specific data - not defined by our AST_FORMAT codes */
@@ -246,12 +237,10 @@ struct ast_rtp_instance_stats {
 	unsigned int txcount;
 	/*! Number of packets received */
 	unsigned int rxcount;
-
 	/*! Jitter on transmitted packets */
 	double txjitter;
 	/*! Jitter on received packets */
 	double rxjitter;
-
 	/*! Maximum jitter on remote side */
 	double remote_maxjitter;
 	/*! Minimum jitter on remote side */
@@ -302,32 +291,6 @@ struct ast_rtp_instance_stats {
 	unsigned int local_ssrc;
 	/*! Their SSRC */
 	unsigned int remote_ssrc;
-
-	/* --- Pinefrog additions */
-	/*! Remote: Number of packets transmitted */
-	unsigned int remote_txcount;
-	/*! Remote: Number of packets received */
-	unsigned int remote_rxcount;
-	char channel[AST_MAX_EXTENSION];	/*!< Name of channel */
-	char uniqueid[AST_MAX_EXTENSION];	/*!< uniqueid of channel */
-	char bridgedchannel[AST_MAX_EXTENSION];	/*!< Name of bridged channel */
-	char bridgeduniqueid[AST_MAX_EXTENSION];	/*!< uniqueid of bridged channel */
-	unsigned int numberofreports;	  /*!< Number of reports received from remote end */
-	int lasttxformat;		  /*!< Last used codec on transmitted stream */
-	int lastrxformat;		  /*!< Last used codec on received stream */
-	struct sockaddr_in them;	  /*!< The IP address used for media by remote end */
-	struct sockaddr_in us;	  	  /*!< The IP address used for media by our end */
-	char ourcname[255];		/*!< Our SDES RTP session name (CNAME) */
-	size_t ourcnamelength;		/*!< Length of CNAME (utf8) */
-	char theircname[255];		/*!< Their SDES RTP session name (CNAME) */
-	size_t theircnamelength;	/*!< Length of CNAME (utf8) */
-	struct timeval start;		  /*!< When the stream started */
-	struct timeval end;		  /*!< When the stream ended */
-	char writetranslator[80];	  /*!< Translator used when writing */
-	char readtranslator[80];		  /*!< Translator providing frames when reading */
-	int writecost;		  /*!< Cost in milliseconds for encoding/decoding 1 second of outbound media */
-	int readcost;		  /*!< Cost in milliseconds for encoding/decoding 1 second of inbound media */
-	int mediatype;			/*! Type of media */
 };
 
 #define AST_RTP_STAT_SET(current_stat, combined, placement, value) \
@@ -355,15 +318,10 @@ struct ast_rtp_engine {
 	int (*destroy)(struct ast_rtp_instance *instance);
 	/*! Callback for writing out a frame */
 	int (*write)(struct ast_rtp_instance *instance, struct ast_frame *frame);
-	/*! Callback for stopping the outbound RTP media for an instance,
-	    but keeping the RTCP flow (and the RTP keepalives if needed) */
-	void (*hold)(struct ast_rtp_instance *instance, int status);
 	/*! Callback for stopping the RTP instance */
 	void (*stop)(struct ast_rtp_instance *instance);
 	/*! Callback for starting RFC2833 DTMF transmission */
 	int (*dtmf_begin)(struct ast_rtp_instance *instance, char digit);
-	/*! Callback for continuing RFC2833 DTMF transmission */
-	int (*dtmf_continue)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
 	/*! Callback for stopping RFC2833 DTMF transmission */
 	int (*dtmf_end)(struct ast_rtp_instance *instance, char digit);
 	int (*dtmf_end_with_duration)(struct ast_rtp_instance *instance, char digit, unsigned int duration);
@@ -419,15 +377,6 @@ struct ast_rtp_engine {
 	int (*available_formats)(struct ast_rtp_instance *instance, format_t to_endpoint, format_t to_asterisk);
 	/*! Callback to send CNG */
 	int (*sendcng)(struct ast_rtp_instance *instance, int level);
-	/*! Callback to check if a media stram is active */
-	int (*isactive)(struct ast_rtp_instance *instance);
-	/*! Callback to set CNAME in rtcp  */
-	void (*setcname)(struct ast_rtp_instance *instance, const char *cname, size_t length);
-	/*! Callback to set information about bridged channel for CQR record */
-	void (*set_bridged_chan)(struct ast_rtp_instance *instance, const char *channel, const char *uniqueid, const char *bridgedchan, const char *bridgeduniqueid);
-	/*! Callback to set translation information for the CQR record */
-	void (*set_translator) (struct ast_rtp_instance *instance, const char *readtranslator, const int readcost, const char *writetranslator, const int writecost);
-	int (*rtcp_write_empty)(struct ast_rtp_instance *instance);
 	/*! Linked list information */
 	AST_RWLIST_ENTRY(ast_rtp_engine) entry;
 };
@@ -1241,28 +1190,6 @@ void ast_rtp_codecs_packetization_set(struct ast_rtp_codecs *codecs, struct ast_
 int ast_rtp_instance_dtmf_begin(struct ast_rtp_instance *instance, char digit);
 
 /*!
- * \brief Continue sending a DTMF digit
- *
- * \param instance The RTP instance to send the DTMF on
- * \param digit What DTMF digit to send
- * \param duration Current duration of the DTMF
- *
- * \retval 0 success
- * \retval -1 failure
- *
- * Example usage:
- *
- * \code
- * ast_rtp_instance_dtmf_continue(instance, '1', 142857);
- * \endcode
- *
- * This starts continues the DTMF '1' on the RTP instance pointed to by instance.
- *
- * \since 11
- */
-int ast_rtp_instance_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration);
-
-/*!
  * \brief Stop sending a DTMF digit
  *
  * \param instance The RTP instance to stop the DTMF on
@@ -1382,26 +1309,6 @@ void ast_rtp_instance_change_source(struct ast_rtp_instance *instance);
  * \since 1.8
  */
 int ast_rtp_instance_set_qos(struct ast_rtp_instance *instance, int tos, int cos, const char *desc);
-
-/*!
- * \brief Stop the RTP outbound media in a stream, but keep the RTCP flow going
- * 	  And propably RTP keepalives too.
- *
- * \param instance Instance that media is no longer going to at this time
- *
- * Example usage:
- *
- * \code
- * ast_rtp_instance_stop(instance);
- * \endcode
- *
- * This tells the RTP engine being used for the instance pointed to by instance
- * that media is no longer going to it at this time, but may in the future.
- * Keep the RTCP flow happy
- *
- * \since 1.42
- */
-void ast_rtp_instance_hold(struct ast_rtp_instance *instance, int status);
 
 /*!
  * \brief Stop an RTP instance
@@ -1926,55 +1833,8 @@ struct ast_channel *ast_rtp_instance_get_chan(struct ast_rtp_instance *instance)
  */
 int ast_rtp_instance_sendcng(struct ast_rtp_instance *instance, int level);
 
-/*!
- * \brief Send empty RTCP report
- *
- * \param instance The RTP instance
- * \param fd File descriptor to use
- *
- * \retval 0 Success
- * \retval non-zero Failure
- */
-int ast_rtcp_write_empty(struct ast_rtp_instance *instance);
-
-
-/*!
- * \brief Check if RTP stream is active
- *
- * \param instance The RTP instance
- *
- * \retval 0 Active (success)
- * \retval -1 Not supported by RTP engine, 1 Not active
- */
-int ast_rtp_instance_isactive(struct ast_rtp_instance *instance);
-
-/*!
- * \brief Set the name of the RTP session (used in RTCP)
- * \param cname Session name (UTF 8 possible)
- * \param length Name of string (needed for UTF 8 always)
- *
- */
-int ast_rtp_instance_setcname(struct ast_rtp_instance *instance, const char *cname, size_t length);
-
-
 int ast_rtp_instance_add_srtp_policy(struct ast_rtp_instance *instance, struct ast_srtp_policy *policy);
 struct ast_srtp *ast_rtp_instance_get_srtp(struct ast_rtp_instance *instance);
-
-/*!
- * \brief set the channel information for the CQR records
- *
- * \retval 0 on success
- * \retval -1 not implemented by RTP engine
- */
-int ast_rtp_instance_set_bridged_chan(struct ast_rtp_instance *instance, const char *channel, const char *uniqueid, const char *bridgedchan, const char *bridgeduniqueid);
-
-/*!
- * \brief set the channel translator information for the CQR records
- *
- * \retval 0 on success
- * \retval -1 not implemented by RTP engine
- */
-int ast_rtp_instance_set_translator(struct ast_rtp_instance *instance, const char *readtranslator, const int readcost, const char *writetranslator, const int writecost);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

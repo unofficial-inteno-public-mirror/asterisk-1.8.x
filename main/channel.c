@@ -103,6 +103,9 @@ AST_THREADSTORAGE(state2str_threadbuf);
  *  100ms */
 #define AST_DEFAULT_EMULATE_DTMF_DURATION 100
 
+/*! Minimum allowed digit length - 80ms */
+#define AST_MIN_DTMF_DURATION 80
+
 /*! Minimum amount of time between the end of the last digit and the beginning 
  *  of a new one - 45ms */
 #define AST_MIN_DTMF_GAP 45
@@ -1405,10 +1408,6 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 
 	ast_channel_lock(chan);
 
-	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
-		ast_debug(9, "==> Got DTMF frame type %d\n", fin->frametype);
-	}
-
 	/*
 	 * Check the last frame on the queue if we are queuing the new
 	 * frames after it.
@@ -1791,7 +1790,6 @@ int ast_is_deferrable_frame(const struct ast_frame *frame)
 		return 1;
 
 	case AST_FRAME_DTMF_END:
-	case AST_FRAME_DTMF_CONTINUE:
 	case AST_FRAME_DTMF_BEGIN:
 	case AST_FRAME_VOICE:
 	case AST_FRAME_VIDEO:
@@ -2988,7 +2986,6 @@ int __ast_answer(struct ast_channel *chan, unsigned int delay, int cdr_answer)
 				case AST_FRAME_VIDEO:
 				case AST_FRAME_TEXT:
 				case AST_FRAME_DTMF_BEGIN:
-				case AST_FRAME_DTMF_CONTINUE:
 				case AST_FRAME_DTMF_END:
 				case AST_FRAME_IMAGE:
 				case AST_FRAME_HTML:
@@ -3549,7 +3546,6 @@ int ast_waitfordigit_full(struct ast_channel *c, int ms, int audiofd, int cmdfd)
 
 			switch (f->frametype) {
 			case AST_FRAME_DTMF_BEGIN:
-			case AST_FRAME_DTMF_CONTINUE:
 				break;
 			case AST_FRAME_DTMF_END:
 				res = f->subclass.integer;
@@ -3665,8 +3661,6 @@ static inline void queue_dtmf_readq(struct ast_channel *chan, struct ast_frame *
 	fr->frametype = AST_FRAME_DTMF_END;
 	fr->subclass.integer = f->subclass.integer;
 	fr->len = f->len;
-	fr->samples = f->samples;
-	ast_debug(8, " ===> queueing DTMF for some reason - samples %d\n", f->samples);
 
 	/* The only time this function will be called is for a frame that just came
 	 * out of the channel driver.  So, we want to stick it on the tail of the
@@ -3690,7 +3684,6 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 			ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 		/* We're not in the middle of a digit, but it hasn't been long enough
 		 * since the last digit, so we'll have to skip DTMF for now. */
-		ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP \n");
 		return 1;
 	}
 
@@ -3861,9 +3854,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			 * there are cases where we want to leave DTMF frames on the queue until
 			 * some later time. */
 
-			/* We should not skip DTMF_CONTINUE ever */
 			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
-				ast_debug(8, "===== Skipping DTMF. \n");
 				continue;
 			}
 
@@ -3987,7 +3978,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			ast_log(LOG_DTMF, "DTMF end '%c' received on %s, duration %ld ms\n", f->subclass.integer, chan->name, f->len);
 			/* Queue it up if DTMF is deferred, or if DTMF emulation is forced. */
 			if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF) || ast_test_flag(chan, AST_FLAG_EMULATE_DTMF)) {
-				ast_debug(8, "===> queueing up DTMF for some reason \n");
 				queue_dtmf_readq(chan, f);
 				ast_frfree(f);
 				f = &ast_null_frame;
@@ -3995,7 +3985,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				if (!ast_tvzero(chan->dtmf_tv) && 
 				    ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 					/* If it hasn't been long enough, defer this digit */
-					ast_debug(8, "===> queueing up DTMF for another weird reason (to small gap) \n");
 					queue_dtmf_readq(chan, f);
 					ast_frfree(f);
 					f = &ast_null_frame;
@@ -4006,10 +3995,10 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					chan->emulate_dtmf_digit = f->subclass.integer;
 					chan->dtmf_tv = ast_tvnow();
 					if (f->len) {
-						if (f->len > option_dtmfminduration)
+						if (f->len > AST_MIN_DTMF_DURATION)
 							chan->emulate_dtmf_duration = f->len;
 						else 
-							chan->emulate_dtmf_duration = option_dtmfminduration;
+							chan->emulate_dtmf_duration = AST_MIN_DTMF_DURATION;
 					} else
 						chan->emulate_dtmf_duration = AST_DEFAULT_EMULATE_DTMF_DURATION;
 					ast_log(LOG_DTMF, "DTMF begin emulation of '%c' with duration %u queued on %s\n", f->subclass.integer, chan->emulate_dtmf_duration, chan->name);
@@ -4039,25 +4028,25 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					 * dtmf emulation to be triggered later
 					 * on.
 					 */
-					if (ast_tvdiff_ms(now, chan->dtmf_tv) < option_dtmfminduration) {
+					if (ast_tvdiff_ms(now, chan->dtmf_tv) < AST_MIN_DTMF_DURATION) {
 						f->len = ast_tvdiff_ms(now, chan->dtmf_tv);
 						ast_log(LOG_DTMF, "DTMF end '%c' detected to have actual duration %ld on the wire, emulation will be triggered on %s\n", f->subclass.integer, f->len, chan->name);
 					}
 				} else if (!f->len) {
 					ast_log(LOG_DTMF, "DTMF end accepted without begin '%c' on %s\n", f->subclass.integer, chan->name);
-					f->len = option_dtmfminduration;
+					f->len = AST_MIN_DTMF_DURATION;
 				}
-				if (f->len < option_dtmfminduration && !ast_test_flag(chan, AST_FLAG_END_DTMF_ONLY)) {
-					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s\n", f->subclass.integer, f->len, option_dtmfminduration, chan->name);
+				if (f->len < AST_MIN_DTMF_DURATION && !ast_test_flag(chan, AST_FLAG_END_DTMF_ONLY)) {
+					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s\n", f->subclass.integer, f->len, AST_MIN_DTMF_DURATION, chan->name);
 					ast_set_flag(chan, AST_FLAG_EMULATE_DTMF);
 					chan->emulate_dtmf_digit = f->subclass.integer;
-					chan->emulate_dtmf_duration = option_dtmfminduration - f->len;
+					chan->emulate_dtmf_duration = AST_MIN_DTMF_DURATION - f->len;
 					ast_frfree(f);
 					f = &ast_null_frame;
 				} else {
 					ast_log(LOG_DTMF, "DTMF end passthrough '%c' on %s\n", f->subclass.integer, chan->name);
-					if (f->len < option_dtmfminduration) {
-						f->len = option_dtmfminduration;
+					if (f->len < AST_MIN_DTMF_DURATION) {
+						f->len = AST_MIN_DTMF_DURATION;
 					}
 					chan->dtmf_tv = now;
 				}
@@ -4067,17 +4056,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					if (old_frame != f)
 						ast_frfree(old_frame);
 				}
-			}
-			break;
-		case AST_FRAME_DTMF_CONTINUE:
-			if (!ast_test_flag(chan, AST_FLAG_IN_DTMF)) {
-				/* We got CONTINUE, but no BEGIN */
-				ast_set_flag(chan, AST_FLAG_IN_DTMF);
-				send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
-				chan->dtmf_tv = ast_tvnow();
-				ast_debug(4, "DTMF continue '%c' received from %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, f->len);
-			} else {
-				ast_debug(4, "DTMF continue '%c' received from %s Dur %d\n", f->subclass.integer, chan->name, f->len);
 			}
 			break;
 		case AST_FRAME_DTMF_BEGIN:
@@ -4422,9 +4400,6 @@ int ast_indicate_data(struct ast_channel *chan, int _condition,
 	if (chan->tech->indicate) {
 		/* See if the channel driver can handle this condition. */
 		res = chan->tech->indicate(chan, condition, data, datalen);
-		if (condition == AST_CONTROL_SRCUPDATE) {
-			ast_debug(8, "*******>>> Done handling a SRC update control frame here \n");
-		}
 	} else {
 		res = -1;
 	}
@@ -4508,7 +4483,6 @@ int ast_indicate_data(struct ast_channel *chan, int _condition,
 	case AST_CONTROL_AOC:
 	case AST_CONTROL_END_OF_Q:
 	case AST_CONTROL_UPDATE_RTP_PEER:
-	case AST_CONTROL_TRANSFER_REMOTE:
 		/* Nothing left to do for these. */
 		res = 0;
 		break;
@@ -4631,17 +4605,6 @@ int ast_senddigit_begin(struct ast_channel *chan, char digit)
 	else {
 		/* not handled */
 		ast_debug(1, "Unable to generate DTMF tone '%c' for '%s'\n", digit, chan->name);
-	}
-
-	return 0;
-}
-
-int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration)
-{
-
-	ast_debug(4, "--- Continue frame passed on to tech for %s (duration %d)\n", chan->name, duration);
-	if (chan->tech->send_digit_continue) {
-		chan->tech->send_digit_continue(chan, digit, duration);
 	}
 
 	return 0;
@@ -4884,22 +4847,6 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 		ast_clear_flag(chan, AST_FLAG_BLOCKING);
 		ast_channel_unlock(chan);
 		res = ast_senddigit_begin(chan, fr->subclass.integer);
-		ast_channel_lock(chan);
-		CHECK_BLOCKING(chan);
-		break;
-	case AST_FRAME_DTMF_CONTINUE:
-		if (chan->audiohooks) {
-			struct ast_frame *old_frame = fr;
-			fr = ast_audiohook_write_list(chan, chan->audiohooks, AST_AUDIOHOOK_DIRECTION_WRITE, fr);
-			if (old_frame != fr)
-				f = fr;
-		}
-		ast_log(LOG_DEBUG, "---Continue FRAME received, forwarding to channel %s\n", chan->name);
-		// Skip manager for continue events (at least for now)
-		//send_dtmf_event(chan, "Sent", fr->subclass, "Yes", "No");
-		ast_clear_flag(chan, AST_FLAG_BLOCKING);
-		ast_channel_unlock(chan);
-		res = ast_senddigit_continue(chan, fr->subclass.integer, fr->len);
 		ast_channel_lock(chan);
 		CHECK_BLOCKING(chan);
 		break;
@@ -7171,7 +7118,6 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 		}
 		if ((f->frametype == AST_FRAME_VOICE) ||
 		    (f->frametype == AST_FRAME_DTMF_BEGIN) ||
-		    (f->frametype == AST_FRAME_DTMF_CONTINUE) ||
 		    (f->frametype == AST_FRAME_DTMF) ||
 		    (f->frametype == AST_FRAME_VIDEO) ||
 		    (f->frametype == AST_FRAME_IMAGE) ||
@@ -7183,20 +7129,19 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 
 			if (monitored_source &&
 				(f->frametype == AST_FRAME_DTMF_END ||
-				f->frametype == AST_FRAME_DTMF_CONTINUE ||
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
 				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
-					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+					f->frametype == AST_FRAME_DTMF_END ? "end" : "begin",
 					who->name);
 
 				break;
 			}
 			/* Write immediately frames, not passed through jb */
-			if (!frame_put_in_jb) {
+			if (!frame_put_in_jb)
 				ast_write(other, f);
-			}
+				
 			/* Check if we have to deliver now */
 			if (jb_in_use)
 				ast_jb_get_and_deliver(c0, c1);
@@ -7399,8 +7344,8 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 	manager_bridge_event(1, 1, c0, c1);
 
 	/* Before we enter in and bridge these two together tell them both the source of audio has changed */
-	//ast_indicate(c0, AST_CONTROL_SRCUPDATE);
-	//ast_indicate(c1, AST_CONTROL_SRCUPDATE);
+	ast_indicate(c0, AST_CONTROL_SRCUPDATE);
+	ast_indicate(c1, AST_CONTROL_SRCUPDATE);
 
 	for (/* ever */;;) {
 		struct timeval now = { 0, };
@@ -7566,8 +7511,8 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 	ast_clear_flag(c1, AST_FLAG_END_DTMF_ONLY);
 
 	/* Now that we have broken the bridge the source will change yet again */
-	////ast_indicate(c0, AST_CONTROL_SRCUPDATE);
-	//ast_indicate(c1, AST_CONTROL_SRCUPDATE);
+	ast_indicate(c0, AST_CONTROL_SRCUPDATE);
+	ast_indicate(c1, AST_CONTROL_SRCUPDATE);
 
 	c0->_bridge = NULL;
 	c1->_bridge = NULL;

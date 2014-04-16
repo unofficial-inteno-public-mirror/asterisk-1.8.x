@@ -1927,7 +1927,6 @@ static int play_message_on_chan(struct ast_channel *play_to, struct ast_channel 
 		return -1;
 	}
 	ast_autoservice_ignore(other, AST_FRAME_DTMF_BEGIN);
-	ast_autoservice_ignore(other, AST_FRAME_DTMF_CONTINUE);
 	ast_autoservice_ignore(other, AST_FRAME_DTMF_END);
 	if (ast_stream_and_wait(play_to, audiofile, "")) {
 		ast_log(LOG_WARNING, "Failed to play %s '%s'!\n", msg, audiofile);
@@ -3160,7 +3159,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 					res = builtin_features[x].operation(chan, peer, config, code, sense, NULL);
 				}
 				if (feature) {
-					memcpy(feature, &builtin_features[x], sizeof(*feature));
+					memcpy(feature, &builtin_features[x], sizeof(feature));
 				}
 				feature_detected = 1;
 				break;
@@ -3190,7 +3189,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 					if (operation) {
 						res = fge->feature->operation(chan, peer, config, code, sense, fge->feature);
 					}
-					memcpy(feature, fge->feature, sizeof(*feature));
+					memcpy(feature, fge->feature, sizeof(feature));
 					if (res != AST_FEATURE_RETURN_KEEPTRYING) {
 						AST_RWLIST_UNLOCK(&feature_groups);
 						break;
@@ -3223,7 +3222,7 @@ static int feature_interpret_helper(struct ast_channel *chan, struct ast_channel
 				res = tmpfeature->operation(chan, peer, config, code, sense, tmpfeature);
 			}
 			if (feature) {
-				memcpy(feature, tmpfeature, sizeof(*feature));
+				memcpy(feature, tmpfeature, sizeof(feature));
 			}
 			if (res != AST_FEATURE_RETURN_KEEPTRYING) {
 				AST_RWLIST_UNLOCK(&feature_list);
@@ -4052,11 +4051,11 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 					   digits to come in for features. */
 					ast_debug(1, "Timed out for feature!\n");
 					if (!ast_strlen_zero(peer_featurecode)) {
-						ast_dtmf_stream(chan, peer, peer_featurecode, 0, f ? f->len : 0);
+						ast_dtmf_stream(chan, peer, peer_featurecode, 0, 0);
 						memset(peer_featurecode, 0, sizeof(peer_featurecode));
 					}
 					if (!ast_strlen_zero(chan_featurecode)) {
-						ast_dtmf_stream(peer, chan, chan_featurecode, 0, f ? f->len : 0);
+						ast_dtmf_stream(peer, chan, chan_featurecode, 0, 0);
 						memset(chan_featurecode, 0, sizeof(chan_featurecode));
 					}
 					if (f)
@@ -4175,7 +4174,7 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 			if (featurelen == 0
 				&& feature_check(chan, cfg, &dtmfcode[0]) == AST_FEATURE_RETURN_PASSDIGITS) {
 				if (option_debug > 3) {
-					ast_log(LOG_DEBUG, "Passing DTMF BEGIN through, since it is not a feature code\n");
+					ast_log(LOG_DEBUG, "Passing DTMF through, since it is not a feature code\n");
 				}
 				ast_write(other, f);
 				sendingdtmfdigit = 1;
@@ -4189,15 +4188,6 @@ int ast_bridge_call(struct ast_channel *chan, struct ast_channel *peer, struct a
 				if (option_debug > 3) {
 					ast_log(LOG_DEBUG, "Not passing DTMF through, since it may be a feature code\n");
 				}
-			}
-		} else if (f->frametype == AST_FRAME_DTMF_CONTINUE) {
-			if (sendingdtmfdigit == 1) {
-				/* We let the BEGIN go through happily, so let's not bother with the CONTINUE,
-				 * since we already know it's not something we bother with */
-				ast_debug(8, "Passing DTMF CONTINUE  through, since it is not a feature code\n");
-				ast_write(other, f);
-			} else {
-				ast_debug(9, "===> Dropping DTMF continue. Feature code \n");
 			}
 		} else if (f->frametype == AST_FRAME_DTMF_END) {
 			char *featurecode;

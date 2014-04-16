@@ -21,9 +21,6 @@
  * \brief Pluggable RTP Architecture
  *
  * \author Joshua Colp <jcolp@digium.com>
- *
- * Improved RTCP support by
- * \author Olle E. Johansson  <oej@edvina.net>
  */
 
 #include "asterisk.h"
@@ -737,11 +734,6 @@ int ast_rtp_instance_dtmf_begin(struct ast_rtp_instance *instance, char digit)
 	return instance->engine->dtmf_begin ? instance->engine->dtmf_begin(instance, digit) : -1;
 }
 
-int ast_rtp_instance_dtmf_continue(struct ast_rtp_instance *instance, char digit, unsigned int duration)
-{
-	return instance->engine->dtmf_continue ? instance->engine->dtmf_continue(instance, digit, duration) : -1;
-}
-
 int ast_rtp_instance_dtmf_end(struct ast_rtp_instance *instance, char digit)
 {
 	return instance->engine->dtmf_end ? instance->engine->dtmf_end(instance, digit) : -1;
@@ -778,13 +770,6 @@ void ast_rtp_instance_change_source(struct ast_rtp_instance *instance)
 int ast_rtp_instance_set_qos(struct ast_rtp_instance *instance, int tos, int cos, const char *desc)
 {
 	return instance->engine->qos ? instance->engine->qos(instance, tos, cos, desc) : -1;
-}
-
-void ast_rtp_instance_hold(struct ast_rtp_instance *instance, int status)
-{
-	if (instance->engine->hold) {
-		instance->engine->hold(instance, status);
-	}
 }
 
 void ast_rtp_instance_stop(struct ast_rtp_instance *instance)
@@ -839,7 +824,6 @@ static enum ast_bridge_result local_bridge_loop(struct ast_channel *c0, struct a
 		return AST_BRIDGE_FAILED_NOWARN;
 	}
 
-	/* Now let go of the channel locks and be on our way */
 	ast_channel_unlock(c0);
 	ast_channel_unlock(c1);
 
@@ -847,10 +831,6 @@ static enum ast_bridge_result local_bridge_loop(struct ast_channel *c0, struct a
 	instance1->bridged = instance0;
 
 	ast_poll_channel_add(c0, c1);
-
-	/* Kick the RTCP stream going by sending one empty stupid little packet */
-	ast_rtcp_write_empty(instance0);
-	ast_rtcp_write_empty(instance1);
 
 	/* Hop into a loop waiting for a frame from either channel */
 	cs[0] = c0;
@@ -1824,58 +1804,11 @@ struct ast_srtp *ast_rtp_instance_get_srtp(struct ast_rtp_instance *instance)
 	return instance->srtp;
 }
 
-int ast_rtp_instance_isactive(struct ast_rtp_instance *instance)
-{
-	if (instance->engine->isactive) {
-		return instance->engine->isactive(instance);
-	}
-
-	return -1;
-}
-
-int ast_rtcp_write_empty(struct ast_rtp_instance *instance)
-{
-	if (instance->engine->rtcp_write_empty) {
-		instance->engine->rtcp_write_empty(instance);
-		return 0;
-	}
-	return -1;
-}
-
 int ast_rtp_instance_sendcng(struct ast_rtp_instance *instance, int level)
 {
 	if (instance->engine->sendcng) {
 		return instance->engine->sendcng(instance, level);
 	}
+
 	return -1;
-}
-
-int ast_rtp_instance_setcname(struct ast_rtp_instance *instance, const char *cname, size_t length)
-{
-	if (instance->engine->setcname) {
-		instance->engine->setcname(instance, cname, length);
-		return 0;
-	}
-
-	return -1;	/* Function does not exist */
-}
-
-int ast_rtp_instance_set_bridged_chan(struct ast_rtp_instance *instance, const char *channel, const char *uniqueid, const char *bridgedchan, const char *bridgeduniqueid)
-{
-	if (instance->engine->set_bridged_chan) {
-		instance->engine->set_bridged_chan(instance, channel, uniqueid, bridgedchan, bridgeduniqueid);
-		return 0;
-	}
-
-	return -1;	/* Function does not exist */
-}
-
-int ast_rtp_instance_set_translator(struct ast_rtp_instance *instance, const char *readtranslator, const int readcost, const char *writetranslator, const int writecost)
-{
-	if (instance->engine->set_translator) {
-		instance->engine->set_translator(instance, readtranslator, readcost, writetranslator, writecost);
-		return 0;
-	}
-
-	return -1;	/* Function does not exist */
 }
