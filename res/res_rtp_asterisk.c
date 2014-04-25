@@ -99,6 +99,8 @@ enum rtcp_sdes {
 
 #define RTP_MTU		1200
 
+#define DTMF_SAMPLE_RATE_MS    8 /*!< DTMF samples per millisecond */
+
 #define DEFAULT_DTMF_TIMEOUT (150 * (8000 / 1000))	/*!< samples */
 
 #define ZFONE_PROFILE_ID 0x505a
@@ -357,6 +359,7 @@ static int ast_rtp_isactive(struct ast_rtp_instance *instance);
 static int add_sdes_bodypart(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len, int type);
 static int add_sdes_header(struct ast_rtp *rtp, unsigned int *rtcp_packet, int len);
 static int ast_rtcp_write_empty_frame(struct ast_rtp_instance *instance);
+static unsigned int calc_txstamp(struct ast_rtp *rtp, struct timeval *delivery);
 
 /* RTP Engine Declaration */
 static struct ast_rtp_engine asterisk_rtp_engine = {
@@ -983,7 +986,6 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	char data[256];
 	unsigned int *rtpheader = (unsigned int*)data;
 	unsigned int measured_samples;
-	unsigned int dursamples;
 
 	ast_rtp_instance_get_remote_address(instance, &remote_address);
 
@@ -991,7 +993,6 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	if (ast_sockaddr_isnull(&remote_address)) {
 		goto cleanup;
 	}
-	dursamples =  duration * (8000 / 1000);     /* How do we get the sample rate for the primary media in this call? */
 
 	ast_debug(1, "---- Send duration %d Received duration %d Duration %d Endflag %d Digit %d      Send-digit %d\n", rtp->send_duration, rtp->received_duration, duration, rtp->send_endflag, digit, rtp     ->send_digit);
 
