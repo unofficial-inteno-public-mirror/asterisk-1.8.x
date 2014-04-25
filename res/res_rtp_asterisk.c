@@ -951,10 +951,14 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 		rtp->send_duration += 160;
 	} 
 	if (rtp->send_endflag) {
-		ast_debug(4, "---- Send duration %d Received duration %d - sending END packet\n", rtp->send_duration, rtp->received_duration);
-		/* We are done, ready to send end flag */
-		rtp->send_endflag = 0;
-		return ast_rtp_dtmf_end_with_duration(instance, 0, rtp->received_duration);
+		if (rtp->send_duration + 160 >= rtp->received_duration) {
+			ast_debug(4, "---- Send duration %d Received duration %d - sending END packet\n", rtp->send_duration, rtp->received_duration);
+			/* We are done, ready to send end flag */
+			rtp->send_endflag = 0;
+			return ast_rtp_dtmf_end_with_duration(instance, 0, rtp->received_duration);
+		} else {
+			ast_debug(4, "---- Send duration %d Received duration %d - delaying END packet (not ready for it yet)\n", rtp->send_duration, rtp->received_duration);
+		}
 	}
 	ast_debug(4, "---- Send duration %d Received duration %d Endflag %d Send-digit %d\n", rtp->send_duration, rtp->received_duration, rtp->send_endflag, rtp->send_digit);
 	/* Actually create the packet we will be sending */
@@ -962,8 +966,6 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 	rtpheader[1] = htonl(rtp->lastdigitts);
 	rtpheader[2] = htonl(rtp->ssrc);
 	rtpheader[3] = htonl((rtp->send_digit << 24) | (0xa << 16) | (rtp->send_duration));
-	// seems redundant //
-	// rtpheader[0] = htonl((2 << 30) | (rtp->send_payload << 16) | (rtp->seqno));
 
 	/* Boom, send it on out */
 	res = rtp_sendto(instance, (void *) rtpheader, hdrlen + 4, 0, &remote_address);
