@@ -989,7 +989,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 
 	/* Make sure we know where the remote side is so we can send them the packet we construct */
 	if (ast_sockaddr_isnull(&remote_address)) {
-		return -1;
+		goto cleanup;
 	}
 	dursamples =  duration * (8000 / 1000);     /* How do we get the sample rate for the primary media in this call? */
 
@@ -1028,15 +1028,14 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	}
 
 	/* Construct the packet we are going to send */
-	rtpheader[0] = htonl((2 << 30) | (1 << 23) | (rtp->send_payload << 16) | (rtp->seqno));
 	rtpheader[1] = htonl(rtp->lastdigitts);
 	rtpheader[2] = htonl(rtp->ssrc);
 	rtpheader[3] = htonl((digit << 24) | (0xa << 16) | (rtp->send_duration));
 	rtpheader[3] |= htonl((1 << 23));
-	rtpheader[0] = htonl((2 << 30) | (rtp->send_payload << 16) | (rtp->seqno));
 
 	/* Send it 3 times, that's the magical number */
 	for (i = 0; i < 3; i++) {
+		rtpheader[0] = htonl((2 << 30) | (rtp->send_payload << 16) | (rtp->seqno));
 		res = rtp_sendto(instance, (void *) rtpheader, hdrlen + 4, 0, &remote_address);
 		if (res < 0) {
 			ast_log(LOG_ERROR, "RTP Transmission error to %s: %s\n",
@@ -1048,10 +1047,14 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 				    ast_sockaddr_stringify(&remote_address),
 				    rtp->send_payload, rtp->seqno, rtp->lastdigitts, res - hdrlen);
 		}
+		rtp->seqno++;
 	}
 
 	/* Oh and we can't forget to turn off the stuff that says we are sending DTMF */
-	rtp->lastts += rtp->send_duration;
+	//rtp->lastts += rtp->send_duration//;
+
+	rtp->lastts += calc_txstamp(rtp, NULL) * DTMF_SAMPLE_RATE_MS;
+cleanup:
 	rtp->sending_dtmf = DTMF_NOT_SENDING;
 	rtp->send_digit = 0;
 
