@@ -334,10 +334,17 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 			break;
 		case EPDTMFRFC2833_ENABLED:
 		case EPDTMFRFC2833_SUBTRACT:
+			{
+			unsigned int ts;
+			struct timeval tim;
+			gettimeofday(&tim, NULL);
+			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+			ast_debug(9, "DTMF %d start %d detected\n", digit, ts);
 			if (brcm_signal_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
 				res = -1;
 			}
 			break;
+			}
 		default:
 			res = -1;
 			break;
@@ -365,10 +372,17 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 			break;
 		case EPDTMFRFC2833_ENABLED:
 		case EPDTMFRFC2833_SUBTRACT:
+			{
+			unsigned int ts;
+			struct timeval tim;
+			gettimeofday(&tim, NULL);
+			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+			ast_debug(9, "DTMF %d stop %d detected\n", digit, ts);
 			if (brcm_stop_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
 				res = -1;
 			}
 			break;
+			}
 		default:
 			res = -1;
 			break;
