@@ -2367,7 +2367,6 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
 		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
-		ast_cli(a->fd, "DTMF short          : %s\n", s->dtmf_short ? "on" : "off");
 		ast_cli(a->fd, "DTMF compatibility  : %s\n", s->dtmf_compatibility ? "on" : "off");
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
 		ast_cli(a->fd, "Autodial extension  : %s\n", s->autodial_ext);
@@ -2588,10 +2587,9 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	int on_off = 0;
 
 	if (cmd == CLI_INIT) {
-		e->command = "brcm set {dtmf_short|echocancel|ringsignal} {on|off}";
+		e->command = "brcm set {echocancel|ringsignal} {on|off}";
 		e->usage =
-			"Usage: brcm set {dtmf_short|echocancel|ringsignal} {on|off} PvtNr\n"
-			"       dtmf_short, dtmf sending mode.\n"
+			"Usage: brcm set {echocancel|ringsignal} {on|off} PvtNr\n"
 			"       echocancel, echocancel mode.\n"
 			"       ringsignal, ring signal mode.\n"
 			"       PvtNr, the Pvt to modify.\n";
@@ -2616,9 +2614,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 		on_off = 0;
 	}
 
-	if (!strcasecmp(a->argv[2], "dtmf_short")) {
-		s->dtmf_short = on_off;
-	} else if (!strcasecmp(a->argv[2], "echocancel")) {
+	if (!strcasecmp(a->argv[2], "echocancel")) {
 		s->echocancel = on_off;
 	} else if (!strcasecmp(a->argv[2], "ringsignal")) {
 		s->ringsignal = on_off;
@@ -3039,7 +3035,6 @@ static line_settings line_settings_create(void)
 		.txgain = GAIN_DEFAULT,
 		.rxgain = GAIN_DEFAULT,
 		.dtmf_relay = EPDTMFRFC2833_DISABLED,
-		.dtmf_short = 1,
 		.dtmf_compatibility = 1,
 		.codec_list = {CODEC_PCMA, CODEC_PCMU, -1, -1, -1, -1},
 		.codec_nr = 2,
@@ -3103,8 +3098,6 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 			}
 			/* Force inband mode, since this is what seems to be working best with Asterisk */
 			/* line_config->dtmf_relay = EPDTMFRFC2833_DISABLED; */
-		} else if (!strcasecmp(v->name, "shortdtmf")) {
-			line_config->dtmf_short = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "dtmfcompatibility")) {
 			line_config->dtmf_compatibility = ast_true(v->value)?1:0;
 		} else if (!strcasecmp(v->name, "allow")) {
