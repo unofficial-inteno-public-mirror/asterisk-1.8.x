@@ -1117,11 +1117,11 @@ static int r4hanguptimeout_cb(const void *data)
 static int dialtone_init_cb(const void *data)
 {
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
-	pvt_lock(sub->parent, "dialtone init callback");
+	pvt_lock(p, "dialtone init callback");
 	//ast_mutex_lock(&p->lock);
 	brcm_dialtone_init(p);
 	//ast_mutex_unlock(&p->lock);
-	pvt_unlock(sub->parent);
+	pvt_unlock(p);
 	return 0;
 }
 
