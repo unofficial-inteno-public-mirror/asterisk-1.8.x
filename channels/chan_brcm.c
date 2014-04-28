@@ -220,11 +220,55 @@ static struct brcm_channel_tech fxs_tech = {
 	.stop_ringing_callerid_pending = brcm_stop_ringing_callerid_pending,
 };
 
+/* Tries to lock 10 timees, then gives up */
+static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
+{
+	int i = 10;
+	while (i--) {
+		if (!ast_mutex_trylock(&pvt->lock)) {
+			ast_debug(9, "----> Successfully locked pvt port %d - reason %s\n", pvt->line_id, reason);
+			return 1;
+		}
+	}
+	ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
+	return 0;
+}
+
+static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
+{
+	ast_debug(9, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
+	ast_mutex_lock(&pvt->lock);
+	ast_debug(9, "----> Locked pvt port %d - reason %s\n", pvt->line_id, reason);
+	return 1;
+}
+
+static int pvt_lock_silent(struct brcm_pvt *pvt)
+{
+	ast_mutex_lock(&pvt->lock);
+	return 1;
+}
+
+
+static int pvt_unlock(struct brcm_pvt *pvt)
+{
+	ast_mutex_unlock(&pvt->lock);
+	ast_debug(10, "----> Unlocking pvt port %d\n", pvt->line_id);
+	return 1;
+}
+
+static int pvt_unlock_silent(struct brcm_pvt *pvt)
+{
+	ast_mutex_unlock(&pvt->lock);
+	return 1;
+}
+
+
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
 {
 	struct brcm_subchannel *sub = ast->tech_pvt;
 	int res = 0;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "indicate");
+	//ast_mutex_lock(&sub->parent->lock);
 	switch(condition) {
 	case AST_CONTROL_SRCUPDATE:
 	case AST_CONTROL_UNHOLD:
@@ -250,7 +294,8 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		res = -1;
 		break;
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 	return res;
 }
 
@@ -324,7 +369,8 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	line_settings* s;
 
 	sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "DTMF senddigit_begin");
 
 	res = 0;
 	s = &line_config[sub->parent->line_id];
@@ -350,7 +396,8 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 			break;
 	}
 
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 	return res;
 }
 
@@ -362,7 +409,8 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 	line_settings* s;
 
 	sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "DTMF senddigit_end");
 
 	res = 0;
 	s = &line_config[sub->parent->line_id];
@@ -388,7 +436,8 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 			break;
 	}
 
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 	return res;
 }
 
@@ -411,7 +460,8 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 		return -1;
 	}
 
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "brcm_call");
 
 	p = sub->parent;
 	if (cw && brcm_in_call(p)) {
@@ -440,7 +490,8 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	  	ast_setstate(chan, AST_STATE_RINGING);
 		ast_queue_control(chan, AST_CONTROL_RINGING);
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 
 	return 0;
 }
@@ -455,7 +506,8 @@ static int brcm_hangup(struct ast_channel *ast)
 		ast_log(LOG_WARNING, "Asked to hangup channel not connected\n");
 		return 0;
 	}
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "BRCM hangup");
 
 	p = sub->parent;
 	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
@@ -499,7 +551,8 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
 	brcm_close_connection(sub);
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
 	return 0;
 }
 
@@ -509,14 +562,16 @@ static int brcm_answer(struct ast_channel *ast)
 	ast_debug(1, "brcm_answer(%s)\n", ast->name);
 
 	struct brcm_subchannel *sub = ast->tech_pvt;
-	ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "BRCM answer");
+	//ast_mutex_lock(&sub->parent->lock);
 	if (ast->_state != AST_STATE_UP) {
 		ast_setstate(ast, AST_STATE_UP);
 		ast_log(LOG_DEBUG, "brcm_answer(%s) set state to up\n", ast->name);
 	}
 	ast->rings = 0;
 	brcm_subchannel_set_state(sub, INCALL);
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 	return 0;
 }
 
@@ -707,7 +762,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
-		ast_mutex_lock(&sub->parent->lock);
+		//ast_mutex_lock(&sub->parent->lock);
+		pvt_lock(sub->parent, "BRCM write frame");
 
 		/* generate the rtp header */
 		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
@@ -723,7 +779,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
 		tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
 
-		ast_mutex_unlock(&sub->parent->lock);
+		//ast_mutex_unlock(&sub->parent->lock);
+		pvt_unlock(sub->parent);
 
 		if (sub->connection_init) {
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
@@ -991,13 +1048,15 @@ static int cwtimeout_cb(const void *data)
 	ast_log(LOG_DEBUG, "No response to call waiting, hanging up\n");
 
 	sub = (struct brcm_subchannel *) data;
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "Cwtimeout callback");
 	sub->cw_timer_id = -1;
 	if (sub->owner) {
 		ast_channel_ref(sub->owner);
 		owner = sub->owner;
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 
 	if (owner) {
 		ast_channel_lock(owner);
@@ -1024,7 +1083,8 @@ static int r4hanguptimeout_cb(const void *data)
 	sub = (struct brcm_subchannel *) data;
 	peer_sub = brcm_subchannel_get_peer(sub);
 
-	ast_mutex_lock(&sub->parent->lock);
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "r4hanguptimeout callback");
 
 	sub->r4_hangup_timer_id = -1;
 	brcm_subchannel_set_state(peer_sub, CALLENDED);
@@ -1038,7 +1098,8 @@ static int r4hanguptimeout_cb(const void *data)
 		ast_channel_ref(peer_sub->owner);
 		peer_sub_owner = peer_sub->owner;
 	}
-	ast_mutex_unlock(&sub->parent->lock);
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
 
 	if (sub_owner) {
 		ast_queue_control(sub_owner, AST_CONTROL_HANGUP);
@@ -1056,9 +1117,11 @@ static int r4hanguptimeout_cb(const void *data)
 static int dialtone_init_cb(const void *data)
 {
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
-	ast_mutex_lock(&p->lock);
+	pvt_lock(sub->parent, "dialtone init callback");
+	//ast_mutex_lock(&p->lock);
 	brcm_dialtone_init(p);
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(sub->parent);
 	return 0;
 }
 
@@ -1097,7 +1160,8 @@ static int handle_interdigit_timeout(const void *data)
 {
 	ast_debug(9, "Interdigit timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
-	ast_mutex_lock(&p->lock);
+	//ast_mutex_lock(&p->lock);
+	pvt_lock(p, "interdigit callback");
 	p->interdigit_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 
@@ -1109,7 +1173,8 @@ static int handle_interdigit_timeout(const void *data)
 		ast_debug(9, "Interdigit timeout, extension(s) matching %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context);
 	}
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
 	return 0;
 }
 
@@ -1121,7 +1186,8 @@ static int handle_autodial_timeout(const void *data)
 {
 	ast_debug(9, "Autodial timeout\n");
 	struct brcm_pvt *p = (struct brcm_pvt *) data;
-	ast_mutex_lock(&p->lock);
+	pvt_lock(p, "autodial timeout");
+	//ast_mutex_lock(&p->lock);
 	p->autodial_timer_id = -1;
 	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
 	line_settings *s = &line_config[p->line_id];
@@ -1133,7 +1199,8 @@ static int handle_autodial_timeout(const void *data)
 		ast_debug(9, "Autodialing extension: %s\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context);
 	}
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
 	return 0;
 }
 
@@ -1565,7 +1632,8 @@ static void *brcm_monitor_packets(void *data)
 				continue;
 			}
 
-			ast_mutex_lock(&sub->parent->lock);
+			pvt_lock(sub->parent, "brcm monitor packets");
+			//ast_mutex_lock(&sub->parent->lock);
 			struct ast_channel *owner = NULL;
 			if (sub->owner) {
 				ast_channel_ref(sub->owner);
@@ -1646,7 +1714,8 @@ static void *brcm_monitor_packets(void *data)
 					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
-			ast_mutex_unlock(&sub->parent->lock);
+			//ast_mutex_unlock(&sub->parent->lock);
+			pvt_unlock(sub->parent);
 
 			if (owner) {
 				if (!drop_frame && owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING) {
@@ -1693,7 +1762,8 @@ static void *brcm_monitor_events(void *data)
 		}
 
 		/* Get locks in correct order */
-		ast_mutex_lock(&p->lock);
+		//ast_mutex_lock(&p->lock);
+		pvt_lock(p, "brcm monitor events");
 		sub = brcm_get_active_subchannel(p);
 		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
 		struct ast_channel *owner = NULL;
@@ -1706,7 +1776,8 @@ static void *brcm_monitor_events(void *data)
 			ast_channel_ref(sub_peer->owner);
 			peer_owner = sub_peer->owner;
 		}
-		ast_mutex_unlock(&p->lock);
+		pvt_unlock(p);
+		//ast_mutex_unlock(&p->lock);
 
 		if (owner && peer_owner) {
 			if (owner < peer_owner) {
@@ -1724,7 +1795,8 @@ static void *brcm_monitor_events(void *data)
 		else if (peer_owner) {
 			ast_channel_lock(peer_owner);
 		}
-		ast_mutex_lock(&p->lock);
+		pvt_lock(p, "brcm monitor events");
+		//ast_mutex_lock(&p->lock);
 
 		ast_verbose("me: got mutex\n");
 		if (sub) {
@@ -1914,6 +1986,7 @@ static void *brcm_monitor_events(void *data)
 		}
 
 		ast_mutex_unlock(&p->lock);
+		pvt_unlock(p);
 		ast_debug(9, "me: unlocked mutex\n");
 
 		if (owner) {
@@ -2257,7 +2330,8 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		p = iflist;
 	}
 
-	ast_mutex_lock(&p->lock);
+	pvt_lock(p, "brcm request");
+	//ast_mutex_lock(&p->lock);
 
 	sub = brcm_get_idle_subchannel_incomingcall(p);
 
@@ -2274,7 +2348,8 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		*cause = AST_CAUSE_BUSY;
 	}
 
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
 	ast_mutex_unlock(&iflock);
 
 	return tmp;
@@ -2285,7 +2360,8 @@ static void brcm_lock_pvts(void)
 {
 	struct brcm_pvt *p = iflist;
 	while(p) {
-		ast_mutex_lock(&p->lock);
+		pvt_lock(p, "brcm lock pvts");
+		//ast_mutex_lock(&p->lock);
 		p = brcm_get_next_pvt(p);
 	}
 }
@@ -2294,7 +2370,8 @@ static void brcm_unlock_pvts(void)
 {
 	struct brcm_pvt *p = iflist;
 	while(p) {
-		ast_mutex_unlock(&p->lock);
+		pvt_unlock(p);
+		//ast_mutex_unlock(&p->lock);
 		p = brcm_get_next_pvt(p);
 	}
 }
@@ -2362,7 +2439,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 	int i = 0;
 	
 	while(p) {
-		ast_mutex_lock(&p->lock);
+		pvt_lock(p, "brcm show pvts");
+		//ast_mutex_lock(&p->lock);
 		ast_cli(a->fd, "\nPvt nr: %d\n",i);
 		ast_cli(a->fd, "Line id             : %d\n", p->line_id);
 		ast_cli(a->fd, "Pvt next ptr        : 0x%x\n", (unsigned int) p->next);
@@ -2463,7 +2541,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "\n");
 
 		i++;
-		ast_mutex_unlock(&p->lock);
+		pvt_unlock(p);
+		//ast_mutex_unlock(&p->lock);
 		p = brcm_get_next_pvt(p);
 	}
 }
@@ -2843,7 +2922,8 @@ static int unload_module(void)
 		p = iflist;
 		while(p) {
 			int i;
-			ast_mutex_lock(&p->lock);
+			pvt_lock(p, "brcm unload module");
+			//ast_mutex_lock(&p->lock);
 			for (i=0; i<NUM_SUBCHANNELS; i++) {
 				struct ast_channel *owner = p->sub[i]->owner;
 				if (owner) {
@@ -2855,7 +2935,8 @@ static int unload_module(void)
 				}
 			}
 			brcm_extension_state_unregister(p);
-			ast_mutex_unlock(&p->lock);
+			pvt_unlock(p);
+			//ast_mutex_unlock(&p->lock);
 			p = p->next;
 		}
 		iflist = NULL;
@@ -4246,7 +4327,8 @@ static int extension_state_cb(char *context, char *exten, int state, void *data)
 		return -1;
 	}
 
-	ast_mutex_lock(&p->lock);
+	pvt_lock(p, "extension state callback");
+	//ast_mutex_lock(&p->lock);
 	if (state == AST_EXTENSION_DEACTIVATED) {
 		/* Hint for which this pvt was registered to was removed */
 		p->dialtone_extension_cb_id = -1;
@@ -4255,7 +4337,8 @@ static int extension_state_cb(char *context, char *exten, int state, void *data)
 	}
 	ast_log(LOG_DEBUG, "New extension state '%s' for '%s@%s' pvt: %d\n", ast_extension_state2str(state), exten, context, p->line_id);
 	brcm_dialtone_set(p, extension_state2dialtone_state(state));
-	ast_mutex_unlock(&p->lock);
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
 	return 0;
 }
 
