@@ -1985,7 +1985,7 @@ static void *brcm_monitor_events(void *data)
 			}
 		}
 
-		ast_mutex_unlock(&p->lock);
+		//ast_mutex_unlock(&p->lock);
 		pvt_unlock(p);
 		ast_debug(9, "me: unlocked mutex\n");
 
