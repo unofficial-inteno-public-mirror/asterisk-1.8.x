@@ -35,6 +35,9 @@
 #define PACKET_BUFFER_SIZE 1024
 #define NUM_SUBCHANNELS 2
 
+#define BEGIN 0
+#define CONT  1
+#define END   2
 
 enum channel_state {
     ONHOOK,
@@ -249,7 +252,7 @@ EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int 
 
 static int cwtimeout_cb(const void *data);
 static int r4hanguptimeout_cb(const void *data);
-static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type);
+static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type, int marker);
 int brcm_create_connection(struct brcm_subchannel *p);
 static int brcm_mute_connection(struct brcm_subchannel *p);
 static int brcm_unmute_connection(struct brcm_subchannel *p);
@@ -270,6 +273,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
 static int brcm_send_text(struct ast_channel *ast, const char *text);
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen);
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit);
+static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_get_endpoints_count(void);
 static void brcm_provision_endpoints(void);

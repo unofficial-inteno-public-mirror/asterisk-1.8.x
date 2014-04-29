@@ -208,6 +208,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.read = brcm_read,				//Channel is locked
 	.write = brcm_write,				//Channel is locked
 	.send_digit_begin = brcm_senddigit_begin,	//Channel is NOT locked
+	.send_digit_continue = brcm_senddigit_continue,	//Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
 };
@@ -361,6 +362,115 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 	return 0;
 }
 
+static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int duration, int status) {
+	EPPACKET epPacket_send;
+	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
+	struct brcm_subchannel *sub = ast->tech_pvt;
+   	UINT8 pdata[PACKET_BUFFER_SIZE] = {0};
+
+	if (ast->_state != AST_STATE_UP && ast->_state != AST_STATE_RING) {
+		/* Silently ignore packets until channel is up */
+		ast_debug(5, "error: channel not up\n");
+		return 0;
+	}
+
+	/* Ignore if on hold */
+	if (sub->channel_state == ONHOLD) {
+		return 0;
+	}
+	/* send rtp packet to the endpoint */
+	epPacket_send.mediaType   = 0;
+
+	/* copy frame data to local buffer */
+	// memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
+	
+	/* add buffer to outgoing packet */
+	epPacket_send.packetp = pdata;
+
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "brcm_send_dtmf");
+
+	/* generate the rtp header */
+	brcm_generate_rtp_packet(sub, pdata, DTMF, (status==BEGIN)?1:0);
+
+	// generate payload FIXME
+	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01|8F|09|38|
+	//        |80|80|03|4E|00|02|10|C0|68|42|D5|53|31|08|00|08|
+	
+	pdata[12]  = digit;
+	pdata[13]  = 0x8; //Volume
+	pdata[13] |= (status==END)?0x80:0x00; // End of Event
+	if (status==BEGIN) duration = 8;
+	pdata[14]  = (duration&0x0F) >> 8;
+	pdata[15]  = (duration&0x0F);
+	
+	ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", DTMF, digit, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+
+	
+	/* set rtp id sent to endpoint */
+	//sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
+
+	tPacketParm_send.cnxId       = sub->connection_id;
+	tPacketParm_send.state       = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
+	tPacketParm_send.length      = 16;
+	tPacketParm_send.bufDesc     = (int)&epPacket_send;
+	tPacketParm_send.epPacket    = &epPacket_send;
+	tPacketParm_send.epStatus    = EPSTATUS_DRIVER_ERROR;
+	tPacketParm_send.size        = sizeof(ENDPOINTDRV_PACKET_PARM);
+
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
+
+	if (sub->connection_init) {
+		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
+			ast_verbose("%s: error during ioctl", __FUNCTION__);
+	}
+
+	return 0;
+
+}
+
+static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
+{
+	int res;
+	struct brcm_subchannel *sub;
+	line_settings* s;
+
+	sub = ast->tech_pvt;
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "DTMF senddigit_begin");
+
+	res = 0;
+	s = &line_config[sub->parent->line_id];
+	switch (s->dtmf_relay) {
+		case EPDTMFRFC2833_DISABLED:
+			res = -1;
+			break;
+		case EPDTMFRFC2833_ENABLED:
+			brcm_send_dtmf(ast, digit, duration, CONT);
+			break;
+		case EPDTMFRFC2833_SUBTRACT:
+			{
+			unsigned int ts;
+			struct timeval tim;
+			gettimeofday(&tim, NULL);
+			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+			ast_debug(9, "DTMF %d start %lu detected\n", digit, ts);
+			if (brcm_signal_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
+				res = -1;
+			}
+			break;
+			}
+		default:
+			res = -1;
+			break;
+	}
+
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
+	return res;
+}
+
 /*! \brief Incoming DTMF begin event */
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 {
@@ -379,6 +489,8 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 			res = -1;
 			break;
 		case EPDTMFRFC2833_ENABLED:
+			brcm_send_dtmf(ast, digit, 0, BEGIN);
+			break;
 		case EPDTMFRFC2833_SUBTRACT:
 			{
 			unsigned int ts;
@@ -419,6 +531,8 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 			res = -1;
 			break;
 		case EPDTMFRFC2833_ENABLED:
+			brcm_send_dtmf(ast, digit, duration, END);
+			break;
 		case EPDTMFRFC2833_SUBTRACT:
 			{
 			unsigned int ts;
@@ -437,6 +551,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 	}
 
 	//ast_mutex_unlock(&sub->parent->lock);
+
 	pvt_unlock(sub->parent);
 	return res;
 }
@@ -766,7 +881,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		pvt_lock(sub->parent, "BRCM write frame");
 
 		/* generate the rtp header */
-		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec));
+		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec), 0);
 
 		/* set rtp id sent to endpoint */
 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
@@ -3086,18 +3201,22 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 	 * Keeping it since it may be needed in the future with a less buggy
 	 * DTMF-implemntation in Asterisk */
 	epCnxParms.cnxParmList.send.codecs[1].type              = CODEC_NTE;
+	epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType    = DTMF;
 	epCnxParms.cnxParmList.send.numCodecs			= 2;
 	epCnxParms.namedPhoneEvts = CODEC_NTE_DTMF;
 
 	/* Configure endpoint receiving, should be able to receive any of our supported formats */
-	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr;
+	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr+1;
 	int i;
 	for (i = 0; i < s->codec_nr; i++) {
 		epCnxParms.cnxParmList.recv.codecs[i].type = s->codec_list[i]; //Locally supported codecs
 		epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = s->rtp_payload_list[i];
 		epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
 	}
-
+	epCnxParms.cnxParmList.recv.codecs[i+1].type = CODEC_NTE; //Locally supported codecs
+	epCnxParms.cnxParmList.recv.codecs[i+1].rtpPayloadType = DTMF;
+	epCnxParms.cnxParmList.recv.period[i+1] = CODEC_PTIME_ANY;
+	
 	epCnxParms.echocancel = s->echocancel;
 	epCnxParms.silence = s->silence; //Value 0 - 3
 	epCnxParms.comfortNoise = s->comfort_noise; //Value 0-3
@@ -4195,7 +4314,7 @@ static int brcm_close_connection(struct brcm_subchannel *p) {
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
-static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_buf, int type) {
+static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_buf, int type, int marker) {
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
 
@@ -4204,8 +4323,8 @@ static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_
 	//Padding 0
 	//Extension 0
 	//CSRC count 0
-	//Marker 0
 	packet_buf[1] = type;
+	packet_buf[1] |= marker?0x8:0x0;
 	packet_buf16[1] = sub->sequence_number++; //Add sequence number
 	if (sub->sequence_number > 0xFFFF) sub->sequence_number=0;
 	packet_buf32[1] = sub->time_stamp;	//Add timestamp
