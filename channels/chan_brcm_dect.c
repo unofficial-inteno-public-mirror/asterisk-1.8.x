@@ -838,6 +838,9 @@ process_keypad_info(unsigned char handset,
 		if (sub) {
 			for (j = 0; j < 2; j++) { // we need to send two events: press and depress
 
+				/* Interdigit timeout is scheduled for both press and depress */
+				brcm_cancel_dialing_timeouts(p);
+
 				unsigned int old_state = sub->channel_state;
 				handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
 				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
