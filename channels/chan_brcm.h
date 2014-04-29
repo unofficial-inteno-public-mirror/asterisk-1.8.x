@@ -289,5 +289,6 @@ struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel co
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
 void handle_dtmf_calling(const struct brcm_subchannel *sub);
+void brcm_cancel_dialing_timeouts(struct brcm_pvt *p);
 
 #endif /* CHAN_BRCM_H */

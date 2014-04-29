@@ -1611,6 +1611,18 @@ static void *brcm_monitor_packets(void *data)
 	return NULL;
 }
 
+void brcm_cancel_dialing_timeouts(struct brcm_pvt *p)
+{
+	//If we have interdigit timeout, cancel it
+	if (p->interdigit_timer_id > 0) {
+		p->interdigit_timer_id = ast_sched_thread_del(sched, p->interdigit_timer_id);
+	}
+
+	//If we have a autodial timeout, cancel it
+	if (p->autodial_timer_id > 0) {
+		p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
+	}
+}
 
 static void *brcm_monitor_events(void *data)
 {
@@ -1727,15 +1739,7 @@ static void *brcm_monitor_events(void *data)
 					ast_verbose("Sending manager event\n");
 					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
 
-					//If we have interdigit timeout, cancel it
-					if (p->interdigit_timer_id > 0) {
-						p->interdigit_timer_id = ast_sched_thread_del(sched, p->interdigit_timer_id);
-					}
-
-					//If we have a autodial timeout, cancel it
-					if (p->autodial_timer_id > 0) {
-						p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
-					}
+					brcm_cancel_dialing_timeouts(p);
 
 					/* Reset the dtmf buffer */
 					memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
@@ -1798,15 +1802,7 @@ static void *brcm_monitor_events(void *data)
 				case EPEVT_DTMFS:
 				case EPEVT_DTMFH:
 				{
-					//If we have interdigit timeout, cancel it
-					if (p->interdigit_timer_id > 0) {
-						p->interdigit_timer_id = ast_sched_thread_del(sched, p->interdigit_timer_id);
-					}
-
-					//If we have a autodial timeout, cancel it
-					if (p->autodial_timer_id > 0) {
-						p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
-					}
+					brcm_cancel_dialing_timeouts(p);
 
 					unsigned int old_state = sub->channel_state;
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
