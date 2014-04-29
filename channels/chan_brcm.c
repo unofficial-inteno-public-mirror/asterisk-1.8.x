@@ -394,15 +394,18 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	brcm_generate_rtp_packet(sub, pdata, DTMF, (status==BEGIN)?1:0);
 
 	// generate payload FIXME
-	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01|8F|09|38|
-	//        |80|80|03|4E|00|02|10|C0|68|42|D5|53|31|08|00|08|
+	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01 |8F |09|38|
+	// [3,16] |80|80|E4|54|79|60|0E|5A|1A|23|A1|EC|06 |0F |00|F0|
+	//        |80|80|03|4E|00|02|10|C0|68|42|D5|53|31 |08 |00|08|
 	
-	pdata[12]  = digit;
+	pdata[12]  = digit-48;
 	pdata[13]  = 0x8; //Volume
 	pdata[13] |= (status==END)?0x80:0x00; // End of Event
-	if (status==BEGIN) duration = 8;
-	pdata[14]  = (duration&0x0F) >> 8;
-	pdata[15]  = (duration&0x0F);
+	if (status==BEGIN) 
+		duration = 1;
+	duration = duration * 8; 
+	pdata[14]  = (duration>>8)&0xFF;
+	pdata[15]  = duration&0xFF;
 	
 	ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", DTMF, digit, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 
