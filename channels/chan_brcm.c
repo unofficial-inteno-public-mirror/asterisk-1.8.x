@@ -391,7 +391,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	pvt_lock(sub->parent, "brcm_send_dtmf");
 
 	/* generate the rtp header */
-	brcm_generate_rtp_packet(sub, pdata, DTMF, (status==BEGIN)?1:0);
+	brcm_generate_rtp_packet(sub, pdata, DTMF, (status==BEGIN)?1:0, 1);
 
 	// generate payload FIXME
 	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01 |8F |09|38|
@@ -403,7 +403,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	pdata[13] |= (status==END)?0x80:0x00; // End of Event
 	if (status==BEGIN) 
 		duration = 1;
-	duration = duration * 8; 
+	duration = duration * 8; // based on 8kHz sample rate
 	pdata[14]  = (duration>>8)&0xFF;
 	pdata[15]  = duration&0xFF;
 	
@@ -485,6 +485,9 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 	//ast_mutex_lock(&sub->parent->lock);
 	pvt_lock(sub->parent, "DTMF senddigit_begin");
 
+	/* save away timestamp */
+	sub->dtmf_timestamp = sub->time_stamp;
+	
 	res = 0;
 	s = &line_config[sub->parent->line_id];
 	switch (s->dtmf_relay) {
@@ -884,7 +887,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		pvt_lock(sub->parent, "BRCM write frame");
 
 		/* generate the rtp header */
-		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec), 0);
+		brcm_generate_rtp_packet(sub, epPacket_send.packetp, map_ast_codec_id_to_rtp(frame->subclass.codec), 0, 0);
 
 		/* set rtp id sent to endpoint */
 		sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
@@ -4313,7 +4316,7 @@ static int brcm_close_connection(struct brcm_subchannel *p) {
 
 
 /* Generate rtp payload, 12 bytes of header and 160 bytes of ulaw payload */
-static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_buf, int type, int marker) {
+static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_buf, int type, int marker, int dtmf_timestamp) {
 	unsigned short* packet_buf16 = (unsigned short*)packet_buf;
 	unsigned int*   packet_buf32 = (unsigned int*)packet_buf;
 
@@ -4326,7 +4329,7 @@ static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_
 	packet_buf[1] |= marker?0x8:0x0;
 	packet_buf16[1] = sub->sequence_number++; //Add sequence number
 	if (sub->sequence_number > 0xFFFF) sub->sequence_number=0;
-	packet_buf32[1] = sub->time_stamp;	//Add timestamp
+	packet_buf32[1] = dtmf_timestamp?sub->dtmf_timestamp:sub->time_stamp;	//Add timestamp
 	sub->time_stamp += 160;
 	packet_buf32[2] = sub->ssrc;	//Random SSRC
 }

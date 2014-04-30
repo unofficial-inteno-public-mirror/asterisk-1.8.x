@@ -86,6 +86,7 @@ struct brcm_subchannel {
 	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
 					   in sequence and we only need to react on the first one */
 	int dtmf_sending;		/* A marker if we are sending DTMF or not */
+	int dtmf_timestamp;			/* When a dtmf begin is detected save and use this timestamp for the rest of the dtmf packets */
 };
 
 
@@ -252,7 +253,7 @@ EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int 
 
 static int cwtimeout_cb(const void *data);
 static int r4hanguptimeout_cb(const void *data);
-static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type, int marker);
+static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type, int marker, int dtmf_timestamp);
 int brcm_create_connection(struct brcm_subchannel *p);
 static int brcm_mute_connection(struct brcm_subchannel *p);
 static int brcm_unmute_connection(struct brcm_subchannel *p);
