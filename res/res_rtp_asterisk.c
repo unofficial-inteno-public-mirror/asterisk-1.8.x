@@ -799,7 +799,7 @@ we have implemented an DTMF queue that will queue up the dtmf and play out. The 
 these, which is no good, or cut them short and cause issues with timing for other devices, while we solve our
 own situation. That's generally considered bad behaviour amongst SIP devices.
 */
-+static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
+static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 {
 	struct ast_rtp *rtp = ast_rtp_instance_get_data(instance);
 	struct ast_sockaddr remote_address = { {0,} };
@@ -890,7 +890,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 
 	ast_debug(1, "---- Send duration %d Received duration %d Duration %d Endflag %d Digit %d      Send-digit %d\n", rtp->send_duration, rtp->received_duration, duration, rtp->send_endflag, digit, rtp     ->send_digit);
 
-	if (!rtp->send_endflag && rtp->send_duration  160 < rtp->received_duration) {
+	if (!rtp->send_endflag && rtp->send_duration + 160 < rtp->received_duration) {
 		/* We still have to send DTMF continuation, because otherwise we will end prematurely. Set end flag to indicate
 		   that we will have to end ourselves when we're done with the actual duration
 		 */
