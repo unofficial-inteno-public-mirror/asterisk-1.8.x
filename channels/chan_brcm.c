@@ -1410,7 +1410,7 @@ void handle_dtmf_calling(const struct brcm_subchannel *sub)
  * 		  channel locks are held
  *		  brcm_pvt->lock is held
  */
-static void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer,
+void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer,
 		struct ast_channel *owner, struct ast_channel *peer_owner)
 {
 	struct brcm_pvt *p = sub->parent;
