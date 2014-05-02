@@ -1226,6 +1226,7 @@ static int sip_indicate(struct ast_channel *ast, int condition, const void *data
 static int sip_transfer(struct ast_channel *ast, const char *dest);
 static int sip_fixup(struct ast_channel *oldchan, struct ast_channel *newchan);
 static int sip_senddigit_begin(struct ast_channel *ast, char digit);
+static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
 static int sip_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
 static int sip_setoption(struct ast_channel *chan, int option, void *data, int datalen);
 static int sip_queryoption(struct ast_channel *chan, int option, void *data, int *datalen);
@@ -1615,6 +1616,7 @@ const struct ast_channel_tech sip_tech = {
 	.transfer = sip_transfer,		/* called with chan locked */
 	.fixup = sip_fixup,			/* called with chan locked */
 	.send_digit_begin = sip_senddigit_begin,	/* called with chan unlocked */
+	.send_digit_continue = sip_senddigit_continue,	/* called with chan unlocked */
 	.send_digit_end = sip_senddigit_end,
 	.bridge = ast_rtp_instance_bridge,			/* XXX chan unlocked ? */
 	.early_bridge = ast_rtp_instance_early_bridge,
@@ -6662,6 +6664,31 @@ static int sip_senddigit_begin(struct ast_channel *ast, char digit)
 			ast_rtp_instance_dtmf_begin(p->rtp, digit);
 		break;
 	default:
+		break;
+	}
+	sip_pvt_unlock(p);
+
+	return res;
+}
+
+/*! \brief Update DTMF character on SIP channel
+	within one call, we're able to transmit in many methods simultaneously */
+static int sip_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration)
+{
+	struct sip_pvt *p = ast->tech_pvt;
+	int res = 0;
+
+	if (!p) {
+		ast_debug(1, "Asked to continue DTMF on channel %s with no pvt, ignoring\n", ast->name);
+		return res;
+	}
+
+	sip_pvt_lock(p);
+	switch (ast_test_flag(&p->flags[0], SIP_DTMF)) {
+	case SIP_DTMF_RFC2833:
+		if (p->rtp) {
+			ast_rtp_instance_dtmf_continue(p->rtp, digit, duration);
+		}
 		break;
 	}
 	sip_pvt_unlock(p);
