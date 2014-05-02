@@ -50,7 +50,7 @@ void dectSendClip(char* cid, int handset);
 
 #define DECT_NVS_SIZE 4096
 #define API_LINUX_MAX_MAIL_SIZE 0x100
-
+#define R_KEY 0x15
 
 typedef struct
 {
@@ -791,10 +791,17 @@ process_keypad_info(unsigned char handset,
 	for (i = 0; i < keyPadLen; i++) {
 
 		const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
+		int rDetected = 0;
 
 		while (dtmfMap->c != IePtr->IeData[i]) {
 			dtmfMap++;
 			if (dtmfMap->event == EPEVT_LAST) {
+
+				if (R_KEY == IePtr->IeData[i]) {
+					rDetected = 1;
+					break;
+				}
+
 				/* DTMF not found. Should not be reached. */
 				ast_log(LOG_WARNING, "Failed to handle DTMF. Event not found.\n");
 				return;
@@ -836,25 +843,33 @@ process_keypad_info(unsigned char handset,
 		ast_mutex_lock(&p->lock);
 
 		if (sub) {
-			for (j = 0; j < 2; j++) { // we need to send two events: press and depress
+			if (!rDetected) {
+				/* DTMF */
+				for (j = 0; j < 2; j++) { // we need to send two events: press and depress
 
-				/* Interdigit timeout is scheduled for both press and depress */
-				brcm_cancel_dialing_timeouts(p);
+					/* Interdigit timeout is scheduled for both press and depress */
+					brcm_cancel_dialing_timeouts(p);
 
-				unsigned int old_state = sub->channel_state;
-				handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
-				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+					unsigned int old_state = sub->channel_state;
+					handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
+					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 
-					/* DTMF event took channel state to DIALING. Stop dial tone. */
-					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-					brcm_stop_dialtone(p);
+						/* DTMF event took channel state to DIALING. Stop dial tone. */
+						ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+						brcm_stop_dialtone(p);
+					}
+
+					if (sub->channel_state == DIALING) {
+						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
+						handle_dtmf_calling(sub);
+					}
+
 				}
-
-				if (sub->channel_state == DIALING) {
-					ast_log(LOG_DEBUG, "Handle DTMF calling\n");
-					handle_dtmf_calling(sub);
-				}
-
+			}
+			else {
+				/* Hookflash */
+				p->hf_detected = 1;
+				handle_hookflash(sub, sub_peer, owner, peer_owner);
 			}
 		}
 		ast_mutex_unlock(&p->lock);
