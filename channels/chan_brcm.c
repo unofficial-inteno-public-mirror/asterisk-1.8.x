@@ -3203,7 +3203,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 	 * Keeping it since it may be needed in the future with a less buggy
 	 * DTMF-implemntation in Asterisk */
 	epCnxParms.cnxParmList.send.codecs[1].type              = CODEC_NTE;
-	epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType    = DTMF;
+	epCnxParms.cnxParmList.send.codecs[1].rtpPayloadType    = DTMF_PAYLOAD;
 	epCnxParms.cnxParmList.send.numCodecs			= 2;
 	epCnxParms.namedPhoneEvts = CODEC_NTE_DTMF;
 
@@ -3216,7 +3216,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 		epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
 	}
 	epCnxParms.cnxParmList.recv.codecs[i+1].type = CODEC_NTE; //Locally supported codecs
-	epCnxParms.cnxParmList.recv.codecs[i+1].rtpPayloadType = DTMF;
+	epCnxParms.cnxParmList.recv.codecs[i+1].rtpPayloadType = DTMF_PAYLOAD;
 	epCnxParms.cnxParmList.recv.period[i+1] = CODEC_PTIME_ANY;
 	
 	epCnxParms.echocancel = s->echocancel;
