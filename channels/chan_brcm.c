@@ -391,7 +391,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	pvt_lock(sub->parent, "brcm_send_dtmf");
 
 	/* generate the rtp header */
-	brcm_generate_rtp_packet(sub, pdata, DTMF, (status==BEGIN)?1:0, 1);
+	brcm_generate_rtp_packet(sub, pdata, DTMF_PAYLOAD, (status==BEGIN)?1:0, 1);
 
 	// generate payload FIXME
 	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01 |8F |09|38|
@@ -407,7 +407,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	pdata[14]  = (duration>>8)&0xFF;
 	pdata[15]  = duration&0xFF;
 	
-	ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", DTMF, digit, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
+	ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", DTMF_PAYLOAD, digit, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 
 	
 	/* set rtp id sent to endpoint */
@@ -736,7 +736,7 @@ static int brcm_classify_rtp_packet(int id) {
 		case G723: return BRCM_AUDIO;
 		case PCMA: return BRCM_AUDIO;
 		case G729: return BRCM_AUDIO;
-		case DTMF: return BRCM_DTMF;
+		case DTMF_PAYLOAD: return BRCM_DTMF;
 		case RTCP: return BRCM_RTCP;
 		default:
 			ast_verbose("Unknown rtp packet id %d\n", id);
@@ -2049,7 +2049,7 @@ static void *brcm_monitor_events(void *data)
 					brcm_cancel_dialing_timeouts(p);
 
 					unsigned int old_state = sub->channel_state;
-					ast_debug(2, "====> GOT DTMF %d\n", tEventParm.event);
+					ast_debug(2, "====> GOT DTMF %d\n", tEventParm.event-1);
 					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
 					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 						/* DTMF event took channel state to DIALING. Stop dial tone. */
@@ -4326,7 +4326,7 @@ static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_
 	//Extension 0
 	//CSRC count 0
 	packet_buf[1] = type;
-	packet_buf[1] |= marker?0x8:0x0;
+	packet_buf[1] |= marker?0x80:0x00;
 	packet_buf16[1] = sub->sequence_number++; //Add sequence number
 	if (sub->sequence_number > 0xFFFF) sub->sequence_number=0;
 	packet_buf32[1] = dtmf_timestamp?sub->dtmf_timestamp:sub->time_stamp;	//Add timestamp
