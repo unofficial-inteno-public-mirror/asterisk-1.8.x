@@ -3217,8 +3217,8 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 		epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = s->rtp_payload_list[i];
 		epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
 	}
-	epCnxParms.cnxParmList.recv.codecs[i+1].type = CODEC_NTE; //Locally supported codecs
-	epCnxParms.cnxParmList.recv.codecs[i+1].rtpPayloadType = DTMF_PAYLOAD;
+	epCnxParms.cnxParmList.recv.codecs[i].type = CODEC_NTE; //Locally supported codecs
+	epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = DTMF_PAYLOAD;
 	//epCnxParms.cnxParmList.recv.period[i+1] = CODEC_PTIME_ANY;
 	
 	epCnxParms.echocancel = s->echocancel;
