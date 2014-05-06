@@ -3140,55 +3140,6 @@ static int unload_module(void)
 	return 0;
 }
 
-
-#define         SIGN_BIT        (0x80)      /* Sign bit for a A-law byte. */
-#define         QUANT_MASK      (0xf)       /* Quantization field mask. */
-#define         NSEGS           (8)         /* Number of A-law segments. */
-#define         SEG_SHIFT       (4)         /* Left shift for segment number. */
-#define         SEG_MASK        (0x70)      /* Segment field mask. */
-#define         BIAS            (0x84)      /* Bias for linear code. */
-
-static int alaw2linear(unsigned char a_val)
-{
-        int t;
-        int seg;
-
-        a_val ^= 0x55;
-
-        t = a_val & QUANT_MASK;
-        seg = ((unsigned)a_val & SEG_MASK) >> SEG_SHIFT;
-        if(seg) t= (t + t + 1 + 32) << (seg + 2);
-        else    t= (t + t + 1     ) << 3;
-
-        return (a_val & SIGN_BIT) ? t : -t;
-}
-
-static uint8_t linear_to_alaw[16384];
-
-static void build_xlaw_table(uint8_t *linear_to_xlaw,
-                             int (*xlaw2linear)(unsigned char),
-                             int mask)
-{
-    int i, j, v, v1, v2;
-
-    j = 0;
-    for(i=0;i<128;i++) {
-        if (i != 127) {
-            v1 = xlaw2linear(i ^ mask);
-            v2 = xlaw2linear((i + 1) ^ mask);
-            v = (v1 + v2 + 4) >> 3;
-        } else {
-            v = 8192;
-        }
-        for(;j<v;j++) {
-            linear_to_xlaw[8192 + j] = (i ^ mask);
-            if (j > 0)
-                linear_to_xlaw[8192 - j] = (i ^ (mask ^ 0x80));
-        }
-    }
-    linear_to_xlaw[0] = linear_to_xlaw[1];
-}
-
 /*
  * Create a EPZCNXPARAM, which is used to specify configuration
  * parameters for a media connection. The parameters are taken
