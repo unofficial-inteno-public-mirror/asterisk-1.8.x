@@ -3184,6 +3184,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 
 	/* Configure endpoint receiving, should be able to receive any of our supported formats */
 	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr+1;
+	
 	int i;
 	for (i = 0; i < s->codec_nr; i++) {
 		epCnxParms.cnxParmList.recv.codecs[i].type = s->codec_list[i]; //Locally supported codecs
@@ -3192,7 +3193,8 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 	}
 	epCnxParms.cnxParmList.recv.codecs[i].type = CODEC_NTE; //Locally supported codecs
 	epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = DTMF_PAYLOAD;
-	//epCnxParms.cnxParmList.recv.period[i+1] = CODEC_PTIME_ANY;
+	epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
+	epCnxParms.cnxParmList.recv.numPeriods = i;
 	
 	epCnxParms.echocancel = s->echocancel;
 	epCnxParms.silence = s->silence; //Value 0 - 3
