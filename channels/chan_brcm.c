@@ -362,6 +362,28 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 	return 0;
 }
 
+static int map_digit_to_rfc2833(char digit) {
+	switch (digit) {
+		case '0':	return 0;
+		case '1':	return 1;
+		case '2':	return 2;
+		case '3':	return 3;
+		case '4':	return 4;
+		case '5':	return 5;
+		case '6':	return 6;
+		case '7':	return 7;
+		case '8':	return 8;
+		case '9':	return 9;
+		case '*':	return 10;
+		case '#':	return 11;
+		case 'A':	return 12;
+		case 'B':	return 13;
+		case 'C':	return 14;
+		case 'D':	return 15;
+		default:	return -1;
+	}
+}
+
 static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int duration, int status) {
 	EPPACKET epPacket_send;
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
@@ -398,7 +420,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	// [3,16] |80|80|E4|54|79|60|0E|5A|1A|23|A1|EC|06 |0F |00|F0|
 	//        |80|80|03|4E|00|02|10|C0|68|42|D5|53|31 |08 |00|08|
 	
-	pdata[12]  = digit-48;
+	pdata[12]  = map_digit_to_rfc2833(digit);
 	pdata[13]  = 0x8; //Volume
 	pdata[13] |= (status==END)?0x80:0x00; // End of Event
 	if (status==BEGIN) 
