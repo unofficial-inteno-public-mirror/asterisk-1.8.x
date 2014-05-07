@@ -1863,7 +1863,14 @@ static void *brcm_monitor_packets(void *data)
 			pvt_unlock(sub->parent);
 
 			if (owner) {
-				if (!drop_frame && owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING) {
+				if (!drop_frame && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
+					if (fr.frametype == AST_FRAME_DTMF_BEGIN || fr.frametype == AST_FRAME_DTMF_CONTINUE || fr.frametype == AST_FRAME_DTMF_END) {
+						//Asterisk jitter buffer causes one way audio when sending DTMF
+						//This is a workaround until jitter buffer is handled by DSP
+						ast_channel_lock(owner);
+						ast_jb_destroy(owner);
+						ast_channel_unlock(owner);
+					}
 					ast_queue_frame(owner, &fr);
 				}
 				ast_channel_unref(owner);
