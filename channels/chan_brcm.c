@@ -2261,6 +2261,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 				sub->parent = tmp;
 				sub->cw_timer_id = -1;
 				sub->r4_hangup_timer_id = -1;
+				sub->period = 20;
 				tmp->sub[i] = sub;
 				ast_debug(2, "subchannel created\n");
 			} else {
@@ -2611,6 +2612,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
 		ast_cli(a->fd, "Autodial extension  : %s\n", s->autodial_ext);
 		ast_cli(a->fd, "Autodial msecs      : %d\n", s->autodial_timeoutmsec);
+		ast_cli(a->fd, "Period              : %d\n", s->period);
 
 		ast_cli(a->fd, "DTMF relay          : ");
 		switch (s->dtmf_relay) {
@@ -3196,12 +3198,13 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 	for (i = 0; i < s->codec_nr; i++) {
 		epCnxParms.cnxParmList.recv.codecs[i].type = s->codec_list[i]; //Locally supported codecs
 		epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = s->rtp_payload_list[i];
-		epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
+		epCnxParms.cnxParmList.recv.period[i] = s->period;
 	}
 	epCnxParms.cnxParmList.recv.codecs[i].type = CODEC_NTE; //Locally supported codecs
 	epCnxParms.cnxParmList.recv.codecs[i].rtpPayloadType = DTMF_PAYLOAD;
-	epCnxParms.cnxParmList.recv.period[i] = CODEC_PTIME_ANY;
-	epCnxParms.cnxParmList.recv.numPeriods = i;
+	epCnxParms.cnxParmList.recv.period[i] = s->period;
+	epCnxParms.cnxParmList.recv.numPeriods = 1;
+	sub->period = s->period;
 	
 	epCnxParms.echocancel = s->echocancel;
 	epCnxParms.silence = s->silence; //Value 0 - 3
@@ -4314,7 +4317,7 @@ static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_
 	packet_buf16[1] = sub->sequence_number++; //Add sequence number
 	if (sub->sequence_number > 0xFFFF) sub->sequence_number=0;
 	packet_buf32[1] = dtmf_timestamp?sub->dtmf_timestamp:sub->time_stamp;	//Add timestamp
-	sub->time_stamp += 160;
+	sub->time_stamp += sub->period*8;
 	packet_buf32[2] = sub->ssrc;	//Random SSRC
 }
 

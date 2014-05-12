@@ -78,6 +78,7 @@ struct brcm_subchannel {
 	struct ast_frame fr;		/* Frame */
 	unsigned int sequence_number;	/* Endpoint RTP sequence number state */
 	unsigned int time_stamp;	/* Endpoint RTP time stamp state */
+	unsigned int period;		/* Endpoint RTP period */
 	unsigned int ssrc;		/* Endpoint RTP synchronization source */
 	int codec;			/* Used codec */
 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
