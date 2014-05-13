@@ -822,7 +822,7 @@ static int ast_rtp_dtmf_begin(struct ast_rtp_instance *instance, char digit)
 	} else if ((digit >= 'a') && (digit <= 'd')) {
 		digit = digit - 'a' + 12;
 	} else {
-		ast_log(LOG_WARNING, "Don't know how to represent '%d'\n", digit);
+		ast_log(LOG_WARNING, "Don't know how to represent '%c'\n", digit);
 		return -1;
 	}
 
@@ -1015,6 +1015,22 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 		return ast_rtp_dtmf_cont(instance);
 	}
 
+	/* Convert the given digit to the one we are going to send */
+	if ((digit <= '9') && (digit >= '0')) {
+		digit -= '0';
+	} else if (digit == '*') {
+		digit = 10;
+	} else if (digit == '#') {
+		digit = 11;
+	} else if ((digit >= 'A') && (digit <= 'D')) {
+		digit = digit - 'A' + 12;
+	} else if ((digit >= 'a') && (digit <= 'd')) {
+		digit = digit - 'a' + 12;
+	} else {
+		ast_log(LOG_WARNING, "Don't know how to represent '%c'\n", digit);
+		return -1;
+	}
+
 	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
 
 	if (duration > 0 && (measured_samples = duration * rtp_get_rate(rtp->f.subclass.codec) / 1000) > rtp->send_duration) {
@@ -1025,7 +1041,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	/* Construct the packet we are going to send */
 	rtpheader[1] = htonl(rtp->lastdigitts);
 	rtpheader[2] = htonl(rtp->ssrc);
-	rtpheader[3] = htonl((rtp->send_digit << 24) | (0xa << 16) | (rtp->send_duration));
+	rtpheader[3] = htonl((digit << 24) | (0xa << 16) | (rtp->send_duration));
 	rtpheader[3] |= htonl((1 << 23));
 
 	/* Send it 3 times, that's the magical number */
