@@ -26,11 +26,15 @@
  * \ingroup channel_drivers
  */
 
+//	#define BRCM_LOCK_DEBUG		/* If defined we will log lock events to the asterisk debug channel */
+
 /* TODO:
  * Prefered codec order mulaw/alaw/g729/g723.1/g726_24/g726_32
  * Enable T38 support
  * Enable V18 support
  */
+
+
 
 #include "asterisk.h"
 
@@ -221,6 +225,7 @@ static struct brcm_channel_tech fxs_tech = {
 	.stop_ringing_callerid_pending = brcm_stop_ringing_callerid_pending,
 };
 
+
 /* Tries to lock 10 timees, then gives up */
 static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 {
@@ -235,6 +240,7 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 	return 0;
 }
 
+#ifdef BRCM_LOCK_DEBUG
 static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 {
 	ast_debug(9, "----> Trying to lock port %d - %s\n", pvt->line_id, reason);
@@ -242,6 +248,7 @@ static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
 	ast_debug(9, "----> Locked pvt port %d - reason %s\n", pvt->line_id, reason);
 	return 1;
 }
+
 
 static int pvt_lock_silent(struct brcm_pvt *pvt)
 {
@@ -262,6 +269,13 @@ static int pvt_unlock_silent(struct brcm_pvt *pvt)
 	ast_mutex_unlock(&pvt->lock);
 	return 1;
 }
+
+#else
+#define pvt_lock(pvt, reason)		ast_mutex_lock(&pvt->lock)
+#define pvt_lock_silent(pvt)		ast_mutex_lock(&pvt->lock)
+#define pvt_unlock(pvt)			ast_mutex_unlock(&pvt->lock)
+#define pvt_unlock_silent(pvt)		ast_mutex_unlock(&pvt->lock)
+#endif
 
 
 static int brcm_indicate(struct ast_channel *ast, int condition, const void *data, size_t datalen)
