@@ -4048,10 +4048,10 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					f->len = option_dtmfminduration;
 				}
 				if (f->len < option_dtmfminduration && !ast_test_flag(chan, AST_FLAG_END_DTMF_ONLY)) {
-					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s\n", f->subclass.integer, f->len, option_dtmfminduration, chan->name);
 					ast_set_flag(chan, AST_FLAG_EMULATE_DTMF);
 					chan->emulate_dtmf_digit = f->subclass.integer;
 					chan->emulate_dtmf_duration = option_dtmfminduration - f->len;
+					ast_log(LOG_DTMF, "DTMF end '%c' has duration %ld but want minimum %d, emulating on %s New Duration %ld\n", f->subclass.integer, f->len, option_dtmfminduration, chan->name, chan->emulate_dtmf_duration);
 					ast_frfree(f);
 					f = &ast_null_frame;
 				} else {
