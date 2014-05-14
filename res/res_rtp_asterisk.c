@@ -964,12 +964,12 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 	} 
 	if (rtp->send_endflag) {
 		if (rtp->send_duration + 160 >= rtp->received_duration) {
-			ast_debug(4, "---- Send duration %d Received duration %d - sending END packet\n", rtp->send_duration, rtp->received_duration);
+			ast_debug(4, "---- Send duration %d (samples) Received duration %d (samples) - sending END packet\n", rtp->send_duration, rtp->received_duration);
 			/* We are done, ready to send end flag */
 			rtp->send_endflag = 0;
 			return ast_rtp_dtmf_end_with_duration(instance, rtp->send_digit, rtp->received_duration);
 		} else {
-			ast_debug(4, "---- Send duration %d Received duration %d - delaying END packet (not ready for it yet)\n", rtp->send_duration, rtp->received_duration);
+			ast_debug(4, "---- Send duration %d samples, Received duration %d samples, - delaying END packet (not ready for it yet)\n", rtp->send_duration, rtp->received_duration);
 		}
 	}
 	ast_debug(4, "---- Send duration %d Received duration %d Endflag %d Send-digit %d\n", rtp->send_duration, rtp->received_duration, rtp->send_endflag, rtp->send_digit);
@@ -1009,6 +1009,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	unsigned int *rtpheader = (unsigned int*)data;
 	unsigned int measured_samples;
 	int dtmfcode;
+	unsigned int dursamples;
 
 	ast_rtp_instance_get_remote_address(instance, &remote_address);
 
@@ -1016,9 +1017,17 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	if (ast_sockaddr_isnull(&remote_address)) {
 		goto cleanup;
 	}
+	dursamples = duration * rtp_get_rate(rtp->f.subclass.codec) / 1000;
 
-	ast_debug(1, "---- Send duration %d Received duration %d Duration %d Endflag %d Digit %d      Send-digit %d\n", rtp->send_duration, rtp->received_duration, duration, rtp->send_endflag, digit, dtmf_char_to_code(rtp->send_digit));
+	ast_debug(3, "---- Send duration %d samples, Received duration %d samples, Duration %d ms, Endflag %d Digit %d Send-digit %d\n", rtp->send_duration, rtp->received_duration, duration, rtp->send_endflag, digit, dtmf_char_to_code(rtp->send_digit));
 
+	/* If the duration we received is way larger than our send_duration, then use the duration received */
+	if (duration > 0 && dursamples > rtp->send_duration) {
+		ast_debug(2, "Adjusting final end duration from %d samples to %u samples\n", rtp->send_duration, measured_samples);
+		rtp->received_duration = dursamples;
+	}
+
+SKREP
 	if (!rtp->send_endflag && rtp->send_duration + 160 < rtp->received_duration) {
 		/* We still have to send DTMF continuation, because otherwise we will end prematurely. Set end flag to indicate
 		   that we will have to end ourselves when we're done with the actual duration
@@ -1036,15 +1045,10 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 
 	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
 
-	if (duration > 0 && (measured_samples = duration * rtp_get_rate(rtp->f.subclass.codec) / 1000) > rtp->send_duration) {
-		ast_debug(2, "Adjusting final end duration from %u to %u\n", rtp->send_duration, measured_samples);
-		rtp->send_duration = measured_samples;
-	}
-
 	/* Construct the packet we are going to send */
 	rtpheader[1] = htonl(rtp->lastdigitts);
 	rtpheader[2] = htonl(rtp->ssrc);
-	rtpheader[3] = htonl((dtmfcode << 24) | (0xa << 16) | (rtp->send_duration));
+	rtpheader[3] = htonl((dtmfcode << 24) | (0xa << 16) | (rtp->received_duration));
 	rtpheader[3] |= htonl((1 << 23));
 
 	/* Send it 3 times, that's the magical number */
