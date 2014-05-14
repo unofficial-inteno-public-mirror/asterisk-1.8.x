@@ -88,7 +88,8 @@ struct brcm_subchannel {
 	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
 					   in sequence and we only need to react on the first one */
 	int dtmf_sending;		/* A marker if we are sending DTMF or not */
-	int dtmf_timestamp;			/* When a dtmf begin is detected save and use this timestamp for the rest of the dtmf packets */
+	int dtmf_timestamp;		/* When a dtmf begin is detected save and use this timestamp for the rest of the dtmf packets */
+	struct timeval dtmf_tv;         /*!< The time that an in process digit began, or the last digit ended */
 };
 
 
