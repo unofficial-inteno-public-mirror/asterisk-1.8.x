@@ -1027,7 +1027,6 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 		rtp->received_duration = dursamples;
 	}
 
-SKREP
 	if (!rtp->send_endflag && rtp->send_duration + 160 < rtp->received_duration) {
 		/* We still have to send DTMF continuation, because otherwise we will end prematurely. Set end flag to indicate
 		   that we will have to end ourselves when we're done with the actual duration
