@@ -1854,10 +1854,22 @@ static void *brcm_monitor_packets(void *data)
 						fr.frametype = AST_FRAME_DTMF_END;
 						sub->dtmf_lastwasend = 1;
 						sub->dtmf_sending = 0;
+						if (option_debug > 3) {
+							if (!ast_tvzero(sub->dtmf_tv)) {
+								ast_debug(3, "    ---> Time since DTMF BEGIN %d ms Duration %d ms\n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv), (int) (duration / 8));
+							}
+						}
+						sub->dtmf_tv = ast_tvnow();
 					} else {
 						sub->dtmf_lastwasend = 0;
 						if (sub->dtmf_sending == 0) { /* DTMF starts here */
 							fr.frametype = AST_FRAME_DTMF_BEGIN;
+							if (option_debug > 3) {
+								if (!ast_tvzero(sub->dtmf_tv)) {
+									ast_debug(3, "    ---> Time since last DTMF %d ms \n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv));
+								}
+							}
+							sub->dtmf_tv = ast_tvnow();
 							sub->dtmf_sending = 1;
 						} else {
 							fr.frametype = AST_FRAME_DTMF_CONTINUE;
