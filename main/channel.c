@@ -4114,7 +4114,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					chan->dtmf_tv = now;
 					ast_clear_flag(chan, AST_FLAG_EMULATE_DTMF);
 					chan->emulate_dtmf_digit = 0;
-					ast_log(LOG_DTMF, "DTMF end emulation of '%c' queued on %s\n", f->subclass.integer, chan->name);
+					ast_log(LOG_DTMF, "DTMF end emulation of '%c' queued on %s with duration %d ms\n", f->subclass.integer, chan->name, f->len);
 					if (chan->audiohooks) {
 						struct ast_frame *old_frame = f;
 						f = ast_audiohook_write_list(chan, chan->audiohooks, AST_AUDIOHOOK_DIRECTION_READ, f);
