@@ -3690,7 +3690,7 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 			ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 		/* We're not in the middle of a digit, but it hasn't been long enough
 		 * since the last digit, so we'll have to skip DTMF for now. */
-		ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP \n");
+		ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP %d ms - min %d ms\n", ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv), AST_MIN_DTMF_GAP);
 		return 1;
 	}
 
@@ -3854,7 +3854,8 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 
 	/* Check for pending read queue */
 	if (!AST_LIST_EMPTY(&chan->readq)) {
-		int skip_dtmf = should_skip_dtmf(chan);
+		/* Never skip continue frames */
+		int skip_dtmf = f->framtype == AST_FRAME_DTMF_CONTINUE ? 0 : should_skip_dtmf(chan);
 
 		AST_LIST_TRAVERSE_SAFE_BEGIN(&chan->readq, f, frame_list) {
 			/* We have to be picky about which frame we pull off of the readq because
@@ -3862,7 +3863,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			 * some later time. */
 
 			/* We should not skip DTMF_CONTINUE ever */
-			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
+			if (skip_dtmf) {
 				ast_debug(8, "===== Skipping DTMF. \n");
 				continue;
 			}
