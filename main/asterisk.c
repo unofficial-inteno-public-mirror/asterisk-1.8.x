@@ -2320,7 +2320,10 @@ static char *cli_prompt(EditLine *editline)
 		while (*t != '\0') {
 			if (*t == '%') {
 				char hostname[MAXHOSTNAMELEN] = "";
-				int i, which;
+				int i;
+#ifdef HAVE_GETLOADAVG
+				int which;
+#endif
 				struct ast_tm tm = { 0, };
 				int fgcolor = COLOR_WHITE, bgcolor = COLOR_BLACK;
 
