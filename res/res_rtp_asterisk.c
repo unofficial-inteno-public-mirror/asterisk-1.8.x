@@ -1007,7 +1007,6 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 	int hdrlen = 12, res = 0, i = 0;
 	char data[256];
 	unsigned int *rtpheader = (unsigned int*)data;
-	unsigned int measured_samples;
 	int dtmfcode;
 	unsigned int dursamples;
 
@@ -1023,7 +1022,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 
 	/* If the duration we received is way larger than our send_duration, then use the duration received */
 	if (duration > 0 && dursamples > rtp->send_duration) {
-		ast_debug(2, "Adjusting final end duration from %d samples to %u samples\n", rtp->send_duration, measured_samples);
+		ast_debug(2, "Adjusting final end duration from %d samples to %u samples\n", rtp->send_duration, dursamples);
 		rtp->received_duration = dursamples;
 	}
 
