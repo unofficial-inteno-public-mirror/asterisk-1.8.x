@@ -136,9 +136,10 @@ int sip_acf_channel_read(struct ast_channel *chan, const char *funcname, char *p
 
 		snprintf(buf, buflen, "%s", ast_sockaddr_stringify(&sa));
 	} else if (!strcasecmp(args.param, "rtpqos")) {
-/* OEJ - Check this part, different from 1.4 */
 		struct ast_rtp_instance *rtp = NULL;
+#ifdef OEJ
 		struct ast_rtp_quality *qos;
+#endif
 
 		if (ast_strlen_zero(args.type)) {
 			args.type = "audio";
