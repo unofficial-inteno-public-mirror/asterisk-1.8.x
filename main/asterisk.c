@@ -179,11 +179,11 @@ struct ast_flags ast_options = { AST_DEFAULT_OPTIONS };
 struct ast_flags ast_compat = { 0 };
 
 int option_verbose;				/*!< Verbosity level */
+int option_dtmfminduration;			/*!< Minimum duration of DTMF. */
 int option_debug;				/*!< Debug level */
 double option_maxload;				/*!< Max load avg on system */
 int option_maxcalls;				/*!< Max number of active calls */
 int option_maxfiles;				/*!< Max number of open file handles (files, sockets) */
-unsigned int option_dtmfminduration;			/*!< Minimum duration of DTMF. */
 #if defined(HAVE_SYSINFO)
 long option_minmemfree;				/*!< Minimum amount of free system memory - stop accepting calls if free memory falls below this watermark */
 #endif
