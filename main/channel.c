@@ -3862,7 +3862,11 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 
 			/* We should not skip DTMF_CONTINUE ever */
 			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
-				ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP %d ms - min %d ms\n", (int) ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv), AST_MIN_DTMF_GAP);
+				if (!ast_tvzero(chan->dtmf_tv)) {
+					ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP %d ms - min %d ms\n", (int) ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv), AST_MIN_DTMF_GAP);
+				} else {
+					ast_debug(8, "!!!!! Skipping DTMF from readq because of emulation\n");
+				}
 				continue;
 			}
 
