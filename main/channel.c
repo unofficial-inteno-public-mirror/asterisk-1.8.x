@@ -3988,6 +3988,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 		case AST_FRAME_DTMF_END:
 			send_dtmf_event(chan, "Received", f->subclass.integer, "No", "Yes");
 			ast_log(LOG_DTMF, "DTMF end '%c' received on %s, duration %ld ms\n", f->subclass.integer, chan->name, f->len);
+ 			ast_verbose("-- Adress till option_dtmfminduration = %x option_debug = %x\n", (int) &option_dtmfminduration, (int) &option_debug);
 			/* Queue it up if DTMF is deferred, or if DTMF emulation is forced. */
 			if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF) || ast_test_flag(chan, AST_FLAG_EMULATE_DTMF)) {
 				ast_debug(8, "===> queueing up DTMF for some reason \n");
