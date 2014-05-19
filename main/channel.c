@@ -3690,7 +3690,6 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 			ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 		/* We're not in the middle of a digit, but it hasn't been long enough
 		 * since the last digit, so we'll have to skip DTMF for now. */
-		ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP \n");
 		return 1;
 	}
 
@@ -3863,7 +3862,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 
 			/* We should not skip DTMF_CONTINUE ever */
 			if ( (f->frametype == AST_FRAME_DTMF_BEGIN || f->frametype == AST_FRAME_DTMF_END) && skip_dtmf) {
-				ast_debug(8, "===== Skipping DTMF. \n");
+				ast_debug(8, "!!!!! Skipping DTMF from readq because of GAP %d ms - min %d ms\n", (int) ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv), AST_MIN_DTMF_GAP);
 				continue;
 			}
 
