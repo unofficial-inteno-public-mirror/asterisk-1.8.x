@@ -1883,9 +1883,9 @@ static void *brcm_monitor_packets(void *data)
 						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
 						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
 					}
-					if (fr.frametype == AST_FRAME_DTMF_END && fr.len < options_dtmfminduration) {
+					if (fr.frametype == AST_FRAME_DTMF_END && fr.len < option_dtmfminduration) {
 						/* If the DTMF is too short, expand it to avoid DTMF emulation in the core */
-						fr.len = options_dtmfminduration;
+						fr.len = option_dtmfminduration;
 					}
 					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
