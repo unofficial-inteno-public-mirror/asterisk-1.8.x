@@ -17635,10 +17635,8 @@ static char *_sip_show_peer(int type, int fd, struct mansession *s, const struct
 	int x = 0, load_realtime;
 	format_t codec = 0;
 	int realtimepeers;
-	int realtimertpqos = FALSE;
 
 	realtimepeers = ast_check_realtime("sippeers");
-	realtimertpqos = ast_check_realtime("rtpcqr");
 
 	if (argc < 4)
 		return CLI_SHOWUSAGE;
