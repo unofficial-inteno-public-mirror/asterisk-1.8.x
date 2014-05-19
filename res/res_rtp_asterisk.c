@@ -40,6 +40,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 351611 $")
 #include <signal.h>
 #include <fcntl.h>
 
+#include "asterisk/options.h"
 #include "asterisk/stun.h"
 #include "asterisk/pbx.h"
 #include "asterisk/frame.h"
