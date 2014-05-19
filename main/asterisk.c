@@ -2935,7 +2935,6 @@ static void ast_readconfig(void)
 
 	/* Set default value */
 	option_dtmfminduration = AST_MIN_DTMF_DURATION;
-	ast_verbose("-- Adress till option_dtmfminduration = %x\n", &option_dtmfminduration);
 
 	if (ast_opt_override_config) {
 		cfg = ast_config_load2(ast_config_AST_CONFIG_FILE, "" /* core, can't reload */, config_flags);
