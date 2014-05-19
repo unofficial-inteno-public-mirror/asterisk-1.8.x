@@ -1873,18 +1873,16 @@ static void process_dtmf_rfc2833(struct ast_rtp_instance *instance, unsigned cha
 		if (event_end & 0x80) {
 			/* End event */
 			if ((rtp->lastevent != seqno) && rtp->resp) {
+				int mindtmf = (int) option_dtmfminduration;
 				rtp->dtmf_duration = new_duration;
 				f = ast_frdup(create_dtmf_frame(instance, AST_FRAME_DTMF_END, 0));
 				f->len = ast_tvdiff_ms(ast_samp2tv(rtp->dtmf_duration, rtp_get_rate(f->subclass.codec)), ast_tv(0, 0));
-#ifdef SKREP
-				if (f->len < option_dtmfminduration) {
-					f->len = option_dtmfminduration;
-					ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms - adjusted to min DTMF)\n", rtp->dtmf_duration, f->len);
+				if (f->len < mindtmf) {
+					f->len = mindtmf;
+					ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms - adjusted to min DTMF %d)\n", rtp->dtmf_duration, f->len, mindtmf);
 				} else {
 					ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms)\n", rtp->dtmf_duration, f->len);
 				}
-#endif
-				ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms) \n", rtp->dtmf_duration, f->len);
 				rtp->resp = 0;
 				rtp->dtmf_duration = rtp->dtmf_timeout = 0;
 				AST_LIST_INSERT_TAIL(frames, f, frame_list);
