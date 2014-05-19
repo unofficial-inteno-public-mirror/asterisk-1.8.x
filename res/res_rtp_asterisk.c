@@ -964,10 +964,11 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 	} 
 	if (rtp->send_endflag) {
 		if (rtp->send_duration + 160 >= rtp->received_duration) {
+			int durms =  rtp->received_duration / (rtp_get_rate(rtp->f.subclass.codec) / 1000);
 			ast_debug(4, "---- Send duration %d (samples) Received duration %d (samples) - sending END packet\n", rtp->send_duration, rtp->received_duration);
 			/* We are done, ready to send end flag */
 			rtp->send_endflag = 0;
-			return ast_rtp_dtmf_end_with_duration(instance, rtp->send_digit, rtp->received_duration);
+			return ast_rtp_dtmf_end_with_duration(instance, rtp->send_digit, durms);
 		} else {
 			ast_debug(4, "---- Send duration %d samples, Received duration %d samples, - delaying END packet (not ready for it yet)\n", rtp->send_duration, rtp->received_duration);
 		}
