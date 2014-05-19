@@ -1884,7 +1884,7 @@ static void process_dtmf_rfc2833(struct ast_rtp_instance *instance, unsigned cha
 					ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms)\n", rtp->dtmf_duration, f->len);
 				}
 #endif
-				ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms) Minimum %d\n", rtp->dtmf_duration, f->len, option_dtmfminduration);
+				ast_debug(4, "--GOT DTMF END message. Duration samples %d (%ld ms) \n", rtp->dtmf_duration, f->len);
 				rtp->resp = 0;
 				rtp->dtmf_duration = rtp->dtmf_timeout = 0;
 				AST_LIST_INSERT_TAIL(frames, f, frame_list);
