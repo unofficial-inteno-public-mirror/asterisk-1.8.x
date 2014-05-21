@@ -1914,7 +1914,7 @@ static void *brcm_monitor_packets(void *data)
 						*/
 						fr.frametype = AST_FRAME_DTMF_CONTINUE;
 						ast_queue_frame(owner, &fr);
-						ast_debug(2, "Sending extra DTMF [%c, Len %d%s] (%s)\n", fr.subclass.integer, fr.len, adjusted ? " Adjusted for min dur." : "", 
+						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len,  
 							(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 					}
 				}
