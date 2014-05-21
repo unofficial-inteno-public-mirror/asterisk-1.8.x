@@ -1771,7 +1771,7 @@ static struct ast_frame *create_dtmf_frame(struct ast_rtp_instance *instance, en
 		between DTMF tones. This will of course cause a delay somewhere in playing out DTMF.
 	 */
 	if (((compensate && type == AST_FRAME_DTMF_END) || (type == AST_FRAME_DTMF_BEGIN)) && ast_tvcmp(ast_tvnow(), rtp->dtmfmute) < 0) {
-		ast_debug(1, "Ignore potential DTMF echo from '%s' TV Diff %d\n", ast_sockaddr_stringify(&remote_address), ast_tvcmp(ast_tvnow(), rtp->dtmfmute);
+		ast_debug(1, "Ignore potential DTMF echo from '%s' TV Diff %d\n", ast_sockaddr_stringify(&remote_address), ast_tvcmp(ast_tvnow(), rtp->dtmfmute));
 		rtp->resp = 0;
 		rtp->dtmfsamples = 0;
 		return &ast_null_frame;
