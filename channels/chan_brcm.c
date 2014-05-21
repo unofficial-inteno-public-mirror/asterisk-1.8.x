@@ -1906,6 +1906,17 @@ static void *brcm_monitor_packets(void *data)
 						ast_channel_unlock(owner);
 					}
 					ast_queue_frame(owner, &fr);
+					if (fr.frametype == AST_FRAME_DTMF_BEGIN && fr.samples > 160) {
+						/* BEGIN frames doesn't have duration in Asterisk, but they do in
+						   the broadcom world. Since brcm by default sends the begin with
+						   a duration of 400 we want to send a continue to update the other
+						   side of the bridge.
+						*/
+						fr.frametype = AST_FRAME_DTMF_CONTINUE;
+						ast_queue_frame(owner, &fr);
+						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len,  
+							(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
+					}
 				}
 				ast_channel_unref(owner);
 			}
