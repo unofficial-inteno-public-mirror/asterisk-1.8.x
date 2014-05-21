@@ -22,6 +22,7 @@
  * \brief Supports RTP and RTCP with Symmetric RTP support for NAT traversal.
  *
  * \author Mark Spencer <markster@digium.com>
+ * \author Olle E. Johansson <oej@edvina.net>
  *
  * \note RTP is defined in RFC 3550.
  *
@@ -103,6 +104,8 @@ enum rtcp_sdes {
 #define DTMF_SAMPLE_RATE_MS    8 /*!< DTMF samples per millisecond */
 
 #define DEFAULT_DTMF_TIMEOUT (150 * (8000 / 1000))	/*!< samples */
+#define DEFAULT_DTMF_GAP	45000			/*!< Minimum DTMF gap (as in channel.c) in microseconds - used for DTMF "echo"/dtmfmute */
+							/* used to be 500000 microseconds - far too much */
 
 #define ZFONE_PROFILE_ID 0x505a
 
@@ -194,7 +197,7 @@ struct ast_rtp {
 	char send_digit;                /*!< digit we are sending in Ascii */
 	char send_dtmf_frame;           /*!< Number of samples in a frame with the current packetization */
 	AST_LIST_HEAD_NOLOCK(, ast_frame) dtmfqueue;    /*!< \ref DTMFQUEUE : Queue for DTMF that we receive while occupied with transmitting an outbound DTMF */
-	struct timeval dtmfmute;
+	struct timeval dtmfmute;	/*!< Minimum time between DTMF... Default 500 ms. */
 	int send_endflag:1;             /*!< We have received END marker but are in waiting mode */
 	unsigned int received_duration; /*!< Received duration (according to control frames) */
 	int send_payload;
@@ -842,7 +845,7 @@ static int ast_rtp_dtmf_begin(struct ast_rtp_instance *instance, char digit)
 	/* Grab the payload that they expect the RFC2833 packet to be received in */
 	payload = ast_rtp_codecs_payload_code(ast_rtp_instance_get_codecs(instance), 0, AST_RTP_DTMF);
 
-	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
+	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, DEFAULT_DTMF_GAP));
 	rtp->send_duration = 160;               /* XXX This assumes 20 ms packetization */
 	rtp->received_duration = 160;
 	rtp->lastdigitts = rtp->lastts + rtp->send_duration;
@@ -949,10 +952,7 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 	 */
 	/* OEJ disabled this. RFC 4733 actually allows us to send without regards to packetization */
 	if (!rtp->send_endflag && rtp->send_duration + 160 > rtp->received_duration) {
-		// 	/* We need to wait with sending this continue, as we're sending 160 samples */
-		// 	ast_debug(4, "---- Digit %d Send duration %d Received duration %d - Skipping this continue frame until we have a proper 20 ms/160 samples to send\n", rtp->send_digit, rtp->send_duration, rtp->received_duration);
 	 	ast_debug(4, "---- Digit %d Send duration %d Received duration %d - Sending DTMF keep-alive frame\n", rtp->send_digit, rtp->send_duration, rtp->received_duration);
-		// 	return -1;
 		/* We haven't got 160 samples, but let's catch up anyway */
 		if (rtp->received_duration > rtp->send_duration) {
 			rtp->send_duration = rtp->received_duration;
@@ -980,6 +980,8 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 	rtpheader[1] = htonl(rtp->lastdigitts);
 	rtpheader[2] = htonl(rtp->ssrc);
 	rtpheader[3] = htonl((dtmf_char_to_code(rtp->send_digit) << 24) | (0xa << 16) | (rtp->send_duration));
+
+	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, DEFAULT_DTMF_GAP));		/* Reset DTMF mute */
 
 	/* Boom, send it on out */
 	res = rtp_sendto(instance, (void *) rtpheader, hdrlen + 4, 0, &remote_address);
@@ -1043,7 +1045,7 @@ static int ast_rtp_dtmf_end_with_duration(struct ast_rtp_instance *instance, cha
 		return -1;
 	}
 
-	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
+	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, DEFAULT_DTMF_GAP));
 
 	/* Construct the packet we are going to send */
 	rtpheader[1] = htonl(rtp->lastdigitts);
@@ -1764,9 +1766,13 @@ static struct ast_frame *create_dtmf_frame(struct ast_rtp_instance *instance, en
 
 	ast_rtp_instance_get_remote_address(instance, &remote_address);
 
+	/* Check if we have the right gap between DTMF tones. We need at least 45 ms in channel.c 
+		I don't know how other channels will handle this. At some point after the mute ends, we will
+		still send DTMF and being in the middle so the duration will not be affected, only the duration
+		between DTMF tones. This will of course cause a delay somewhere in playing out DTMF.
+	 */
 	if (((compensate && type == AST_FRAME_DTMF_END) || (type == AST_FRAME_DTMF_BEGIN)) && ast_tvcmp(ast_tvnow(), rtp->dtmfmute) < 0) {
-		ast_debug(1, "Ignore potential DTMF echo from '%s'\n",
-			  ast_sockaddr_stringify(&remote_address));
+		ast_debug(1, "Ignore potential DTMF echo from '%s' TV Diff %d\n", ast_sockaddr_stringify(&remote_address), ast_tvcmp(ast_tvnow(), rtp->dtmfmute));
 		rtp->resp = 0;
 		rtp->dtmfsamples = 0;
 		return &ast_null_frame;
@@ -3436,7 +3442,9 @@ static int ast_rtp_sendcng(struct ast_rtp_instance *instance, int level)
 
 	level = 127 - (level & 0x7f);
 	
-	rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
+	/* This is not related to CNG...
+		rtp->dtmfmute = ast_tvadd(ast_tvnow(), ast_tv(0, 500000));
+	*/
 
 	/* Get a pointer to the header */
 	rtpheader = (unsigned int *)data;
