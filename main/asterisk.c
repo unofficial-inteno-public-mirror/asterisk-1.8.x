@@ -2191,9 +2191,9 @@ static struct ast_cli_entry cli_asterisk[] = {
 	AST_CLI_DEFINE(handle_show_sysinfo, "Show System Information"),
 #endif
 	AST_CLI_DEFINE(handle_show_profile, "Display profiling info"),
-	AST_CLI_DEFINE(handle_show_settings, "Show some core settings"),
 	AST_CLI_DEFINE(handle_clear_profile, "Clear profiling info"),
 #endif /* ! LOW_MEMORY */
+	AST_CLI_DEFINE(handle_show_settings, "Show some core settings"),
 };
 
 static int ast_el_read_char(EditLine *editline, char *cp)
@@ -3072,8 +3072,9 @@ static void ast_readconfig(void)
 		} else if (!strcasecmp(v->name, "mindtmfduration")) {
 			if (sscanf(v->value, "%30u", &option_dtmfminduration) != 1) {
 				option_dtmfminduration = AST_MIN_DTMF_DURATION;
+				ast_log(LOG_ERROR, "**** Option mindtmfduration set to MIN DTMF DURATION default %d\n", option_dtmfminduration);
 			}
-			ast_verbose("**** Option mindtmfduration set to %d\n", option_dtmfminduration);
+			ast_log(LOG_ERROR, "**** Option mindtmfduration set to %d\n", option_dtmfminduration);
 		} else if (!strcasecmp(v->name, "maxcalls")) {
 			if ((sscanf(v->value, "%30d", &option_maxcalls) != 1) || (option_maxcalls < 0)) {
 				option_maxcalls = 0;
