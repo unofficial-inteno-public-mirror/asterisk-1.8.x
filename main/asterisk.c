@@ -305,6 +305,91 @@ static struct {
 	 unsigned int need_quit_handler:1;
 } sig_flags;
 
+/*! \brief Give an overview of core settings */
+static char *handle_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	char buf[BUFSIZ];
+	struct ast_tm tm;
+	char eid_str[128];
+
+	switch (cmd) {
+	case CLI_INIT:
+		e->command = "core show settings";
+		e->usage = "Usage: core show settings\n"
+			   "       Show core misc settings";
+		return NULL;
+	case CLI_GENERATE:
+		return NULL;
+	}
+
+	ast_eid_to_str(eid_str, sizeof(eid_str), &ast_eid_default);
+
+	ast_cli(a->fd, "\nPBX Core settings\n");
+	ast_cli(a->fd, "-----------------\n");
+	ast_cli(a->fd, "  Version:                     %s\n", ast_get_version());
+	ast_cli(a->fd, "  Build Options:               %s\n", S_OR(AST_BUILDOPTS, "(none)"));
+	if (option_maxcalls)
+		ast_cli(a->fd, "  Maximum calls:               %d (Current %d)\n", option_maxcalls, ast_active_channels());
+	else
+		ast_cli(a->fd, "  Maximum calls:               Not set\n");
+	if (option_maxfiles)
+		ast_cli(a->fd, "  Maximum open file handles:   %d\n", option_maxfiles); 
+	else
+		ast_cli(a->fd, "  Maximum open file handles:   Not set\n");
+	ast_cli(a->fd, "  Verbosity:                   %d\n", option_verbose);
+	ast_cli(a->fd, "  Debug level:                 %d\n", option_debug);
+	ast_cli(a->fd, "  Maximum load average:        %lf\n", option_maxload);
+#if defined(HAVE_SYSINFO)
+	ast_cli(a->fd, "  Minimum free memory:         %ld MB\n", option_minmemfree);
+#endif
+	if (ast_localtime(&ast_startuptime, &tm, NULL)) {
+		ast_strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
+		ast_cli(a->fd, "  Startup time:                %s\n", buf);
+	}
+	if (ast_localtime(&ast_lastreloadtime, &tm, NULL)) {
+		ast_strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
+		ast_cli(a->fd, "  Last reload time:            %s\n", buf);
+	}
+	ast_cli(a->fd, "  System:                      %s/%s built by %s on %s %s\n", ast_build_os, ast_build_kernel, ast_build_user, ast_build_machine, ast_build_date);
+	ast_cli(a->fd, "  System name:                 %s\n", ast_config_AST_SYSTEM_NAME);
+	ast_cli(a->fd, "  Entity ID:                   %s\n", eid_str);
+	ast_cli(a->fd, "  Default language:            %s\n", defaultlanguage);
+	ast_cli(a->fd, "  Language prefix:             %s\n", ast_language_is_prefix ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  User name and group:         %s/%s\n", ast_config_AST_RUN_USER, ast_config_AST_RUN_GROUP);
+	ast_cli(a->fd, "  Executable includes:         %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_EXEC_INCLUDES) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Transcode via SLIN:          %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSCODE_VIA_SLIN) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Internal timing:             %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_INTERNAL_TIMING) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Transmit silence during rec: %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSMIT_SILENCE) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Generic PLC:                 %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_GENERIC_PLC) ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Min DTMF duration::          %u\n", option_dtmfminduration);
+
+	ast_cli(a->fd, "\n* Subsystems\n");
+	ast_cli(a->fd, "  -------------\n");
+	ast_cli(a->fd, "  Manager (AMI):               %s\n", check_manager_enabled() ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Web Manager (AMI/HTTP):      %s\n", check_webmanager_enabled() ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Call data records:           %s\n", check_cdr_enabled() ? "Enabled" : "Disabled");
+	ast_cli(a->fd, "  Realtime Architecture (ARA): %s\n", ast_realtime_enabled() ? "Enabled" : "Disabled");
+
+	/*! \todo we could check musiconhold, voicemail, smdi, adsi, queues  */
+
+	ast_cli(a->fd, "\n* Directories\n");
+	ast_cli(a->fd, "  -------------\n");
+	ast_cli(a->fd, "  Configuration file:          %s\n", ast_config_AST_CONFIG_FILE);
+	ast_cli(a->fd, "  Configuration directory:     %s\n", ast_config_AST_CONFIG_DIR);
+	ast_cli(a->fd, "  Module directory:            %s\n", ast_config_AST_MODULE_DIR);
+	ast_cli(a->fd, "  Spool directory:             %s\n", ast_config_AST_SPOOL_DIR);
+	ast_cli(a->fd, "  Log directory:               %s\n", ast_config_AST_LOG_DIR);
+	ast_cli(a->fd, "  Run/Sockets directory:       %s\n", ast_config_AST_RUN_DIR);
+	ast_cli(a->fd, "  PID file:                    %s\n", ast_config_AST_PID);
+	ast_cli(a->fd, "  VarLib directory:            %s\n", ast_config_AST_VAR_DIR);
+	ast_cli(a->fd, "  Data directory:              %s\n", ast_config_AST_DATA_DIR);
+	ast_cli(a->fd, "  ASTDB:                       %s\n", ast_config_AST_DB);
+	ast_cli(a->fd, "  IAX2 Keys directory:         %s\n", ast_config_AST_KEY_DIR);
+	ast_cli(a->fd, "  AGI Scripts directory:       %s\n", ast_config_AST_AGI_DIR);
+	ast_cli(a->fd, "\n\n");
+	return CLI_SUCCESS;
+}
+
 #if !defined(LOW_MEMORY)
 struct file_version {
 	AST_RWLIST_ENTRY(file_version) list;
@@ -427,91 +512,6 @@ void ast_unregister_thread(void *id)
 		ast_free(x->name);
 		ast_free(x);
 	}
-}
-
-/*! \brief Give an overview of core settings */
-static char *handle_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
-{
-	char buf[BUFSIZ];
-	struct ast_tm tm;
-	char eid_str[128];
-
-	switch (cmd) {
-	case CLI_INIT:
-		e->command = "core show settings";
-		e->usage = "Usage: core show settings\n"
-			   "       Show core misc settings";
-		return NULL;
-	case CLI_GENERATE:
-		return NULL;
-	}
-
-	ast_eid_to_str(eid_str, sizeof(eid_str), &ast_eid_default);
-
-	ast_cli(a->fd, "\nPBX Core settings\n");
-	ast_cli(a->fd, "-----------------\n");
-	ast_cli(a->fd, "  Version:                     %s\n", ast_get_version());
-	ast_cli(a->fd, "  Build Options:               %s\n", S_OR(AST_BUILDOPTS, "(none)"));
-	if (option_maxcalls)
-		ast_cli(a->fd, "  Maximum calls:               %d (Current %d)\n", option_maxcalls, ast_active_channels());
-	else
-		ast_cli(a->fd, "  Maximum calls:               Not set\n");
-	if (option_maxfiles)
-		ast_cli(a->fd, "  Maximum open file handles:   %d\n", option_maxfiles); 
-	else
-		ast_cli(a->fd, "  Maximum open file handles:   Not set\n");
-	ast_cli(a->fd, "  Verbosity:                   %d\n", option_verbose);
-	ast_cli(a->fd, "  Debug level:                 %d\n", option_debug);
-	ast_cli(a->fd, "  Maximum load average:        %lf\n", option_maxload);
-#if defined(HAVE_SYSINFO)
-	ast_cli(a->fd, "  Minimum free memory:         %ld MB\n", option_minmemfree);
-#endif
-	if (ast_localtime(&ast_startuptime, &tm, NULL)) {
-		ast_strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-		ast_cli(a->fd, "  Startup time:                %s\n", buf);
-	}
-	if (ast_localtime(&ast_lastreloadtime, &tm, NULL)) {
-		ast_strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-		ast_cli(a->fd, "  Last reload time:            %s\n", buf);
-	}
-	ast_cli(a->fd, "  System:                      %s/%s built by %s on %s %s\n", ast_build_os, ast_build_kernel, ast_build_user, ast_build_machine, ast_build_date);
-	ast_cli(a->fd, "  System name:                 %s\n", ast_config_AST_SYSTEM_NAME);
-	ast_cli(a->fd, "  Entity ID:                   %s\n", eid_str);
-	ast_cli(a->fd, "  Default language:            %s\n", defaultlanguage);
-	ast_cli(a->fd, "  Language prefix:             %s\n", ast_language_is_prefix ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  User name and group:         %s/%s\n", ast_config_AST_RUN_USER, ast_config_AST_RUN_GROUP);
-	ast_cli(a->fd, "  Executable includes:         %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_EXEC_INCLUDES) ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Transcode via SLIN:          %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSCODE_VIA_SLIN) ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Internal timing:             %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_INTERNAL_TIMING) ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Transmit silence during rec: %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_TRANSMIT_SILENCE) ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Generic PLC:                 %s\n", ast_test_flag(&ast_options, AST_OPT_FLAG_GENERIC_PLC) ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Min DTMF duration::          %u\n", option_dtmfminduration);
-
-	ast_cli(a->fd, "\n* Subsystems\n");
-	ast_cli(a->fd, "  -------------\n");
-	ast_cli(a->fd, "  Manager (AMI):               %s\n", check_manager_enabled() ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Web Manager (AMI/HTTP):      %s\n", check_webmanager_enabled() ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Call data records:           %s\n", check_cdr_enabled() ? "Enabled" : "Disabled");
-	ast_cli(a->fd, "  Realtime Architecture (ARA): %s\n", ast_realtime_enabled() ? "Enabled" : "Disabled");
-
-	/*! \todo we could check musiconhold, voicemail, smdi, adsi, queues  */
-
-	ast_cli(a->fd, "\n* Directories\n");
-	ast_cli(a->fd, "  -------------\n");
-	ast_cli(a->fd, "  Configuration file:          %s\n", ast_config_AST_CONFIG_FILE);
-	ast_cli(a->fd, "  Configuration directory:     %s\n", ast_config_AST_CONFIG_DIR);
-	ast_cli(a->fd, "  Module directory:            %s\n", ast_config_AST_MODULE_DIR);
-	ast_cli(a->fd, "  Spool directory:             %s\n", ast_config_AST_SPOOL_DIR);
-	ast_cli(a->fd, "  Log directory:               %s\n", ast_config_AST_LOG_DIR);
-	ast_cli(a->fd, "  Run/Sockets directory:       %s\n", ast_config_AST_RUN_DIR);
-	ast_cli(a->fd, "  PID file:                    %s\n", ast_config_AST_PID);
-	ast_cli(a->fd, "  VarLib directory:            %s\n", ast_config_AST_VAR_DIR);
-	ast_cli(a->fd, "  Data directory:              %s\n", ast_config_AST_DATA_DIR);
-	ast_cli(a->fd, "  ASTDB:                       %s\n", ast_config_AST_DB);
-	ast_cli(a->fd, "  IAX2 Keys directory:         %s\n", ast_config_AST_KEY_DIR);
-	ast_cli(a->fd, "  AGI Scripts directory:       %s\n", ast_config_AST_AGI_DIR);
-	ast_cli(a->fd, "\n\n");
-	return CLI_SUCCESS;
 }
 
 static char *handle_show_threads(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
