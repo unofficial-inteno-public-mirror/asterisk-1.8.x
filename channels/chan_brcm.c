@@ -1851,6 +1851,7 @@ static void *brcm_monitor_packets(void *data)
 					drop_frame = 1;
 
 				} else {
+					int adjusted = 0;
 					if (dtmf_end) {
 						fr.frametype = AST_FRAME_DTMF_END;
 						sub->dtmf_lastwasend = 1;
@@ -1886,8 +1887,10 @@ static void *brcm_monitor_packets(void *data)
 					if (fr.frametype == AST_FRAME_DTMF_END && fr.len < option_dtmfminduration) {
 						/* If the DTMF is too short, expand it to avoid DTMF emulation in the core */
 						fr.len = option_dtmfminduration;
-					}
-					ast_debug(2, "Sending DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len, (fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
+						adjusted = 1;
+					} 
+					ast_debug(2, "Sending DTMF [%c, Len %d%s] (%s)\n", fr.subclass.integer, fr.len, adjusted ? " Adjusted for min dur." : "", 
+						(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
 			//ast_mutex_unlock(&sub->parent->lock);
