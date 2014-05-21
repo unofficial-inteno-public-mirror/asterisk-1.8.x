@@ -1898,6 +1898,7 @@ static void *brcm_monitor_packets(void *data)
 
 			if (owner) {
 				if (!drop_frame && (owner->_state == AST_STATE_UP || owner->_state == AST_STATE_RING)) {
+					struct ast_frame *cfr = NULL;
 					if (fr.frametype == AST_FRAME_DTMF_BEGIN || fr.frametype == AST_FRAME_DTMF_CONTINUE || fr.frametype == AST_FRAME_DTMF_END) {
 						//Asterisk jitter buffer causes one way audio when sending DTMF
 						//This is a workaround until jitter buffer is handled by DSP
@@ -1905,17 +1906,19 @@ static void *brcm_monitor_packets(void *data)
 						ast_jb_destroy(owner);
 						ast_channel_unlock(owner);
 					}
-					ast_queue_frame(owner, &fr);
-					if (fr.frametype == AST_FRAME_DTMF_BEGIN && fr.samples > 160) {
+					if (fr.frametype == AST_FRAME_DTMF_BEGIN && fr.len > 0) {
 						/* BEGIN frames doesn't have duration in Asterisk, but they do in
 						   the broadcom world. Since brcm by default sends the begin with
 						   a duration of 400 we want to send a continue to update the other
 						   side of the bridge.
 						*/
-						fr.frametype = AST_FRAME_DTMF_CONTINUE;
-						ast_queue_frame(owner, &fr);
-						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", fr.subclass.integer, fr.len,  
-							(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
+						cfr = ast_frdup(&fr);
+						cfr->frametype = AST_FRAME_DTMF_CONTINUE;
+						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", cfr->subclass.integer, cfr->len, "AST_FRAME_DTMF_CONTINUE");
+					}
+					ast_queue_frame(owner, &fr);
+					if (cfr) {
+						ast_queue_frame(owner, cfr);
 					}
 				}
 				ast_channel_unref(owner);
