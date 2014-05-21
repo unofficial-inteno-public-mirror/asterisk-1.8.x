@@ -1,4 +1,4 @@
-
+/*!
  * Asterisk -- An open source telephony toolkit.
  *
  * Copyright (C) 1999 - 2008, Digium, Inc.
@@ -22,6 +22,7 @@
  * \brief Supports RTP and RTCP with Symmetric RTP support for NAT traversal.
  *
  * \author Mark Spencer <markster@digium.com>
+ * \author Olle E. Johansson <oej@edvina.net>
  *
  * \note RTP is defined in RFC 3550.
  *
