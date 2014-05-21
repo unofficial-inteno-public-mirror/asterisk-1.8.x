@@ -1912,7 +1912,7 @@ static void *brcm_monitor_packets(void *data)
 						   a duration of 400 we want to send a continue to update the other
 						   side of the bridge.
 						*/
-						cfr = ast_frdup(fr);
+						cfr = ast_frdup(&fr);
 						cfr->frametype = AST_FRAME_DTMF_CONTINUE;
 						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", cfr->subclass.integer, cfr->len, "AST_FRAME_DTMF_CONTINUE");
 					}
