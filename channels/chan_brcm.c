@@ -1879,11 +1879,11 @@ static void *brcm_monitor_packets(void *data)
 					}
 					sub->dtmf_duration = duration;
 					fr.subclass.integer = phone_2digit(pdata[12]);
-					if (fr.frametype == AST_FRAME_DTMF_END || fr.frametype == AST_FRAME_DTMF_CONTINUE) {
-						fr.samples = duration;
-						/* Assuming 8000 samples/second - narrowband alaw or ulaw */
-						fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
-					}
+
+					fr.samples = duration;
+					/* Assuming 8000 samples/second - narrowband alaw or ulaw */
+					fr.len = ast_tvdiff_ms(ast_samp2tv(duration, 8000), ast_tv(0, 0));
+
 					if (fr.frametype == AST_FRAME_DTMF_END && fr.len < option_dtmfminduration) {
 						/* If the DTMF is too short, expand it to avoid DTMF emulation in the core */
 						fr.len = option_dtmfminduration;
