@@ -8,6 +8,7 @@
 		LINKER_SYMBOL_PREFIXao2_*;
 		LINKER_SYMBOL_PREFIX__ao2_*;
 		LINKER_SYMBOL_PREFIXoption_debug;
+		LINKER_SYMBOL_PREFIXoption_dtmfminduration;
 		LINKER_SYMBOL_PREFIXoption_verbose;
 		LINKER_SYMBOL_PREFIXdahdi_chan_name;
 		LINKER_SYMBOL_PREFIXdahdi_chan_name_len;
