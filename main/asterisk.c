@@ -3072,9 +3072,7 @@ static void ast_readconfig(void)
 		} else if (!strcasecmp(v->name, "mindtmfduration")) {
 			if (sscanf(v->value, "%30u", &option_dtmfminduration) != 1) {
 				option_dtmfminduration = AST_MIN_DTMF_DURATION;
-				ast_log(LOG_ERROR, "**** Option mindtmfduration set to MIN DTMF DURATION default %d\n", option_dtmfminduration);
 			}
-			ast_log(LOG_ERROR, "**** Option mindtmfduration set to %d\n", option_dtmfminduration);
 		} else if (!strcasecmp(v->name, "maxcalls")) {
 			if ((sscanf(v->value, "%30d", &option_maxcalls) != 1) || (option_maxcalls < 0)) {
 				option_maxcalls = 0;
