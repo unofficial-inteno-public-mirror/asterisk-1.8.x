@@ -309,7 +309,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		}
 		break;
 	case AST_CONTROL_CONGESTION:
-		ast_debug(4, "Got CONGESTION on %s\n", ast->channel);
+		ast_debug(4, "Got CONGESTION on %s\n", ast->name);
 		/* The other end is out of network resources */
 		if (ast->_state != AST_STATE_UP) {
 			/* If state is UP, we can't do anything */
@@ -320,13 +320,13 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
                 res = -1;
                 break;
 	case AST_CONTROL_CONNECTED_LINE:
-		ast_debug(4, "Got CONNECTED LINE UPDATE on %s\n", ast->channel);
+		ast_debug(4, "Got CONNECTED LINE UPDATE on %s\n", ast->name);
 		/* Update caller IDs on display - dect ? */
                 res = -1;
                 break;
 		
 	case AST_CONTROL_BUSY:
-		ast_debug(4, "Got BUSY on %s\n", ast->channel);
+		ast_debug(4, "Got BUSY on %s\n", ast->name);
 		/* The other end is busy */
                 if (ast->_state != AST_STATE_UP) {
 			/* XXX We should play a busy tone here!! */
@@ -337,7 +337,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
                 res = -1;
                 break;
 	case AST_CONTROL_PROGRESS:
-		ast_debug(4, "Got PROGRESS on %s\n", ast->channel);
+		ast_debug(4, "Got PROGRESS on %s\n", ast->name);
 		/* Early media is coming our way */
 		/* What do we do with that? */
                 res = -1;
