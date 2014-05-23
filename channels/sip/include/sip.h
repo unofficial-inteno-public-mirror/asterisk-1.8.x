@@ -60,6 +60,7 @@
 #define DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT 0	/*!< How long before retrying REGISTER after 403, 0 = do not retry */
 #define DEFAULT_REGISTRATION_BACKOFF_TIMEOUT 0	        /*!< How long before retrying REGISTER in backoff state, 0 = do not retry */
 #define DEFAULT_MAX_FORWARDS         70
+#define DEFAULT_REG_BEFORE_CALL	     FALSE
 
 #define DEFAULT_AUTHLIMIT            100
 #define DEFAULT_AUTHTIMEOUT          30
@@ -363,10 +364,11 @@
 #define SIP_PAGE3_SNOM_AOC               (1 << 0)  /*!< DPG: Allow snom aoc messages */
 #define SIP_PAGE3_REMOTE_HOLD           (1 << 15)  /*!< DPG: Do not generate hold music, send remote hold (config)*/
 #define SIP_PAGE3_REMOTE_HOLD_STATUS    (1 << 16)  /*!< D: True if dialog is put on hold by pbx core */
+#define SIP_PAGE3_REG_BEFORE_CALL      (1 << 17)  /*!< PG: Only call peers we're registred with */
 
 
 #define SIP_PAGE3_FLAGS_TO_COPY \
-	(SIP_PAGE3_SNOM_AOC | SIP_PAGE3_REMOTE_HOLD)
+	(SIP_PAGE3_SNOM_AOC | SIP_PAGE3_REMOTE_HOLD | SIP_PAGE3_REG_BEFORE_CALL)
 
 /*@}*/
 
