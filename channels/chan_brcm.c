@@ -497,7 +497,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 
 	if (sub->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			ast_debug(2, s: error during ioctl", __FUNCTION__);
 	}
 
 	return 0;
@@ -704,7 +704,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	pvt_lock(sub->parent, "BRCM hangup");
 
 	p = sub->parent;
-	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
+	ast_debug(1, brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
 
 	if (sub->channel_state == CALLWAITING) {
 		ast_debug(2, "stop Call waiting\n");
@@ -978,7 +978,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 		if (sub->connection_init) {
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-				ast_verbose("%s: error during ioctl", __FUNCTION__);
+				ast_log(LOG_ERROR, "%s: error during ioctl", __FUNCTION__);
 		}
 
 	}
@@ -1325,7 +1325,7 @@ static int dialtone_init_cb(const void *data)
  */
 static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, char* context)
 {
-	ast_verbose("Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
+	ast_debug(1, "Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
 	sub->channel_state = DIALING;
 	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 
@@ -1797,7 +1797,7 @@ static void *brcm_monitor_packets(void *data)
 	
 	rtp = (RTPPACKET *)pdata;
 	
-	ast_verbose("Packets thread starting\n");
+	ast_debug(2, "Packets thread starting\n");
 
 	while(packets) {
 		int drop_frame = 0;
@@ -1960,7 +1960,7 @@ static void *brcm_monitor_packets(void *data)
 		}
 	} /* while */
 
-	ast_verbose("Packets thread ended\n");
+	ast_debug(2, "Packets thread ended\n");
 	/* Never reached */
 	return NULL;
 }
@@ -1992,18 +1992,20 @@ static void *brcm_monitor_events(void *data)
 		tEventParm.length = 0;
 		p = iflist;
 
-		ast_verbose("Waiting for event\n");
+		if (option_debug) {
+			ast_debug(2, "Waiting for event\n");
+		}
 		/* Get the event from the endpoint driver. */
 		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
 		if( rc != IOCTL_STATUS_SUCCESS ) {
-			ast_verbose("ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
+			ast_log(LOG_ERROR, "ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 			continue;
 		}
 
 		ast_debug(9, "Event %d detected\n", tEventParm.event);
 		p = brcm_get_pvt_from_lineid(iflist, tEventParm.lineId);
 		if (!p) {
-			ast_verbose("No pvt with the correct line_id %d found!\n", tEventParm.lineId);
+			ast_debug(3, "No pvt with the correct line_id %d found!\n", tEventParm.lineId);
 			continue;
 		}
 
@@ -2044,7 +2046,7 @@ static void *brcm_monitor_events(void *data)
 		pvt_lock(p, "brcm monitor events");
 		//ast_mutex_lock(&p->lock);
 
-		ast_verbose("me: got mutex\n");
+		ast_debug(3, "me: got mutex\n");
 		if (sub) {
 
 			switch (tEventParm.event) {
@@ -2057,7 +2059,7 @@ static void *brcm_monitor_events(void *data)
 					p->dtmf_first        = -1;
 					p->dtmfbuf[p->dtmf_len] = '\0';
 					brcm_subchannel_set_state(sub, OFFHOOK);
-					ast_verbose("Sending manager event\n");
+					ast_debug(3, "Sending manager event\n");
 					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
 
 					if (owner) {
@@ -2093,7 +2095,7 @@ static void *brcm_monitor_events(void *data)
 					}
 
 					brcm_subchannel_set_state(sub, ONHOOK);
-					ast_verbose("Sending manager event\n");
+					ast_debug(3, "Sending manager event\n");
 					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
 
 					brcm_cancel_dialing_timeouts(p);
@@ -2112,7 +2114,7 @@ static void *brcm_monitor_events(void *data)
 					//TRANSFER_REMOTE
 					if (perform_remote_transfer) {
 						if (sub_peer->channel_state == ONHOLD && peer_owner) {
-							ast_verbose("Performing transfer-on-hangup to %s\n", sub_peer->parent->ext);
+							ast_debug(1, "Performing transfer-on-hangup to %s\n", sub_peer->parent->ext);
 
 							struct ast_transfer_remote_data data;
 							strcpy(data.exten, sub_peer->parent->ext);
@@ -2178,13 +2180,13 @@ static void *brcm_monitor_events(void *data)
 					break;
 				}
 				case EPEVT_DTMFL:
-					ast_verbose("EPEVT_DTMFL\n");
+					ast_debug(1, "EPEVT_DTMFL\n");
 					break;
 				case EPEVT_FLASH:
 					//Ignore, handle via early off/on hook
 					break;
 				case EPEVT_EARLY_OFFHOOK:
-					ast_verbose("EPEVT_EARLY_OFFHOOK\n");
+					ast_debug(1, "EPEVT_EARLY_OFFHOOK\n");
 					gettimeofday(&tim, NULL);
 					unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 					if (now - p->last_early_onhook_ts < hfmaxdelay) {
@@ -2198,19 +2200,19 @@ static void *brcm_monitor_events(void *data)
 					}
 					break;
 				case EPEVT_EARLY_ONHOOK:
-					ast_verbose("EPEVT_EARLY_ONHOOK\n");
+					ast_debug(1, "EPEVT_EARLY_ONHOOK\n");
 					gettimeofday(&tim, NULL);
 					p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 					break;
-				case EPEVT_MEDIA: ast_verbose("EPEVT_MEDIA\n"); break;
+				case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
 				case EPEVT_VBD_START:
-					ast_verbose("EPEVT_VBD_START\n");
+					ast_debug(1, "EPEVT_VBD_START\n");
 					if (owner) {
 						ast_jb_destroy(owner);
 					}
 					break;
 				default:
-					ast_verbose("UNKNOWN event %d detected\n", tEventParm.event);
+					ast_debug(1, "UNKNOWN event %d detected\n", tEventParm.event);
 					break;
 			}
 		}
@@ -2230,7 +2232,7 @@ static void *brcm_monitor_events(void *data)
 		}
 	}
 
-	ast_verbose("Monitor thread ended\n");
+	ast_debug(1, "Monitor thread ended\n");
 	/* Never reached */
 	return NULL;
 }
@@ -2550,7 +2552,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	
 	/* Get line id */
 	line_id = atoi((char*)data);
-	ast_verbose("brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, format);
+	ast_debug(1, "brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, format);
 
 	/* Map id to the correct pvt */
 	p = brcm_get_pvt_from_lineid(iflist, line_id);
@@ -3178,7 +3180,7 @@ static int unload_module(void)
 		return -1;
 	}
 	if (!ast_mutex_lock(&monlock)) {
-		ast_verbose("Stopping threads...\n");
+		ast_debug(1, "Stopping threads...\n");
 		if (monitor) {
 			monitor = 0;
 			while (pthread_kill(monitor_thread, SIGURG) == 0)
@@ -3200,7 +3202,7 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
-	ast_verbose("[%d, %d,]\n",monitor, packets);
+	ast_debug(1, "[%d, %d,]\n",monitor, packets);
 
 	if (!ast_mutex_lock(&iflock)) {
 		/* Destroy all the interfaces and free their memory */
@@ -3222,9 +3224,9 @@ static int unload_module(void)
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
-	ast_verbose("Deinitializing endpoint...\n");
+	ast_debug(3, "Deinitializing endpoint...\n");
 	endpt_deinit();
-	ast_verbose("Endpoint deinited...\n");
+	ast_debug(3, "Endpoint deinited...\n");
 
 	ast_sched_thread_destroy(sched);
 
@@ -3629,7 +3631,7 @@ static int load_module(void)
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module load\r\n");
 
-	ast_verbose("BRCM init done\n");
+	ast_debug(3, "BRCM init done\n");
 
 	return AST_MODULE_LOAD_SUCCESS;
 }
@@ -3643,7 +3645,7 @@ int endpt_deinit(void)
 		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
 	}
 	if (!ast_mutex_lock(&ioctl_lock)) {
-		ast_verbose("Endpoint deinit...\n");
+		ast_debug(3, "Endpoint deinit...\n");
 		vrgEndptDeinit();
 		vrgEndptDriverClose();
 		ast_mutex_unlock(&ioctl_lock);
@@ -3662,27 +3664,27 @@ static int brcm_get_endpoints_count(void)
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXSENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
-		ast_verbose("ENDPOINTIOCTL_FXSENDPOINTCOUNT failed");
+		ast_debug(3, "ENDPOINTIOCTL_FXSENDPOINTCOUNT failed");
 		return -1;
 	} else {
 		num_fxs_endpoints = endpointCount.endpointNum;
-		ast_verbose("num_fxs_endpoints = %d\n", num_fxs_endpoints);
+		ast_debug(3, "num_fxs_endpoints = %d\n", num_fxs_endpoints);
 	}
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
-		ast_verbose("ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
+		ast_debug(3, "ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
 		return -1;
 	} else {
 		num_fxo_endpoints = endpointCount.endpointNum;
-		ast_verbose("num_fxo_endpoints = %d\n", num_fxo_endpoints);
+		ast_debug(3, "num_fxo_endpoints = %d\n", num_fxo_endpoints);
 	}
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
-		ast_verbose("ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
+		ast_debug(3, "ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
 		return -1;
 	} else {
 		num_dect_endpoints = endpointCount.endpointNum;
-		ast_verbose("num_dect_endpoints = %d\n", num_dect_endpoints);
+		ast_debug(3, "num_dect_endpoints = %d\n", num_dect_endpoints);
 	}
 
 	num_endpoints = num_fxs_endpoints + num_fxo_endpoints + num_dect_endpoints;
@@ -3771,7 +3773,7 @@ int endpt_init(void)
 	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
 	int rc;
 
-	ast_verbose("Initializing endpoint interface\n");
+	ast_debug(3, "Initializing endpoint interface\n");
 
 	vrgEndptDriverOpen();
 
@@ -4053,7 +4055,7 @@ EPSTATUS vrgEndptInit
 
 	/* get the pcm dma pool address */
 	if( ioctl( pcmShimFile, PCMSHIMIOCTL_GETBUF_CMD, &(endptInitCfg->dma_pool_buffer) ) != IOCTL_STATUS_SUCCESS ) {
-		ast_verbose( "error getting dma pool buffers\n");
+		ast_debug(3, " "error getting dma pool buffers\n");
 		return (EPSTATUS_DRIVER_ERROR);
 	}
 
@@ -4235,9 +4237,9 @@ int brcm_create_connection(struct brcm_subchannel *sub) {
 	ENDPOINTDRV_CONNECTION_PARM tConnectionParm;
 	EPZCNXPARAM epCnxParms = brcm_get_epzcnxparam(sub); //Create a parameter list for this pvt
 
-	ast_verbose("Creating connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
-	ast_verbose("Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
-	ast_verbose("Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
+	ast_debug(1, "Creating connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+	ast_debug(1, "Creating connection, send codec: %s\n", brcm_codec_to_string(epCnxParms.cnxParmList.send.codecs[0].type));
+	ast_debug(1, "Configuring endpoint with send-RTPcodec: %s\n", brcm_rtppayload_to_string(epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType));
 
 	tConnectionParm.cnxId      = sub->connection_id;
 	tConnectionParm.cnxParam   = &epCnxParms;
@@ -4247,10 +4249,10 @@ int brcm_create_connection(struct brcm_subchannel *sub) {
 
 	if (!sub->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			ast_debug(2, s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_verbose("Connection %d created\n", sub->connection_id);
+			ast_debug(2, Connection %d created\n", sub->connection_id);
 			sub->connection_init = 1;
 		}
 	}
@@ -4265,7 +4267,7 @@ static int brcm_mute_connection(struct brcm_subchannel *sub)
 
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
-	ast_verbose("Mute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+	ast_debug(2, Mute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
 
 	tMuteConnectionParm.state      = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
 	tMuteConnectionParm.cnxId      = sub->connection_id;
@@ -4274,7 +4276,7 @@ static int brcm_mute_connection(struct brcm_subchannel *sub)
 	tMuteConnectionParm.size       = sizeof(ENDPOINTDRV_MUTECONNECTION_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MUTE_CONNECTION, &tMuteConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-		ast_verbose("%s: error during ioctl", __FUNCTION__);
+		ast_debug(2, s: error during ioctl", __FUNCTION__);
 		return -1;
 	}
 
@@ -4288,7 +4290,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *sub)
 
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
-	ast_verbose("Unmute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+	ast_debug(2, Unmute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
 
 	tMuteConnectionParm.state      = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
 	tMuteConnectionParm.cnxId      = sub->connection_id;
@@ -4297,7 +4299,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *sub)
 	tMuteConnectionParm.size       = sizeof(ENDPOINTDRV_MUTECONNECTION_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MUTE_CONNECTION, &tMuteConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-		ast_verbose("%s: error during ioctl", __FUNCTION__);
+		ast_debug(2, s: error during ioctl", __FUNCTION__);
 		return -1;
 	}
 
@@ -4324,7 +4326,7 @@ static int brcm_create_conference(struct brcm_pvt *p)
 			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-				ast_verbose("%s: error during ioctl", __FUNCTION__);
+				ast_debug(2, s: error during ioctl", __FUNCTION__);
 			} else {
 				ast_debug(2, "Put BRCM/%d/%d in conferencing mode\n", p->line_id, p->sub[i]->connection_id);
 			}
@@ -4351,7 +4353,7 @@ static int brcm_stop_conference(struct brcm_subchannel *p)
 		tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			ast_debug(2, s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
 			ast_debug(2, "Put BRCM/%d/%d in send/recv mode\n", p->parent->line_id, p->connection_id);
@@ -4373,11 +4375,11 @@ static int brcm_close_connection(struct brcm_subchannel *p) {
 
 	if (p->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-			ast_verbose("%s: error during ioctl", __FUNCTION__);
+			ast_debug(2, s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
 			p->connection_init = 0;
-			ast_verbose("Connection %d closed\n",p->connection_id);
+			ast_debug(2, Connection %d closed\n",p->connection_id);
 		}
 	}
 	return 0;
