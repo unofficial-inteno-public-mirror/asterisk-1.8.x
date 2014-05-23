@@ -1405,10 +1405,6 @@ static int __ast_queue_frame(struct ast_channel *chan, struct ast_frame *fin, in
 
 	ast_channel_lock(chan);
 
-	if (fin && (fin->frametype == AST_FRAME_DTMF_BEGIN || fin->frametype == AST_FRAME_DTMF_CONTINUE || fin->frametype == AST_FRAME_DTMF_END)) {
-		ast_debug(9, "==> Got DTMF frame type %d\n", fin->frametype);
-	}
-
 	/*
 	 * Check the last frame on the queue if we are queuing the new
 	 * frames after it.
@@ -3666,7 +3662,6 @@ static inline void queue_dtmf_readq(struct ast_channel *chan, struct ast_frame *
 	fr->subclass.integer = f->subclass.integer;
 	fr->len = f->len;
 	fr->samples = f->samples;
-	ast_debug(8, " ===> queueing DTMF for some reason - samples %d\n", f->samples);
 
 	/* The only time this function will be called is for a frame that just came
 	 * out of the channel driver.  So, we want to stick it on the tail of the
@@ -3990,7 +3985,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			ast_log(LOG_DTMF, "DTMF end '%c' received on %s, duration %ld ms\n", f->subclass.integer, chan->name, f->len);
 			/* Queue it up if DTMF is deferred, or if DTMF emulation is forced. */
 			if (ast_test_flag(chan, AST_FLAG_DEFER_DTMF) || ast_test_flag(chan, AST_FLAG_EMULATE_DTMF)) {
-				ast_debug(8, "===> queueing up DTMF for some reason \n");
 				queue_dtmf_readq(chan, f);
 				ast_frfree(f);
 				f = &ast_null_frame;
@@ -3998,7 +3992,6 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				if (!ast_tvzero(chan->dtmf_tv) && 
 				    ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 					/* If it hasn't been long enough, defer this digit */
-					ast_debug(8, "===> queueing up DTMF for another weird reason (to small gap) \n");
 					queue_dtmf_readq(chan, f);
 					ast_frfree(f);
 					f = &ast_null_frame;
@@ -4077,24 +4070,21 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				ast_set_flag(chan, AST_FLAG_IN_DTMF);
 				send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
 				chan->dtmf_tv = ast_tvnow();
-				ast_debug(4, "DTMF continue '%c' received from %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, (int) f->len);
+				ast_debug(5, "DTMF continue '%c' received from %s Dur %d (No BEGIN)\n", f->subclass.integer, chan->name, (int) f->len);
 			} else {
-				ast_debug(4, "DTMF continue '%c' received from %s Dur %d\n", f->subclass.integer, chan->name, (int) f->len);
+				ast_debug(5, "DTMF continue '%c' received from %s Dur %d\n", f->subclass.integer, chan->name, (int) f->len);
 			}
 			break;
 		case AST_FRAME_DTMF_BEGIN:
 			send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
-			ast_log(LOG_DTMF, "DTMF begin '%c' received on %s\n", f->subclass.integer, chan->name);
 			if ( ast_test_flag(chan, AST_FLAG_DEFER_DTMF | AST_FLAG_END_DTMF_ONLY | AST_FLAG_EMULATE_DTMF) || 
 			    (!ast_tvzero(chan->dtmf_tv) && 
 			      ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) ) {
-				ast_log(LOG_DTMF, "DTMF begin ignored. '%c' on %s. Gap %d\n", f->subclass.integer, chan->name, ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) );
 				ast_frfree(f);
 				f = &ast_null_frame;
 			} else {
 				ast_set_flag(chan, AST_FLAG_IN_DTMF);
 				chan->dtmf_tv = ast_tvnow();
-				ast_log(LOG_DTMF, "DTMF begin passthrough '%c' on %s\n", f->subclass.integer, chan->name);
 			}
 			break;
 		case AST_FRAME_NULL:
@@ -4641,7 +4631,6 @@ int ast_senddigit_begin(struct ast_channel *chan, char digit)
 int ast_senddigit_continue(struct ast_channel *chan, char digit, unsigned int duration)
 {
 
-	ast_debug(4, "--- Continue frame passed on to tech for %s (duration %d)\n", chan->name, duration);
 	if (chan->tech->send_digit_continue) {
 		chan->tech->send_digit_continue(chan, digit, duration);
 	}
@@ -7189,9 +7178,9 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
-				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
-					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
-					who->name);
+				ast_debug(3, "Got DTMF %s on channel (%s)\n", 
+						f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+						who->name);
 
 				break;
 			}
@@ -7234,25 +7223,25 @@ int ast_channel_early_bridge(struct ast_channel *c0, struct ast_channel *c1)
  * \param type 1 for core, 2 for native
  * \param c0 first channel in bridge
  * \param c1 second channel in bridge
-*/
+ */
 static void manager_bridge_event(int onoff, int type, struct ast_channel *c0, struct ast_channel *c1)
 {
 	struct ast_channel *chans[2] = { c0, c1 };
 	ast_manager_event_multichan(EVENT_FLAG_CALL, "Bridge", 2, chans,
-		"Bridgestate: %s\r\n"
-		"Bridgetype: %s\r\n"
-		"Channel1: %s\r\n"
-		"Channel2: %s\r\n"
-		"Uniqueid1: %s\r\n"
-		"Uniqueid2: %s\r\n"
-		"CallerID1: %s\r\n"
-		"CallerID2: %s\r\n",
-		onoff ? "Link" : "Unlink",
-		type == 1 ? "core" : "native",
-		c0->name, c1->name,
-		c0->uniqueid, c1->uniqueid,
-		S_COR(c0->caller.id.number.valid, c0->caller.id.number.str, ""),
-		S_COR(c1->caller.id.number.valid, c1->caller.id.number.str, ""));
+			"Bridgestate: %s\r\n"
+			"Bridgetype: %s\r\n"
+			"Channel1: %s\r\n"
+			"Channel2: %s\r\n"
+			"Uniqueid1: %s\r\n"
+			"Uniqueid2: %s\r\n"
+			"CallerID1: %s\r\n"
+			"CallerID2: %s\r\n",
+			onoff ? "Link" : "Unlink",
+			type == 1 ? "core" : "native",
+			c0->name, c1->name,
+			c0->uniqueid, c1->uniqueid,
+			S_COR(c0->caller.id.number.valid, c0->caller.id.number.str, ""),
+			S_COR(c1->caller.id.number.valid, c1->caller.id.number.str, ""));
 }
 
 static void update_bridge_vars(struct ast_channel *c0, struct ast_channel *c1)
@@ -7321,7 +7310,7 @@ static void bridge_play_sounds(struct ast_channel *c0, struct ast_channel *c1)
 
 /*! \brief Bridge two channels together */
 enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_channel *c1,
-					  struct ast_bridge_config *config, struct ast_frame **fo, struct ast_channel **rc)
+		struct ast_bridge_config *config, struct ast_frame **fo, struct ast_channel **rc)
 {
 	struct ast_channel *chans[2] = { c0, c1 };
 	enum ast_bridge_result res = AST_BRIDGE_COMPLETE;
@@ -7335,18 +7324,18 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 
 	if (c0->_bridge) {
 		ast_log(LOG_WARNING, "%s is already in a bridge with %s\n",
-			c0->name, c0->_bridge->name);
+				c0->name, c0->_bridge->name);
 		return -1;
 	}
 	if (c1->_bridge) {
 		ast_log(LOG_WARNING, "%s is already in a bridge with %s\n",
-			c1->name, c1->_bridge->name);
+				c1->name, c1->_bridge->name);
 		return -1;
 	}
-	
+
 	/* Stop if we're a zombie or need a soft hangup */
 	if (ast_test_flag(c0, AST_FLAG_ZOMBIE) || ast_check_hangup_locked(c0) ||
-	    ast_test_flag(c1, AST_FLAG_ZOMBIE) || ast_check_hangup_locked(c1))
+			ast_test_flag(c1, AST_FLAG_ZOMBIE) || ast_check_hangup_locked(c1))
 		return -1;
 
 	caller_warning = ast_test_flag(&config->features_caller, AST_FEATURE_PLAY_WARNING);
@@ -7384,7 +7373,7 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 				/* At least one warning was played, which means we are returning after feature */
 				long warns_passed = (config->play_warning - time_left_ms) / config->warning_freq;
 				/* It is 'warns_passed * warning_freq' NOT '(warns_passed + 1) * warning_freq',
-					because nexteventts will be updated once again in the 'if (!to)' block */
+				   because nexteventts will be updated once again in the 'if (!to)' block */
 				next_warn = config->play_warning - warns_passed * config->warning_freq;
 			}
 			config->nexteventts = ast_tvsub(config->nexteventts, ast_samp2tv(next_warn, 1000));

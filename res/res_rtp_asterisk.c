@@ -27,6 +27,10 @@
  * \note RTP is defined in RFC 3550.
  *
  * \ingroup rtp_engines
+ *
+ * Note: Includes patches from the following branches in svn.digium.com/svn/asterisk/team/oej
+ *	rana-dtmf-duration-1.8
+ *	pinefrog-rtcp-1.8
  */
 
 /*** MODULEINFO
@@ -830,10 +834,7 @@ static int ast_rtp_dtmf_begin(struct ast_rtp_instance *instance, char digit)
 	   act on that - either start playing with some delay or stack it up in a dtmfqueue.
 	*/
 	if (rtp->sending_dtmf) {
-		ast_debug(3, "Received DTMF begin while we're playing out DTMF. Ignoring \n");
 		rtp->sending_dtmf = DTMF_SEND_INPROGRESS_WITH_QUEUE;	/* Tell the world that there's an ignored DTMF */
-	//	AST_LIST_INSERT_TAIL(&frames, f, frame_list);
-/* OEJ Fix ??? */
 	}
 
 	dtmfcode = dtmf_char_to_code(digit);
@@ -870,7 +871,6 @@ static int ast_rtp_dtmf_begin(struct ast_rtp_instance *instance, char digit)
 				    payload, rtp->seqno, rtp->lastdigitts, res - hdrlen);
 		}
 		rtp->seqno++;
-		//rtp->send_duration += 160;	/* OEJ - check what's going on here. */
 		
 		rtpheader[0] = htonl((2 << 30) | (payload << 16) | (rtp->seqno));
 	}
@@ -950,7 +950,6 @@ static int ast_rtp_dtmf_cont(struct ast_rtp_instance *instance)
 		we need to calculate this based on the current sample rate and the rtp 
 		stream packetization. Please help me figure this out :-)
 	 */
-	/* OEJ disabled this. RFC 4733 actually allows us to send without regards to packetization */
 	if (!rtp->send_endflag && rtp->send_duration + 160 > rtp->received_duration) {
 	 	ast_debug(4, "---- Digit %d Send duration %d Received duration %d - Sending DTMF keep-alive frame\n", rtp->send_digit, rtp->send_duration, rtp->received_duration);
 		/* We haven't got 160 samples, but let's catch up anyway */
@@ -2082,9 +2081,6 @@ static struct ast_frame *ast_rtcp_read_fd(int fd, struct ast_rtp_instance *insta
 
 	/* Read in RTCP data from the socket */
 
-/* OEJ - ouch, we need to send a file handle here. Check this
-	isntance replaces the fd
-*/
 	if ((res = rtcp_recvfrom(instance, rtcpdata + AST_FRIENDLY_OFFSET,
 				sizeof(rtcpdata) - sizeof(unsigned int) * AST_FRIENDLY_OFFSET,
 				0, &addr)) < 0) {
@@ -2497,7 +2493,6 @@ static struct ast_frame *ast_rtcp_read_fd(int fd, struct ast_rtp_instance *insta
 		position += (length + 1);
 	}	/* While loop */
 
-	/* OEJ CHECK next line */
 	rtp->rtcp->rtcp_info = 1;
 
 	return f;
