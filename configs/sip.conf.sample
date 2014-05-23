@@ -1162,6 +1162,7 @@ srvlookup=yes                   ; Enable DNS SRV lookups on outbound calls
 ; use_q850_reason
 ; maxforwards
 ; encryption
+; regbeforecall
 
 ;[sip_proxy]
 ; For incoming calls only. Example: FWD (Free World Dialup)
@@ -1206,6 +1207,10 @@ srvlookup=yes                   ; Enable DNS SRV lookups on outbound calls
 ;                                 ;   message count will be stored in the configured virtual mailbox. It can be used
 ;                                 ;   by any device supporting MWI by specifying <configured value>@SIP_Remote as the
 ;                                 ;   mailbox.
+;regbeforecall=no		  ; If we need to call the same server we are registred to (IMS) enable this.
+				  ; Default is NO. Asterisk will use the outbound proxy to set the IP and port
+				  ; that we register to, so that calls go to the same server.
+				
 
 ;
 ; Because you might have a large number of similar sections, it is generally
