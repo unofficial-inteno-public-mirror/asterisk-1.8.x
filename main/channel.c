@@ -105,7 +105,7 @@ AST_THREADSTORAGE(state2str_threadbuf);
 
 /*! Minimum amount of time between the end of the last digit and the beginning 
  *  of a new one - 45ms */
-#define AST_MIN_DTMF_GAP 45
+#define AST_MIN_DTMF_GAP 25
 
 /*! \brief List of channel drivers */
 struct chanlist {
