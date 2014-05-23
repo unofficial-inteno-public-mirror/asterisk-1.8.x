@@ -263,6 +263,7 @@ int sip_parse_register_line(struct sip_registry *reg, int default_expiry, const 
 	reg->callid_valid = FALSE;
 	reg->ocseq = INITIAL_CSEQ;
 	reg->refresh = reg->expiry = reg->configured_expiry = (host1.expiry ? atoi(ast_strip_quoted(host1.expiry, "\"", "\"")) : default_expiry);
+	ast_debug(2, "  ==> Register to domain %s : User %s Host %s Auth user %s Secret %s\n", reg->regdomain, reg->username, reg->hostname, reg->authuser, reg->secret);
 
 	return 0;
 }
