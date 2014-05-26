@@ -975,6 +975,7 @@ static char *state2str(enum channel_state state)
 	case ONHOLD:		return "ONHOLD";
 	case TRANSFERING:	return "TRANSFERING";
 	case RINGBACK:		return "RINGBACK";
+	case AWAITONHOOK:	return "AWAITONHOOK";
 	default:			return "UNKNOWN";
 	}
 }
@@ -1028,7 +1029,12 @@ int brcm_signal_dialtone(struct brcm_pvt *p) {
 
 int brcm_stop_dialtone(struct brcm_pvt *p) {
 	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_DIAL, 0, -1, -1 , -1) ||
-		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_NETBUSY, 0, -1, -1 , -1);
+		ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_STUTTER, 0, -1, -1 , -1);
+}
+
+/* Tell endpoint to play country specific congestion tone */
+int brcm_signal_congestion(struct brcm_pvt *p) {
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[p->line_id], -1, EPSIG_STUTTER, 1, -1, -1 , -1);
 }
 
 static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *cntx, const char *linkedid, format_t format)
@@ -1149,6 +1155,7 @@ struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
 			case DIALING:
 			case CALLING:
 			case OFFHOOK:
+			case AWAITONHOOK:
 			case RINGING:
 			case TRANSFERING:
 			case RINGBACK:
@@ -1365,6 +1372,31 @@ static int handle_autodial_timeout(const void *data)
 }
 
 /*
+ * Dialtone expired, play congestion tone
+ * Called on scheduler thread.
+ */
+static int handle_dialtone_timeout(const void *data)
+{
+	ast_debug(9, "Dialtone timeout\n");
+	struct brcm_pvt *p = (struct brcm_pvt *) data;
+
+	pvt_lock(p, "dialtone timeout");
+	//ast_mutex_lock(&p->lock);
+	p->dialtone_timeout_timer_id = -1;
+
+	struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
+	if (sub && sub->channel_state == OFFHOOK) {
+		/* Enter state where nothing else than EPEVT_ONHOOK is accepted and play congestion tone */
+		brcm_subchannel_set_state(sub, AWAITONHOOK);
+		brcm_signal_congestion(p);
+	}
+
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
+	return 0;
+}
+
+/*
  * Start calling if we have a match in asterisks dialplan.
  * Called after each new DTMF event, from monitor_events thread,
  * with the required locks already held.
@@ -1435,7 +1467,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 			brcm_subchannel_set_state(sub_peer, OFFHOOK);
 
 		/* If offhook/dialing/calling and peer subchannel is on hold, switch call */
-		} else if ((sub->channel_state == DIALING || sub->channel_state == OFFHOOK || sub->channel_state == CALLING || sub->channel_state == RINGBACK)
+		} else if ((sub->channel_state == DIALING ||
+				sub->channel_state == OFFHOOK ||
+				sub->channel_state == AWAITONHOOK ||
+				sub->channel_state == CALLING ||
+				sub->channel_state == RINGBACK)
 				&& sub_peer->channel_state == ONHOLD) {
 
 			ast_debug(2, "R while offhook/dialing and peer subchannel on hold\n");
@@ -1443,7 +1479,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 			brcm_reset_dtmf_buffer(p);
 			p->hf_detected = 0;
 
-			if (sub->channel_state == OFFHOOK) {
+			if (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK) {
 				brcm_stop_dialtone(p);
 			}
 			brcm_subchannel_set_state(sub, ONHOOK);
@@ -1942,6 +1978,11 @@ void brcm_cancel_dialing_timeouts(struct brcm_pvt *p)
 	if (p->autodial_timer_id > 0) {
 		p->autodial_timer_id = ast_sched_thread_del(sched, p->autodial_timer_id);
 	}
+
+	//If we have a dialtone timeout, cancel it
+	if (p->dialtone_timeout_timer_id > 0) {
+		p->dialtone_timeout_timer_id = ast_sched_thread_del(sched, p->dialtone_timeout_timer_id);
+	}
 }
 
 static void *brcm_monitor_events(void *data)
@@ -2036,10 +2077,18 @@ static void *brcm_monitor_events(void *data)
 						ast_queue_control(owner, AST_CONTROL_ANSWER);
 					}
 					else if (sub->channel_state == OFFHOOK) {
-						/* EPEVT_OFFHOOK changed enpoint state to OFFHOOK, apply dialtone */
+						/* EPEVT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
 						brcm_signal_dialtone(p);
 						line_settings *s = &line_config[p->line_id];
-						p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
+
+						if (ast_str_size(s->autodial_ext)) {
+							/* Schedule autodial timeout if autodial extension is set */
+							p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
+						}
+						else {
+							/* No autodial, schedule dialtone timeout */
+							p->dialtone_timeout_timer_id = ast_sched_thread_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
+						}
 					}
 					break;
 				}
@@ -2048,8 +2097,8 @@ static void *brcm_monitor_events(void *data)
 
 					int perform_remote_transfer = 0;
 
-					if (sub->channel_state == OFFHOOK) {
-						/* Received EPEVT_ONHOOK in state OFFHOOK, stop dialtone */
+					if (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK) {
+						/* Received EPEVT_ONHOOK in state OFFHOOK/AWAITONHOOK, stop dial/congestion tone */
 						brcm_stop_dialtone(p);
 					}
 					else if (sub->channel_state == RINGBACK) {
@@ -2481,7 +2530,13 @@ static struct brcm_subchannel *brcm_get_idle_subchannel_incomingcall(const struc
 					break;
 				}
 			}
-		} else {
+		}
+		else if (p->sub[i]->channel_state == AWAITONHOOK) {
+			/* Wait for hangup before accepting a call */
+			sub = NULL;
+			break;
+		}
+		else {
 			/* There is a 'busy' subchannel */
 			if (!cw) {
 				/* and call waiting is disabled */
@@ -2618,6 +2673,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 			case CALLWAITING:	ast_cli(a->fd, "CALLWAITING\n"); break;
 			case ONHOLD:	ast_cli(a->fd, "ONHOLD\n"); break;
 			case RINGBACK:	ast_cli(a->fd, "RINGBACK\n"); break;
+			case AWAITONHOOK:	ast_cli(a->fd, "AWAITONHOOK\n"); break;
 			default:	ast_cli(a->fd, "UNKNOWN\n"); break;
 		}
 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
@@ -2660,6 +2716,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
 		ast_cli(a->fd, "Autodial extension  : %s\n", s->autodial_ext);
 		ast_cli(a->fd, "Autodial msecs      : %d\n", s->autodial_timeoutmsec);
+		ast_cli(a->fd, "Dialt. timeout msecs: %d\n", s->dialtone_timeoutmsec);
 		ast_cli(a->fd, "Period              : %d\n", s->period);
 
 		ast_cli(a->fd, "DTMF relay          : ");
@@ -3303,6 +3360,7 @@ static line_settings line_settings_create(void)
 		.hangup_xfer = 0,
 		.dialtone_extension_hint_context = "",
 		.dialtone_extension_hint = "",
+		.dialtone_timeoutmsec = 20000,
 	};
 	return line_conf;
 }
@@ -3386,6 +3444,8 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 			line_config->timeoutmsec = atoi(v->value);
 		} else if (!strcasecmp(v->name, "autodial_timeoutmsec")) {
 			line_config->autodial_timeoutmsec = atoi(v->value);
+		} else if (!strcasecmp(v->name, "dialtone_timeoutmsec")) {
+			line_config->dialtone_timeoutmsec = atoi(v->value);
 		} else if (!strcasecmp(v->name, "period")) {
 			switch(atoi(v->value)) {
 				case 5:

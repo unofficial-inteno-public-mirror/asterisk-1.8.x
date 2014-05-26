@@ -53,6 +53,7 @@ enum channel_state {
 	ONHOLD,
 	TRANSFERING,
 	RINGBACK,
+	AWAITONHOOK,
 };
 
 enum endpoint_type {
@@ -136,8 +137,9 @@ struct brcm_pvt {
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
 
-	int interdigit_timer_id;	/* Id of timer that tracks interdigit timeout */
-	int autodial_timer_id;		/* Id of timer that tracks autodial timeout */
+	int interdigit_timer_id;		/* Id of timer that tracks interdigit timeout */
+	int autodial_timer_id;			/* Id of timer that tracks autodial timeout */
+	int dialtone_timeout_timer_id;	/* Id of timer that tracks dialtone timeout */
 };
 
 enum rtp_type {
@@ -215,6 +217,7 @@ typedef struct {
 	int hangup_xfer;
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
+	int dialtone_timeoutmsec;
 } line_settings;
 
 
@@ -284,6 +287,7 @@ static void brcm_provision_endpoints(void);
 static void brcm_create_endpoints(void);
 static void brcm_destroy_endpoints(void);
 int brcm_signal_dialtone(struct brcm_pvt *p);
+int brcm_signal_congestion(struct brcm_pvt *p);
 int brcm_stop_dialtone(struct brcm_pvt *p);
 int brcm_signal_ringing(struct brcm_pvt *p);
 int brcm_stop_ringing(struct brcm_pvt *p);
