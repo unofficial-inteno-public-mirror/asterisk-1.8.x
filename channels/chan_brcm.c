@@ -499,7 +499,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 
 	if (sub->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_PACKET, &tPacketParm_send ) != IOCTL_STATUS_SUCCESS )
-			ast_debug(2, s: error during ioctl", __FUNCTION__);
+			ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 	}
 
 	return 0;
@@ -706,7 +706,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	pvt_lock(sub->parent, "BRCM hangup");
 
 	p = sub->parent;
-	ast_debug(1, brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
+	ast_debug(1, "brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
 
 	if (sub->channel_state == CALLWAITING) {
 		brcm_stop_callwaiting(p);
@@ -4120,7 +4120,7 @@ EPSTATUS vrgEndptInit
 
 	/* get the pcm dma pool address */
 	if( ioctl( pcmShimFile, PCMSHIMIOCTL_GETBUF_CMD, &(endptInitCfg->dma_pool_buffer) ) != IOCTL_STATUS_SUCCESS ) {
-		ast_debug(3, " "error getting dma pool buffers\n");
+		ast_debug(3, "error getting dma pool buffers\n");
 		return (EPSTATUS_DRIVER_ERROR);
 	}
 
@@ -4314,10 +4314,10 @@ int brcm_create_connection(struct brcm_subchannel *sub) {
 
 	if (!sub->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-			ast_debug(2, s: error during ioctl", __FUNCTION__);
+			ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
-			ast_debug(2, Connection %d created\n", sub->connection_id);
+			ast_debug(2, "Connection %d created\n", sub->connection_id);
 			sub->connection_init = 1;
 		}
 	}
@@ -4332,7 +4332,7 @@ static int brcm_mute_connection(struct brcm_subchannel *sub)
 
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
-	ast_debug(2, Mute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+	ast_debug(2, "Mute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
 
 	tMuteConnectionParm.state      = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
 	tMuteConnectionParm.cnxId      = sub->connection_id;
@@ -4341,7 +4341,7 @@ static int brcm_mute_connection(struct brcm_subchannel *sub)
 	tMuteConnectionParm.size       = sizeof(ENDPOINTDRV_MUTECONNECTION_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MUTE_CONNECTION, &tMuteConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-		ast_debug(2, s: error during ioctl", __FUNCTION__);
+		ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 		return -1;
 	}
 
@@ -4355,7 +4355,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *sub)
 
 	ENDPOINTDRV_MUTECONNECTION_PARM tMuteConnectionParm;
 
-	ast_debug(2, Unmute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
+	ast_debug(2, "Unmute connection for pvt line_id=%i connection_id=%d\n", sub->parent->line_id, sub->connection_id);
 
 	tMuteConnectionParm.state      = (ENDPT_STATE*)&endptObjState[sub->parent->line_id];
 	tMuteConnectionParm.cnxId      = sub->connection_id;
@@ -4364,7 +4364,7 @@ static int brcm_unmute_connection(struct brcm_subchannel *sub)
 	tMuteConnectionParm.size       = sizeof(ENDPOINTDRV_MUTECONNECTION_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MUTE_CONNECTION, &tMuteConnectionParm ) != IOCTL_STATUS_SUCCESS ){
-		ast_debug(2, s: error during ioctl", __FUNCTION__);
+		ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 		return -1;
 	}
 
@@ -4391,7 +4391,7 @@ static int brcm_create_conference(struct brcm_pvt *p)
 			tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 			if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-				ast_debug(2, s: error during ioctl", __FUNCTION__);
+				ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 			} else {
 				ast_debug(2, "Put BRCM/%d/%d in conferencing mode\n", p->line_id, p->sub[i]->connection_id);
 			}
@@ -4418,7 +4418,7 @@ static int brcm_stop_conference(struct brcm_subchannel *p)
 		tConnectionParm.size       = sizeof(ENDPOINTDRV_CONNECTION_PARM);
 
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_MODIFY_CONNECTION, &tConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-			ast_debug(2, s: error during ioctl", __FUNCTION__);
+			ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
 			ast_debug(2, "Put BRCM/%d/%d in send/recv mode\n", p->parent->line_id, p->connection_id);
@@ -4440,11 +4440,11 @@ static int brcm_close_connection(struct brcm_subchannel *p) {
 
 	if (p->connection_init) {
 		if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DELETE_CONNECTION, &tDelConnectionParm ) != IOCTL_STATUS_SUCCESS ) {
-			ast_debug(2, s: error during ioctl", __FUNCTION__);
+			ast_debug(2, "%s: error during ioctl", __FUNCTION__);
 			return -1;
 		} else {
 			p->connection_init = 0;
-			ast_debug(2, Connection %d closed\n",p->connection_id);
+			ast_debug(2, "Connection %d closed\n",p->connection_id);
 		}
 	}
 	return 0;
