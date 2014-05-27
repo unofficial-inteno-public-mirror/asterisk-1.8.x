@@ -87,6 +87,7 @@ static int brcm_extension_state_register(struct brcm_pvt *p);
 static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
+static int brcm_in_conference(const struct brcm_pvt *p);
 
 /* Global brcm channel parameters */
 
@@ -286,6 +287,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 	pvt_lock(sub->parent, "indicate");
 	//ast_mutex_lock(&sub->parent->lock);
 	switch(condition) {
+	case AST_CONTROL_UPDATE_RTP_PEER:
 	case AST_CONTROL_SRCUPDATE:
 	case AST_CONTROL_UNHOLD:
 		//Asterisk (adaptive) jitter buffer causes one way audio
@@ -673,14 +675,12 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast_verbose("brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
 
 	if (sub->channel_state == CALLWAITING) {
-		ast_debug(2, "stop Call waiting\n");
 		brcm_stop_callwaiting(p);
 		if (ast_sched_thread_del(sched, sub->cw_timer_id)) {
 			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer");
 		}
 		sub->cw_timer_id = -1;
-	} else {
-		ast_debug(2, "Not call waiting\n");
+	} else if (sub->channel_state != CALLENDED && !brcm_in_conference(p)) {
 		if (!clip) {
 			p->tech->stop_ringing(p);
 		} else {
@@ -2478,6 +2478,11 @@ static int brcm_in_onhold(const struct brcm_pvt *p)
 	}
 
 	return 0;
+}
+
+static int brcm_in_conference(const struct brcm_pvt *p)
+{
+	return p->sub[0]->channel_state == INCALL && p->sub[1]->channel_state == INCALL;
 }
 
 static int brcm_active(const struct brcm_pvt *p)
