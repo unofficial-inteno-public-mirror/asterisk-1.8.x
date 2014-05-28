@@ -109,7 +109,6 @@ struct ast_sched_thread *sched; //Scheduling thread
 static int pcmShimFile = -1;
 
 /* Call waiting */
-static int cw = 1;
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 
 /* R4 transfer */
@@ -660,7 +659,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	pvt_lock(sub->parent, "brcm_call");
 
 	p = sub->parent;
-	if (cw && brcm_in_call(p)) {
+	if (line_config[p->line_id].callwaiting && brcm_in_call(p)) {
 		ast_log(LOG_WARNING, "Call waiting\n");
 		brcm_subchannel_set_state(sub, CALLWAITING);
 		brcm_signal_callwaiting(p);
@@ -1333,7 +1332,7 @@ static int dialtone_init_cb(const void *data)
 static void brcm_start_calling(struct brcm_pvt *p, struct brcm_subchannel *sub, char* context)
 {
 	ast_debug(1, "Starting pbx in context %s with cid: %s ext: %s\n", context, p->cid_num, p->ext);
-	sub->channel_state = DIALING;
+	brcm_subchannel_set_state(sub, CALLING);
 	ast_copy_string(p->ext, p->dtmfbuf, sizeof(p->dtmfbuf));
 
 	/* Reset the dtmf buffer */
@@ -1794,6 +1793,16 @@ void handle_dtmf(EPEVT event,
 			if (sub->channel_state == OFFHOOK) {
 				brcm_subchannel_set_state(sub, DIALING);
 			}
+			else if (sub->channel_state != INCALL) {
+				struct ast_frame f = { 0, };
+				f.subclass.integer = dtmf_button;
+				f.src = "BRCM";
+				f.frametype = AST_FRAME_DTMF_END;
+
+				if (owner) {
+					ast_queue_frame(owner, &f);
+				}
+			}
 		}
 	}
 	else {
@@ -1904,7 +1913,10 @@ static void *brcm_monitor_packets(void *data)
 						ast_log(LOG_WARNING, "Unknown rtp codec id [%d]\n", pdata[1]);
 						break;
 				}
-			} else if  (rtp_packet_type == BRCM_DTMF) {
+			/* Handle DTMF if we're in state calling. If not in call we'll send DTMF to Asterisk
+			 * using handle_dtmf(). This way pre-call DTMF (ex CBBS) will be handled the same way
+			 * for both FXS and DECT. */
+			} else if (sub->channel_state == INCALL && rtp_packet_type == BRCM_DTMF) {
 				
 				unsigned int duration = (pdata[14] << 8 | pdata[15]);
 				unsigned int dtmf_end = pdata[13] & 128;
@@ -2225,7 +2237,6 @@ static void *brcm_monitor_events(void *data)
 						ast_debug(2, "Handle DTMF calling\n");
 						handle_dtmf_calling(sub);
 					}
-
 					break;
 				}
 				case EPEVT_DTMFL:
@@ -2562,7 +2573,7 @@ static struct brcm_subchannel *brcm_get_idle_subchannel_incomingcall(const struc
 			if (!sub) {
 				/* which may be used */
 				sub = p->sub[i];
-				if (cw) {
+				if (line_config[p->line_id].callwaiting) {
 					/* for call waiting or 'ordinary' call */
 					if (brcm_active(p) && !brcm_in_call(p)) {
 						/* if there had been a 'busy' subchannel in state INCALL */
@@ -2579,7 +2590,7 @@ static struct brcm_subchannel *brcm_get_idle_subchannel_incomingcall(const struc
 		}
 		else {
 			/* There is a 'busy' subchannel */
-			if (!cw) {
+			if (!(line_config[p->line_id].callwaiting)) {
 				/* and call waiting is disabled */
 				sub = NULL;
 				break;
@@ -2702,21 +2713,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "  Connection id       : %d\n", sub->connection_id);
 
 		ast_cli(a->fd, "  Owner               : %d\n", sub->owner);
-		ast_cli(a->fd, "  Channel state       : ");
-		switch (sub->channel_state) {
-			case ONHOOK: 	ast_cli(a->fd, "ONHOOK\n");  break;
-			case OFFHOOK:	ast_cli(a->fd, "OFFHOOK\n"); break;
-			case DIALING:	ast_cli(a->fd, "DIALING\n"); break;
-			case INCALL:	ast_cli(a->fd, "INCALL\n");  break;
-			case ANSWER:	ast_cli(a->fd, "ANSWER\n");  break;
-			case CALLENDED: ast_cli(a->fd, "CALLENDED\n");  break;
-			case RINGING:	ast_cli(a->fd, "RINGING\n"); break;
-			case CALLWAITING:	ast_cli(a->fd, "CALLWAITING\n"); break;
-			case ONHOLD:	ast_cli(a->fd, "ONHOLD\n"); break;
-			case RINGBACK:	ast_cli(a->fd, "RINGBACK\n"); break;
-			case AWAITONHOOK:	ast_cli(a->fd, "AWAITONHOOK\n"); break;
-			default:	ast_cli(a->fd, "UNKNOWN\n"); break;
-		}
+		ast_cli(a->fd, "  Channel state       : %s\n", state2str(sub->channel_state));
 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
 		ast_cli(a->fd, "  Codec used          : %s\n", brcm_get_codec_string(sub->codec));
 		ast_cli(a->fd, "  RTP sequence number : %d\n", sub->sequence_number);
@@ -2820,6 +2817,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Brcm JitterBuf trg  : %d\n", jbtarget);
 		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
 		ast_cli(a->fd, "Ast JitterBuf max   : %d\n", global_jbconf.max_size);
+		ast_cli(a->fd, "Call waiting        : %s\n", s->callwaiting ? "on" : "off");
 
 		ast_cli(a->fd, "Dialtone            : ");
 		const DIALTONE_MAP *dialtone = dialtone_map;
@@ -3402,6 +3400,7 @@ static line_settings line_settings_create(void)
 		.dialtone_extension_hint_context = "",
 		.dialtone_extension_hint = "",
 		.dialtone_timeoutmsec = 20000,
+		.callwaiting = 1,
 	};
 	return line_conf;
 }
@@ -3532,6 +3531,9 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 		else if (!strcasecmp(v->name, "dialtone_extension_hint")) {
 			strncpy(line_config->dialtone_extension_hint, v->value, AST_MAX_EXTENSION);
 		}
+		else if (!strcasecmp(v->name, "callwaiting")) {
+			line_config->callwaiting = ast_true(v->value)?1:0;
+		}
 
 		if (config_codecs > 0)
 			line_config->codec_nr = config_codecs;
@@ -3592,11 +3594,7 @@ static int load_settings(struct ast_config **cfg)
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect cwtimeout '%s', defaulting to '%d'\n", v->value, cwtimeout);
 			}
-		} else if (!strcasecmp(v->name, "cw_enable")) {
-			ast_debug(2, "Setting call waiting enabled to %s\n", v->value);
-			cw = ast_true(v->value)?1:0;
-		}
-		else if (!strcasecmp(v->name, "hfmaxdelay")) {
+		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
 			hfmaxdelay = atoi(v->value);
 			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
 				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
