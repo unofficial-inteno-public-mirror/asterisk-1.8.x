@@ -88,6 +88,7 @@ static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
 static int brcm_in_conference(const struct brcm_pvt *p);
+static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
 
 /* Global brcm channel parameters */
 
@@ -1379,6 +1380,25 @@ static int handle_interdigit_timeout(const void *data)
 }
 
 /*
+ * Reset hook flash state after an interdigit timeout.
+ * Called on scheduler thread.
+ */
+static int handle_hookflash_timeout(const void *data)
+{
+	ast_debug(9, "Hook flash timeout, clear hook flash\n");
+	struct brcm_pvt *p = (struct brcm_pvt *) data;
+
+	//ast_mutex_lock(&p->lock);
+	pvt_lock(p, "hookflash callback");
+	p->interdigit_timer_id = -1;
+	p->hf_detected = 0;
+	//ast_mutex_unlock(&p->lock);
+	pvt_unlock(p);
+
+	return 0;
+}
+
+/*
  * Start autodialing if we have an autodial extension.
  * Called on scheduler thread.
  */
@@ -1485,6 +1505,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 		if (sub->channel_state == INCALL && (sub_peer->channel_state == ONHOOK || sub_peer->channel_state == CALLENDED)) {
 			ast_debug(2, "R while in call and idle peer subchannel\n");
 
+			brcm_cancel_dialing_timeouts(p);
 			brcm_reset_dtmf_buffer(p);
 			p->hf_detected = 0;
 
@@ -1509,6 +1530,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 			ast_debug(2, "R while offhook/dialing and peer subchannel on hold\n");
 
+			brcm_cancel_dialing_timeouts(p);
 			brcm_reset_dtmf_buffer(p);
 			p->hf_detected = 0;
 
@@ -1540,6 +1562,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 			ast_debug(2, "R when idle and peer subchannel on hold\n");
 
+			brcm_cancel_dialing_timeouts(p);
 			p->hf_detected = 0;
 
 			/* Hang up current */
@@ -1916,7 +1939,7 @@ static void *brcm_monitor_packets(void *data)
 			/* Handle DTMF if we're in state calling. If not in call we'll send DTMF to Asterisk
 			 * using handle_dtmf(). This way pre-call DTMF (ex CBBS) will be handled the same way
 			 * for both FXS and DECT. */
-			} else if (sub->channel_state == INCALL && rtp_packet_type == BRCM_DTMF) {
+			} else if (rtp_packet_type == BRCM_DTMF && brcm_should_relay_dtmf(sub)) {
 				
 				unsigned int duration = (pdata[14] << 8 | pdata[15]);
 				unsigned int dtmf_end = pdata[13] & 128;
@@ -2029,6 +2052,14 @@ void brcm_cancel_dialing_timeouts(struct brcm_pvt *p)
 	if (p->dialtone_timeout_timer_id > 0) {
 		p->dialtone_timeout_timer_id = ast_sched_thread_del(sched, p->dialtone_timeout_timer_id);
 	}
+}
+
+static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
+{
+	if (sub->channel_state == INCALL && sub->parent->hf_detected == 0) {
+		return 1;
+	}
+	return 0;
 }
 
 static void *brcm_monitor_events(void *data)
@@ -2255,6 +2286,12 @@ static void *brcm_monitor_events(void *data)
 							p->hf_detected = 0;
 						} else {
 							p->hf_detected = 1;
+
+							/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
+							 * dtmf will be relayed to asterisk. */
+							int timeoutmsec = line_config[p->line_id].timeoutmsec;
+							p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+
 							handle_hookflash(sub, sub_peer, owner, peer_owner);
 						}
 					}
