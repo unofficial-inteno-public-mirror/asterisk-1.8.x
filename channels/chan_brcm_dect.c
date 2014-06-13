@@ -863,7 +863,16 @@ process_keypad_info(unsigned char handset,
 						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
 						handle_dtmf_calling(sub);
 					}
+				}
 
+				if (sub->channel_state == INCALL) {
+					struct ast_frame f = { 0, };
+					f.subclass.integer = dtmfMap->c;
+					f.src = "BRCM";
+					f.frametype = AST_FRAME_DTMF_END;
+					if (owner) {
+						ast_queue_frame(owner, &f);
+					}
 				}
 			}
 			else {
