@@ -64,6 +64,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "asterisk/indications.h"
 #include "asterisk/manager.h"
 #include "asterisk/sched.h"
+#include "asterisk/app.h"
 
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
@@ -106,7 +107,6 @@ static int num_fxo_endpoints = -1;
 static int num_dect_endpoints = -1;
 static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
-static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G722; // AST_FORMAT_G723_1 breaks stuff
 struct ast_sched_thread *sched; //Scheduling thread
@@ -211,6 +211,7 @@ static COUNTRY_MAP country_map[] =
 	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
 	{VRG_COUNTRY_MAX, 			"-"}
 };
+static COUNTRY_MAP endpoint_country = {.vrgCountry = VRG_COUNTRY_NORTH_AMERICA, .isoCode = "USA"};
 
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
@@ -2983,7 +2984,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
-	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
+	ast_cli(a->fd, "Country       : %s\n", endpoint_country.isoCode);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 	ast_cli(a->fd, "FAC list      : %s\n", feature_access_code_string(buffer, AST_MAX_EXTENSION));
@@ -3709,7 +3710,7 @@ static int load_settings(struct ast_config **cfg)
 				ast_debug(2, "cmp: [%s] [%s]\n", v->value, countryMap->isoCode);
 				if (!strcmp(v->value, countryMap->isoCode)) {
 					ast_debug(2, "Found country '%s'\n", v->value);
-					endpoint_country = countryMap->vrgCountry; 
+					endpoint_country = *countryMap;
 					break;
 				}
 
@@ -3818,6 +3819,11 @@ static int load_module(void)
 
 	/* Initialize the endpoints */
 	endpt_init();
+
+	/* Set the provision data to the endpoint driver */
+	char config_cmd[32];
+	snprintf(config_cmd, 32, "endptcfg %s", endpoint_country.isoCode);
+	ast_safe_system(config_cmd);
 
 	brcm_get_endpoints_count();
 	load_endpoint_settings(cfg);
@@ -3994,7 +4000,7 @@ int endpt_init(void)
 
 	vrgEndptDriverOpen();
 
-	vrgEndptInitCfg.country = endpoint_country;
+	vrgEndptInitCfg.country = endpoint_country.vrgCountry;
 	vrgEndptInitCfg.currentPowerSource = 0;
 
 	/* Intialize endpoint */
@@ -4005,7 +4011,6 @@ int endpt_init(void)
 			   NULL,
 			   NULL,
 			   NULL );
-
 	
 	return 0;
 }
