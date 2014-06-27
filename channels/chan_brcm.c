@@ -2407,32 +2407,21 @@ static void *brcm_monitor_events(void *data)
 					ast_debug(1, "EPEVT_DTMFL\n");
 					break;
 				case EPEVT_FLASH:
-					//Ignore, handle via early off/on hook
+					ast_debug(1, "EPEVT_FLASH\n");
+					p->hf_detected = 1;
+
+					/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
+					 * dtmf will be relayed to asterisk. */
+					int timeoutmsec = line_config[p->line_id].timeoutmsec;
+					p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+
+					handle_hookflash(sub, sub_peer, owner, peer_owner);
 					break;
 				case EPEVT_EARLY_OFFHOOK:
 					ast_debug(1, "EPEVT_EARLY_OFFHOOK\n");
-					gettimeofday(&tim, NULL);
-					unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-					if (now - p->last_early_onhook_ts < hfmaxdelay) {
-						p->last_early_onhook_ts = 0;
-						if (p->hf_detected == 1) {
-							p->hf_detected = 0;
-						} else {
-							p->hf_detected = 1;
-
-							/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
-							 * dtmf will be relayed to asterisk. */
-							int timeoutmsec = line_config[p->line_id].timeoutmsec;
-							p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
-
-							handle_hookflash(sub, sub_peer, owner, peer_owner);
-						}
-					}
 					break;
 				case EPEVT_EARLY_ONHOOK:
 					ast_debug(1, "EPEVT_EARLY_ONHOOK\n");
-					gettimeofday(&tim, NULL);
-					p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 					break;
 				case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
 				case EPEVT_VBD_START:
@@ -2591,7 +2580,6 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->lastinput = -1;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		tmp->next = NULL;
-		tmp->last_early_onhook_ts = 0;
 		tmp->endpoint_type = endpoint_type;
 		tmp->dialtone = DIALTONE_UNKNOWN;
 		tmp->dialtone_extension_cb_id = -1;
@@ -2862,7 +2850,6 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
 		ast_cli(a->fd, "Direct context      : %s\n", p->context_direct);
-		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
 		line_settings* s = &line_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
@@ -3726,12 +3713,6 @@ static int load_settings(struct ast_config **cfg)
 			if (cwtimeout > 60 || cwtimeout < 0) {
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect cwtimeout '%s', defaulting to '%d'\n", v->value, cwtimeout);
-			}
-		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
-			hfmaxdelay = atoi(v->value);
-			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
-				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
-				ast_log(LOG_WARNING, "Incorrect hfmaxdelay '%s', defaulting to '%d'\n", v->value, hfmaxdelay);
 			}
 		} else if (!strcasecmp(v->name, "r4hanguptimeout")) {
 			r4hanguptimeout = atoi(v->value);

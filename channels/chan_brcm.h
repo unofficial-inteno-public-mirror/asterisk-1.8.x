@@ -131,7 +131,6 @@ struct brcm_pvt {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
-	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
