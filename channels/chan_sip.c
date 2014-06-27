@@ -9391,6 +9391,15 @@ static int process_sdp(struct sip_pvt *p, struct sip_request *req, int t38action
 		return -1;
 	}
 
+	/* If jointcapability changed in SDP answer we must increment our session version to reflect
+	 * this change in a future SDP answer. */
+	if (oastate == 0) {
+		if (p->jointcapability != newjointcapability || p->jointnoncodeccapability != newnoncodeccapability) {
+			p->sessionversion++;
+			ast_log(LOG_DEBUG, "Incremented session version since joint capabilities changed\n");
+		}
+	}
+
 	if (portno != -1 || vportno != -1 || tportno != -1) {
 		/* We are now ready to change the sip session and p->rtp and p->vrtp with the offered codecs, since
 		   they are acceptable */
