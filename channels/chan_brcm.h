@@ -152,12 +152,13 @@ enum rtp_type {
 
 
 
-/* Mapping of DTMF to char/name */
+/* Mapping of DTMF to char/name/intval */
 typedef struct DTMF_CHARNAME_MAP
 {
 	EPEVT	event;
 	char	name[12];
 	char	c;
+	int		i;
 } DTMF_CHARNAME_MAP;
 
 
@@ -298,6 +299,7 @@ int brcm_signal_callwaiting(const struct brcm_pvt *p);
 int brcm_stop_callwaiting(const struct brcm_pvt *p);
 int brcm_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *sub);
 int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit);
+int brcm_signal_dtmf_ingress(struct brcm_subchannel *sub, int digit);
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit);
 static int brcm_in_call(const struct brcm_pvt *p);
 static int brcm_in_callwaiting(const struct brcm_pvt *p);
@@ -312,5 +314,8 @@ void handle_dtmf(EPEVT event, struct brcm_subchannel *sub, struct brcm_subchanne
 void handle_dtmf_calling(const struct brcm_subchannel *sub);
 void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
 void brcm_cancel_dialing_timeouts(struct brcm_pvt *p);
+
+int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
+int get_dtmf_relay_type(struct brcm_subchannel *sub);
 
 #endif /* CHAN_BRCM_H */

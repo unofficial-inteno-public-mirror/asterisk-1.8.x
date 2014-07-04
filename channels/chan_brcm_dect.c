@@ -865,13 +865,26 @@ process_keypad_info(unsigned char handset,
 					}
 				}
 
-				if (sub->channel_state == INCALL) {
-					struct ast_frame f = { 0, };
-					f.subclass.integer = dtmfMap->c;
-					f.src = "BRCM";
-					f.frametype = AST_FRAME_DTMF_END;
-					if (owner) {
-						ast_queue_frame(owner, &f);
+				if (brcm_should_relay_dtmf(sub)) {
+					switch (get_dtmf_relay_type(sub)) {
+					case EPDTMFRFC2833_DISABLED:
+						ast_debug(5, "Generating inband DTMF for DECT\n");
+						brcm_signal_dtmf_ingress(sub, dtmfMap->i);
+						break;
+					case EPDTMFRFC2833_ENABLED:
+					case EPDTMFRFC2833_SUBTRACT: {
+						struct ast_frame f = { 0, };
+						f.subclass.integer = dtmfMap->c;
+						f.src = "BRCM";
+						f.frametype = AST_FRAME_DTMF_END;
+						if (owner) {
+							ast_queue_frame(owner, &f);
+						}
+						break;
+					}
+					default:
+						ast_log(LOG_WARNING, "DTMF mode unknown\n");
+						break;
 					}
 				}
 			}
