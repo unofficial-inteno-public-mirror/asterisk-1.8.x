@@ -866,13 +866,21 @@ process_keypad_info(unsigned char handset,
 				}
 
 				if (sub->channel_state == INCALL) {
-					struct ast_frame f = { 0, };
-					f.subclass.integer = dtmfMap->c;
-					f.src = "BRCM";
-					f.frametype = AST_FRAME_DTMF_END;
-					if (owner) {
-						ast_queue_frame(owner, &f);
-					}
+					/*
+					 * TODO
+					 * We need to determine from settings if DTMF should be
+					 * sent as rfc2833 (events to asterisk) or inband (using
+					 * dsp to generate tones).
+					 */
+					//struct ast_frame f = { 0, };
+					//f.subclass.integer = dtmfMap->c;
+					//f.src = "BRCM";
+					//f.frametype = AST_FRAME_DTMF_END;
+					//if (owner) {
+					//	ast_queue_frame(owner, &f);
+					//}
+					ast_log(LOG_WARNING, "GENERATING INBAND DTMF FOR DECT\n");
+					brcm_signal_dtmf_ingress(sub, dtmfMap->i);
 				}
 			}
 			else {

@@ -134,25 +134,24 @@ static struct ast_channel_tech *cur_tech;
 
 const DTMF_CHARNAME_MAP dtmf_to_charname[] =
 {
-	{EPEVT_DTMF0, "EPEVT_DTMF0", '0'},
-	{EPEVT_DTMF1, "EPEVT_DTMF1", '1'},
-	{EPEVT_DTMF2, "EPEVT_DTMF2", '2'},
-	{EPEVT_DTMF3, "EPEVT_DTMF3", '3'},
-	{EPEVT_DTMF4, "EPEVT_DTMF4", '4'},
-	{EPEVT_DTMF5, "EPEVT_DTMF5", '5'},
-	{EPEVT_DTMF6, "EPEVT_DTMF6", '6'},
-	{EPEVT_DTMF7, "EPEVT_DTMF7", '7'},
-	{EPEVT_DTMF8, "EPEVT_DTMF8", '8'},
-	{EPEVT_DTMF9, "EPEVT_DTMF9", '9'},
-	{EPEVT_DTMFA, "EPEVT_DTMFA", 'A'},
-	{EPEVT_DTMFB, "EPEVT_DTMFB", 'B'},
-	{EPEVT_DTMFC, "EPEVT_DTMFC", 'C'},
-	{EPEVT_DTMFD, "EPEVT_DTMFD", 'D'},
-	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23}, //#
-	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A}, //*
-	{EPEVT_LAST,  "EPEVT_LAST", '-'}
+	{EPEVT_DTMF0, "EPEVT_DTMF0", '0', 0},
+	{EPEVT_DTMF1, "EPEVT_DTMF1", '1', 1},
+	{EPEVT_DTMF2, "EPEVT_DTMF2", '2', 2},
+	{EPEVT_DTMF3, "EPEVT_DTMF3", '3', 3},
+	{EPEVT_DTMF4, "EPEVT_DTMF4", '4', 4},
+	{EPEVT_DTMF5, "EPEVT_DTMF5", '5', 5},
+	{EPEVT_DTMF6, "EPEVT_DTMF6", '6', 6},
+	{EPEVT_DTMF7, "EPEVT_DTMF7", '7', 7},
+	{EPEVT_DTMF8, "EPEVT_DTMF8", '8', 8},
+	{EPEVT_DTMF9, "EPEVT_DTMF9", '9', 9},
+	{EPEVT_DTMFA, "EPEVT_DTMFA", 'A', 12},
+	{EPEVT_DTMFB, "EPEVT_DTMFB", 'B', 13},
+	{EPEVT_DTMFC, "EPEVT_DTMFC", 'C', 14},
+	{EPEVT_DTMFD, "EPEVT_DTMFD", 'D', 15},
+	{EPEVT_DTMFH, "EPEVT_DTMFH", 0x23, 11}, //#
+	{EPEVT_DTMFS, "EPEVT_DTMFS", 0x2A, 10}, //*
+	{EPEVT_LAST,  "EPEVT_LAST", '-', -1}
 };
-
 
 static COUNTRY_MAP country_map[] =
 {
@@ -4083,6 +4082,17 @@ int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit)
 		return EPSTATUS_ERROR;
 	}
 	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], -1, signal, 1, -1, -1 , -1);
+}
+
+/*
+ * Tell brcm to generate an ingress DTMF digit (i.e. a digit in direction
+ * towards asterisk). This is useful for DECT lines, since they don't generate
+ * inband DTMF tones by themselves.
+ */
+int brcm_signal_dtmf_ingress(struct brcm_subchannel *sub, int digit)
+{
+	//digit should be 0-9, 10 = *, 11 = #, 12-15 = A-D
+	return ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[sub->parent->line_id], sub->connection_id, EPSIG_INGRESS_DTMF, digit, -1, -1 , -1);
 }
 
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit)
