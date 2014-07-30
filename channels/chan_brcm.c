@@ -93,6 +93,8 @@ static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
 static int brcm_in_conference(const struct brcm_pvt *p);
+static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
+static int isEndptInitialized();
 
 /* Global brcm channel parameters */
 
@@ -3798,13 +3800,13 @@ static int load_module(void)
 		return result;
 	}
 
-	/* Initialize the endpoints */
-	endpt_init();
-
 	/* Set the provision data to the endpoint driver */
 	char config_cmd[32];
 	snprintf(config_cmd, 32, "endptcfg %s", endpoint_country.isoCode);
 	ast_safe_system(config_cmd);
+
+	/* Initialize the endpoints */
+	endpt_init();
 
 	brcm_get_endpoints_count();
 	load_endpoint_settings(cfg);
@@ -3981,18 +3983,26 @@ int endpt_init(void)
 
 	vrgEndptDriverOpen();
 
-	vrgEndptInitCfg.country = endpoint_country.vrgCountry;
-	vrgEndptInitCfg.currentPowerSource = 0;
+	if (!isEndptInitialized()) {
 
-	/* Intialize endpoint */
-	vrgEndptInit( &vrgEndptInitCfg,
-			   NULL,
-			   NULL,
-			   NULL,
-			   NULL,
-			   NULL,
-			   NULL );
-	
+		ast_log(LOG_ERROR, "Endpoint is not initialized\n");
+
+		vrgEndptInitCfg.country = endpoint_country.vrgCountry;
+		vrgEndptInitCfg.currentPowerSource = 0;
+
+		/* Intialize endpoint */
+		rc = vrgEndptInit(&vrgEndptInitCfg,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL);
+	}
+	else {
+		ast_log(LOG_ERROR, "Endpoint is already initialized\n");
+	}
+
 	return 0;
 }
 
@@ -4440,6 +4450,21 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 	}
 
 	return( tInitParm.epStatus );
+}
+
+
+static int isEndptInitialized()
+{
+	ENDPOINTDRV_ISINITIALIZED_PARM tInitParm;
+	int retVal = 0;
+
+	tInitParm.size = sizeof(ENDPOINTDRV_ISINITIALIZED_PARM);
+
+	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ISINITIALIZED, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
+		ast_log(LOG_ERROR, "error during ioctl");
+	}
+
+	return( tInitParm.isInitialized );
 }
 
 
