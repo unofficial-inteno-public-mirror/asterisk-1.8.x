@@ -58,6 +58,7 @@
 #define DEFAULT_MWI_EXPIRY           3600
 #define DEFAULT_REGISTRATION_TIMEOUT 20
 #define DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT 0	/*!< How long before retrying REGISTER after 403, 0 = do not retry */
+#define DEFAULT_REGISTRATION_BACKOFF_TIMEOUT 0	        /*!< How long before retrying REGISTER in backoff state, 0 = do not retry */
 #define DEFAULT_MAX_FORWARDS         70
 
 #define DEFAULT_AUTHLIMIT            100

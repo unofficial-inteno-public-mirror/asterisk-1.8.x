@@ -714,6 +714,8 @@ static int global_rtpholdtimeout;   /*!< Time out call if no RTP during hold */
 static int global_rtpkeepalive;     /*!< Send RTP keepalives */
 static int global_reg_timeout;      /*!< Global time between attempts for outbound registrations */
 static int global_reg_forb_timeout; /*!< Global time between attempts for outbound registrations, if 403 Forbidden was received */
+static int global_regattempts_backoff;   /*!< Registration attempts before entering back-off state */
+static int global_reg_backoff_timeout;   /*!< Global time between attempts for outbound registrations in backoff state */
 static int global_regattempts_max;  /*!< Registration attempts before giving up */
 static int global_shrinkcallerid;   /*!< enable or disable shrinking of caller id  */
 static int global_callcounter;      /*!< Enable call counters for all devices. This is currently enabled by setting the peer
@@ -13583,11 +13585,16 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 		if (r->timeout > -1) {
 			ast_log(LOG_WARNING, "Still have a registration timeout, #%d - deleting it\n", r->timeout);
 		}
-		AST_SCHED_REPLACE_UNREF(r->timeout, sched, global_reg_timeout * 1000, sip_reg_timeout, r,
+		int timeout = global_reg_timeout;
+		if (global_regattempts_backoff && r->regattempts >= global_regattempts_backoff) {
+			/* In back-off state, keep trying to register but change the timeout */
+			timeout = global_reg_backoff_timeout;
+		}
+		AST_SCHED_REPLACE_UNREF(r->timeout, sched, timeout * 1000, sip_reg_timeout, r,
 								registry_unref(_data,"reg ptr unrefed from del in SCHED_REPLACE"),
 								registry_unref(r,"reg ptr unrefed from add failure in SCHED_REPLACE"),
 								registry_addref(r,"reg ptr reffed from add in SCHED_REPLACE"));
-		ast_debug(1, "Scheduled a registration timeout for %s id  #%d \n", r->hostname, r->timeout);
+		ast_debug(1, "Scheduled a registration timeout in %d for %s id  #%d \n", timeout, r->hostname, r->timeout);
 	}
 
 	snprintf(from, sizeof(from), "<sip:%s@%s>;tag=%s", r->username, S_OR(r->regdomain, sip_sanitized_host(p->tohost)), p->tag);
@@ -18428,6 +18435,8 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 	ast_cli(a->fd, "  Reg. max duration:      %d secs\n", max_expiry);
 	ast_cli(a->fd, "  Reg. default duration:  %d secs\n", default_expiry);
 	ast_cli(a->fd, "  Outbound reg. timeout:  %d secs\n", global_reg_timeout);
+	ast_cli(a->fd, "  Outbound reg. backoff:  %d\n", global_regattempts_backoff);
+	ast_cli(a->fd, "  Outbound reg. backoff timeout: %d\n", global_reg_backoff_timeout);
 	ast_cli(a->fd, "  Outbound reg. attempts: %d\n", global_regattempts_max);
 	ast_cli(a->fd, "  Outbound reg. forb. timeout: %d %s\n", global_reg_forb_timeout, global_reg_forb_timeout ? "" : "(Disabled)");
 	ast_cli(a->fd, "  Notify ringing state:   %s\n", AST_CLI_YESNO(sip_cfg.notifyringing));
@@ -28371,6 +28380,8 @@ static int reload_config(enum channelreloadreason reason)
 	global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
 	global_reg_forb_timeout = DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT;
 	global_regattempts_max = 0;
+	global_regattempts_backoff = 0;
+	global_reg_backoff_timeout = DEFAULT_REGISTRATION_BACKOFF_TIMEOUT;
 	sip_cfg.pedanticsipchecking = DEFAULT_PEDANTIC;
 	sip_cfg.autocreatepeer = DEFAULT_AUTOCREATEPEER;
 	global_autoframing = 0;
@@ -28725,6 +28736,13 @@ static int reload_config(enum channelreloadreason reason)
 			if (global_reg_timeout < 1) {
 				global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
 			}
+		} else if (!strcasecmp(v->name, "registertimeoutbackoff")) {
+			global_reg_backoff_timeout = atoi(v->value);
+			if (global_reg_backoff_timeout < 1) {
+				global_reg_backoff_timeout = DEFAULT_REGISTRATION_BACKOFF_TIMEOUT;
+			}
+		} else if (!strcasecmp(v->name, "registerattemptsbackoff")) {
+			global_regattempts_backoff = atoi(v->value);
 		} else if (!strcasecmp(v->name, "register403timeout")) {
 			global_reg_forb_timeout = atoi(v->value);
 			if (global_reg_forb_timeout < 0) {
