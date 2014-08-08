@@ -1118,6 +1118,8 @@ static struct ast_channel *brcm_new(struct brcm_subchannel *i, int state, char *
 			tmp->caller.ani.number.valid = 1;
 			tmp->caller.ani.number.str = ast_strdup(i->parent->cid_num);
 		}
+		tmp->caller.id.number.presentation = s->clir ? AST_PRES_PROHIB_USER_NUMBER_NOT_SCREENED : AST_PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
+		tmp->caller.id.name.presentation = s->clir ? AST_PRES_PROHIB_USER_NUMBER_NOT_SCREENED : AST_PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
 
 		//Setup jitter buffer
 		ast_jb_configure(tmp, &global_jbconf);
@@ -2889,6 +2891,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
 		ast_cli(a->fd, "Ast JitterBuf max   : %d\n", global_jbconf.max_size);
 		ast_cli(a->fd, "Call waiting        : %s\n", s->callwaiting ? "on" : "off");
+		ast_cli(a->fd, "CLIR                : %s\n", s->clir ? "on" : "off");
 
 		ast_cli(a->fd, "Dialtone            : ");
 		const DIALTONE_MAP *dialtone = dialtone_map;
@@ -3472,6 +3475,7 @@ static line_settings line_settings_create(void)
 		.dialtone_extension_hint = "",
 		.dialtone_timeoutmsec = 20000,
 		.callwaiting = 1,
+		.clir = 0,
 	};
 	return line_conf;
 }
@@ -3604,6 +3608,9 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 		}
 		else if (!strcasecmp(v->name, "callwaiting")) {
 			line_config->callwaiting = ast_true(v->value)?1:0;
+		}
+		else if (!strcasecmp(v->name, "clir")) {
+			line_config->clir = ast_true(v->value)?1:0;
 		}
 
 		if (config_codecs > 0)
