@@ -91,6 +91,7 @@ struct brcm_subchannel {
 	int dtmf_sending;		/* A marker if we are sending DTMF or not */
 	int dtmf_timestamp;		/* When a dtmf begin is detected save and use this timestamp for the rest of the dtmf packets */
 	struct timeval dtmf_tv;         /*!< The time that an in process digit began, or the last digit ended */
+	int conference_initiator;  /* True if this subchannel is the original leg in a 3-way conference */
 };
 
 

@@ -739,6 +739,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	}
 	memset(p->ext, 0, sizeof(p->ext));
 	sub->owner = NULL;
+	sub->conference_initiator = 0;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
@@ -1656,7 +1657,8 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 			}
 			break;
 
-		/* Answer waiting call and put other call on hold (switch calls) */
+		/* Answer waiting call and put other call on hold (switch calls) or
+		 * switch out of 3-way conference and put second call on hold */
 		case '2':
 			if (sub->channel_state == INCALL && (sub_peer->channel_state == CALLWAITING || sub_peer->channel_state == ONHOLD)) {
 
@@ -1704,6 +1706,25 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 				brcm_subchannel_set_state(sub, ONHOLD);
 			}
+			else if (sub->channel_state == INCALL && sub_peer->channel_state == INCALL) {
+
+				/* Switch out of conference mode */
+				brcm_stop_conference(sub);
+				brcm_stop_conference(sub_peer);
+
+				/* Figure out which subchannel initiated the conference */
+				struct brcm_subchannel *primary_sub = sub->conference_initiator ? sub : brcm_subchannel_get_peer(sub);
+				struct brcm_subchannel *secondary_sub = brcm_subchannel_get_peer(primary_sub);
+				primary_sub->conference_initiator = 0;
+				secondary_sub->conference_initiator = 0;
+
+				/* Put secondary call leg on hold */
+				brcm_mute_connection(secondary_sub);
+				brcm_subchannel_set_state(secondary_sub, ONHOLD);
+				if (secondary_sub->owner) {
+					ast_queue_control(secondary_sub->owner, AST_CONTROL_HOLD);
+				}
+			}
 
 			break;
 
@@ -1711,6 +1732,8 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 		case '3':
 			if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
 				ast_debug(2, "DTMF3 after HF\n");
+
+				sub->conference_initiator = 1;
 
 				/* Unhold inactive subchannel */
 				if (peer_owner) {
@@ -1804,13 +1827,18 @@ void handle_dtmf(EPEVT event,
 			p->hf_detected = 0;
 			/* HF while not in a call doesn't make sense */
 			if (sub->channel_state == INCALL &&
-				(brcm_in_callwaiting(p) || brcm_in_onhold(p))) {
+				(brcm_in_callwaiting(p) || brcm_in_onhold(p) || brcm_in_conference(p))) {
 				handle_hookflash(sub, sub_peer, owner, peer_owner);
 			} else {
-				ast_debug(2, "DTMF after HF while not in call. state: %d, callwaiting: %d, onhold: %d\n",
+				ast_debug(2, "DTMF after HF while not in call. \
+						state: %d, \
+						callwaiting: %d, \
+						onhold: %d, \
+						conference: %d\n",
 					sub->channel_state,
 					brcm_in_callwaiting(p),
-					brcm_in_onhold(p));
+					brcm_in_onhold(p),
+					brcm_in_conference(p));
 			}
 		} else {
 			p->dtmfbuf[p->dtmf_len] = dtmf_button;
@@ -2447,6 +2475,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 				sub->cw_timer_id = -1;
 				sub->r4_hangup_timer_id = -1;
 				sub->period = 20;
+				sub->conference_initiator = 0;
 				tmp->sub[i] = sub;
 				ast_debug(2, "subchannel created\n");
 			} else {
@@ -2762,6 +2791,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
 		ast_cli(a->fd, "  CW Timer id         : %d\n", sub->cw_timer_id);
 		ast_cli(a->fd, "  R4 Hangup Timer id  : %d\n", sub->r4_hangup_timer_id);
+		ast_cli(a->fd, "  Conference initiator: %d\n", sub->conference_initiator);
 	}
 }
 
