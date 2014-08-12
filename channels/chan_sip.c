@@ -12181,9 +12181,10 @@ static void initreqprep(struct sip_request *req, struct sip_pvt *p, int sipmetho
 
 	snprintf(p->lastmsg, sizeof(p->lastmsg), "Init: %s", sip_methods[sipmethod].text);
 
-	int pres_allowed = (ast_party_id_presentation(&p->owner->connected.id) & AST_PRES_RESTRICTION) == AST_PRES_ALLOWED;
+	int pres_allowed = AST_PRES_ALLOWED;
 	d = S_OR(p->fromdomain, ast_sockaddr_stringify_host_remote(&p->ourip));
 	if (p->owner) {
+		pres_allowed = (ast_party_id_presentation(&p->owner->connected.id) & AST_PRES_RESTRICTION) == AST_PRES_ALLOWED;
 		if (pres_allowed) {
 			l = p->owner->connected.id.number.valid ? p->owner->connected.id.number.str : NULL;
 			n = p->owner->connected.id.name.valid ? p->owner->connected.id.name.str : NULL;
