@@ -221,7 +221,7 @@ typedef struct {
 	char dialtone_extension_hint[AST_MAX_EXTENSION];
 	int dialtone_timeoutmsec;
 	int callwaiting;
-	int clir
+	int clir;
 } line_settings;
 
 
