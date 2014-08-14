@@ -68,6 +68,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
+#ifndef AST_MODULE
+#define AST_MODULE "chan_brcm"
+#endif
+
 /*** DOCUMENTATION
 	<manager name="BRCMPortsShow" language="en_US">
 		<synopsis>
@@ -640,13 +644,14 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 {
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
+	struct brcm_subchannel *sub_peer;
 
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
 	
 	sub = chan->tech_pvt;
 
-	ast_log(LOG_WARNING, "BRCM brcm_call %d\n", sub->parent->line_id);
+	ast_debug(1, "BRCM brcm_call %d\n", sub->parent->line_id);
 	ast_localtime(&UtcTime, &tm, NULL);
 
 	if ((chan->_state != AST_STATE_DOWN) && (chan->_state != AST_STATE_RESERVED)) {
@@ -658,8 +663,11 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	pvt_lock(sub->parent, "brcm_call");
 
 	p = sub->parent;
-	if (line_config[p->line_id].callwaiting && brcm_in_call(p)) {
-		ast_log(LOG_WARNING, "Call waiting\n");
+	sub_peer = brcm_subchannel_get_peer(sub);
+	if (brcm_in_call(p) &&                          // a call is established
+			line_config[p->line_id].callwaiting &&  // call waiting active
+			!sub_peer->cw_rejected) {      // a previous call has not been rejected using R0
+		ast_debug(1, "Call waiting\n");
 		brcm_subchannel_set_state(sub, CALLWAITING);
 		brcm_signal_callwaiting(p);
 		int cwtimeout_ms = cwtimeout * 1000;
@@ -668,12 +676,12 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 		ast_queue_control(chan, AST_CONTROL_RINGING);
 	}
 	else if (brcm_in_call(p)) {
-		ast_log(LOG_WARNING, "Line is busy\n");
+		ast_debug(1, "Line is busy\n");
 		chan->hangupcause = AST_CAUSE_USER_BUSY;
 		ast_queue_control(chan, AST_CONTROL_BUSY);
 	}
 	else {
-		ast_log(LOG_WARNING, "Not call waiting\n");
+		ast_debug(1, "Not call waiting\n");
 		brcm_subchannel_set_state(sub, RINGING);
 		if (!clip) {
 			p->tech->signal_ringing(p);
@@ -740,6 +748,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	memset(p->ext, 0, sizeof(p->ext));
 	sub->owner = NULL;
 	sub->conference_initiator = 0;
+	sub->cw_rejected = 0;
 	ast_module_unref(ast_module_info->self);
 	ast_verb(3, "Hungup '%s'\n", ast->name);
 	ast->tech_pvt = NULL;
@@ -1592,6 +1601,9 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 		case '0':
 			if (sub->channel_state == INCALL && sub_peer->channel_state == CALLWAITING) {
 				ast_debug(2, "Sending busy to waiting call\n");
+
+				/* Immediately send busy next time someone calls us during this call */
+				sub->cw_rejected = 1;
 
 				if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
 					ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
@@ -2631,51 +2643,6 @@ struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
 	return NULL;
 }
 
-/*
- * Return free subchannel if conditions are met.
- */
-static struct brcm_subchannel *brcm_get_idle_subchannel_incomingcall(const struct brcm_pvt *p)
-{
-	struct brcm_subchannel *sub = NULL;
-	int i;
-
-	for (i=0; i<NUM_SUBCHANNELS; i++) {
-		if (p->sub[i]->channel_state == ONHOOK || p->sub[i]->channel_state == CALLENDED) {
-			/* There is an idle subchannel */
-			if (!sub) {
-				/* which may be used */
-				sub = p->sub[i];
-				if (line_config[p->line_id].callwaiting) {
-					/* for call waiting or 'ordinary' call */
-					if (brcm_active(p) && !brcm_in_call(p)) {
-						/* if there had been a 'busy' subchannel in state INCALL */
-						sub = NULL;
-					}
-					break;
-				}
-			}
-		}
-		else if (p->sub[i]->channel_state == AWAITONHOOK) {
-			/* Wait for hangup before accepting a call */
-			sub = NULL;
-			break;
-		}
-		else {
-			/* There is a 'busy' subchannel */
-			if (!(line_config[p->line_id].callwaiting)) {
-				/* and call waiting is disabled */
-				sub = NULL;
-				break;
-			}
-		}
-	}
-
-	if (sub) {
-		ast_debug(2, "Got subchannel at %p\n", sub);
-	}
-	return sub;
-}
-
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
 	format_t oldformat;
@@ -2709,7 +2676,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	pvt_lock(p, "brcm request");
 	//ast_mutex_lock(&p->lock);
 
-	sub = brcm_get_idle_subchannel_incomingcall(p);
+	sub = brcm_get_idle_subchannel(p);
 
 	/* Check that the request has an allowed format */
 	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1);
@@ -2718,6 +2685,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		ast_log(LOG_NOTICE, "Asked to get a channel of unsupported format %s\n", ast_getformatname(format));
 		*cause = AST_CAUSE_BEARERCAPABILITY_NOTAVAIL;
 	} else if (sub) {
+		brcm_subchannel_set_state(sub, ALLOCATED);
 		sub->connection_id = ast_atomic_fetchadd_int((int *)&current_connection_id, +1);
 		tmp = brcm_new(sub, AST_STATE_DOWN, p->context, requestor ? requestor->linkedid : NULL, format);
 	} else {
@@ -2792,6 +2760,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "  RTP SSRC            : %d\n", sub->ssrc);
 		ast_cli(a->fd, "  RTP timestamp       : %d\n", sub->time_stamp);
 		ast_cli(a->fd, "  CW Timer id         : %d\n", sub->cw_timer_id);
+		ast_cli(a->fd, "  CW Rejected         : %d\n", sub->cw_rejected);
 		ast_cli(a->fd, "  R4 Hangup Timer id  : %d\n", sub->r4_hangup_timer_id);
 		ast_cli(a->fd, "  Conference initiator: %d\n", sub->conference_initiator);
 	}

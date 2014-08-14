@@ -54,6 +54,7 @@ enum channel_state {
 	TRANSFERING,
 	RINGBACK,
 	AWAITONHOOK,
+	ALLOCATED,
 };
 
 enum endpoint_type {
@@ -84,6 +85,7 @@ struct brcm_subchannel {
 	int codec;			/* Used codec */
 	struct brcm_pvt *parent;	/* brcm_line owning this subchannel */
 	int cw_timer_id;			/* Current call waiting timer id, -1 if no active timer */
+	int cw_rejected;            /* True if a previous waiting call has been rejected during current call */
 	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
 	int dtmf_duration;		/* Duration of the DTMF currently sending. Should be zero when not sending */
 	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
@@ -91,7 +93,7 @@ struct brcm_subchannel {
 	int dtmf_sending;		/* A marker if we are sending DTMF or not */
 	int dtmf_timestamp;		/* When a dtmf begin is detected save and use this timestamp for the rest of the dtmf packets */
 	struct timeval dtmf_tv;         /*!< The time that an in process digit began, or the last digit ended */
-	int conference_initiator;  /* True if this subchannel is the original leg in a 3-way conference */
+	int conference_initiator;       /* True if this subchannel is the original leg in a 3-way conference */
 };
 
 
