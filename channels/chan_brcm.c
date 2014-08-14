@@ -108,7 +108,7 @@ static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 static int clip = 1; // Caller ID presentation
-static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726; // AST_FORMAT_G723_1 breaks stuff
+static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G722; // AST_FORMAT_G723_1 breaks stuff
 struct ast_sched_thread *sched; //Scheduling thread
 static int pcmShimFile = -1;
 
@@ -208,7 +208,7 @@ static char *state2str(enum channel_state state);
 static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
-	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1,
+	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1 | AST_FORMAT_G722,
 	.requester = brcm_request,			//No lock held (no channel yet)
 	.call = brcm_call,				//Channel is locked
 	.hangup = brcm_hangup,				//Channel is locked
@@ -787,6 +787,7 @@ static char* brcm_get_codec_string(int id) {
 			case G723:		return "g723.1"; break;
 			case G726:		return "g726"; break;
 			case G729:		return "g729"; break;
+			case G722:		return "g722"; break;
 			case -1:		return "none set"; break;
 			default: 		return "unknown id"; break;
 	}
@@ -802,6 +803,7 @@ static int map_rtp_to_ast_codec_id(int id) {
 		case G723: return AST_FORMAT_G723_1;
 		case PCMA: return AST_FORMAT_ALAW;
 		case G729: return AST_FORMAT_G729A;
+		case G722: return AST_FORMAT_G722;
 		default:
 		{
 			ast_verbose("Unknown rtp codec id [%d]\n", id);
@@ -817,6 +819,7 @@ static int brcm_classify_rtp_packet(int id) {
 		case G723: return BRCM_AUDIO;
 		case PCMA: return BRCM_AUDIO;
 		case G729: return BRCM_AUDIO;
+		case G722: return BRCM_AUDIO;
 		case DTMF_PAYLOAD: return BRCM_DTMF;
 		case RTCP: return BRCM_RTCP;
 		default:
@@ -832,6 +835,7 @@ static int map_ast_codec_id_to_rtp(int id) {
 		case AST_FORMAT_G723_1: return G723;
 		case AST_FORMAT_ALAW: return PCMA;
 		case AST_FORMAT_G729A: return G729;
+		case AST_FORMAT_G722: return G722;
 		default:
 		{
 			ast_verbose("Unknown asterisk format/codec id [%d]\n", id);
@@ -851,6 +855,7 @@ static format_t map_codec_brcm_to_ast(int id) {
 		case CODEC_G7231_63:	return AST_FORMAT_G723_1;
 		case CODEC_G726_32:		return AST_FORMAT_G726;
 		case CODEC_G729A:		return AST_FORMAT_G729A;
+		case CODEC_G722_MODE_1:	return AST_FORMAT_G722;
 		default:				return -1;
 	}
 }
@@ -862,6 +867,7 @@ static int map_codec_ast_to_brcm(int id) {
 		case AST_FORMAT_G723_1:	return CODEC_G7231_63; //Asterisk does not indicate which bitrate to use
 		case AST_FORMAT_G726:	return CODEC_G726_32; //32 is the only supported bitrate in asterisk
 		case AST_FORMAT_G729A:	return CODEC_G729A;
+		case AST_FORMAT_G722:	return CODEC_G722_MODE_1;
 		default:				return -1;
 	}
 }
@@ -878,6 +884,7 @@ static int map_codec_ast_to_brcm_rtp(int id) {
 		case AST_FORMAT_G723_1:	return RTP_PAYLOAD_G723;
 		case AST_FORMAT_G726:	return RTP_PAYLOAD_G726_32; //32 is the only supported bitrate in asterisk
 		case AST_FORMAT_G729A:	return RTP_PAYLOAD_G729;
+		case AST_FORMAT_G722:	return RTP_PAYLOAD_G722;
 		default:				return -1;
 	}
 }
@@ -1961,6 +1968,10 @@ static void *brcm_monitor_packets(void *data)
 						fr.subclass.codec = AST_FORMAT_G729A;
 						fr.samples = 80; //for 10 ms frame size
 						break;
+					case G722:
+						fr.subclass.codec = AST_FORMAT_G722;
+						fr.samples = 160;
+						break;
 					default:
 						ast_log(LOG_WARNING, "Unknown rtp codec id [%d]\n", pdata[1]);
 						break;
@@ -2648,7 +2659,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	sub = brcm_get_idle_subchannel(p);
 
 	/* Check that the request has an allowed format */
-	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1);
+	format_t allowedformat = format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1 | AST_FORMAT_G722);
 
 	if (!allowedformat) {
 		ast_log(LOG_NOTICE, "Asked to get a channel of unsupported format %s\n", ast_getformatname(format));
@@ -3488,6 +3499,10 @@ static void line_settings_load(line_settings *line_config, struct ast_variable *
 				line_config->codec_list[config_codecs] = CODEC_G726_32;
 				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G726_32;
 				line_config->capability = line_config->capability | AST_FORMAT_G726;
+			} else if (!strcasecmp(v->value, "g722")) {
+				line_config->codec_list[config_codecs] = CODEC_G722_MODE_1;
+				line_config->rtp_payload_list[config_codecs++] = RTP_PAYLOAD_G722;
+				line_config->capability = line_config->capability | AST_FORMAT_G722;
 			} else {
 				ast_log(LOG_WARNING, "Unknown codec: %s\n", v->value);
 			}
