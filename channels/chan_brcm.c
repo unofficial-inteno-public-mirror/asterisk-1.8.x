@@ -533,7 +533,7 @@ static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned
 			struct timeval tim;
 			gettimeofday(&tim, NULL);
 			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-			ast_debug(9, "DTMF %d start %lu detected\n", digit, ts);
+			ast_debug(9, "DTMF %d start %u detected\n", digit, ts);
 			if (brcm_signal_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
 				res = -1;
 			}
@@ -578,7 +578,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 			struct timeval tim;
 			gettimeofday(&tim, NULL);
 			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-			ast_debug(9, "DTMF %d start %lu detected\n", digit, ts);
+			ast_debug(9, "DTMF %d start %u detected\n", digit, ts);
 			if (brcm_signal_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
 				res = -1;
 			}
@@ -622,7 +622,7 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 			struct timeval tim;
 			gettimeofday(&tim, NULL);
 			ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
-			ast_debug(9, "DTMF %d stop %lu detected\n", digit, ts);
+			ast_debug(9, "DTMF %d stop %u detected\n", digit, ts);
 			if (brcm_stop_dtmf(sub, digit) != EPSTATUS_SUCCESS) {
 				res = -1;
 			}
@@ -1224,19 +1224,6 @@ struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p)
 	return sub;
 }
 
-static struct brcm_subchannel *brcm_get_callwaiting_subchannel(const struct brcm_pvt *p)
-{
-	struct brcm_subchannel *sub;
-	int i;
-	for(i=0; i<NUM_SUBCHANNELS; i++) {
-			sub = p->sub[i];
-			if (sub->channel_state == CALLWAITING) {
-				return sub;
-			}
-	}
-	return NULL;
-}
-
 static struct brcm_subchannel *brcm_get_onhold_subchannel(const struct brcm_pvt *p)
 {
 	struct brcm_subchannel *sub;
@@ -1464,7 +1451,7 @@ static int handle_dialtone_timeout(const void *data)
  * Called after each new DTMF event, from monitor_events thread,
  * with the required locks already held.
  */
-void handle_dtmf_calling(const struct brcm_subchannel *sub)
+void handle_dtmf_calling(struct brcm_subchannel *sub)
 {
 	struct brcm_pvt *p = sub->parent;
 	int dtmfbuf_len = strlen(p->dtmfbuf);
@@ -1906,10 +1893,6 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rtp_packet_type  = BRCM_UNKNOWN;
-	RTPPACKET *rtp;
-	int current_dtmf_digit = -1;
-	
-	rtp = (RTPPACKET *)pdata;
 	
 	ast_debug(2, "Packets thread starting\n");
 
@@ -2009,7 +1992,7 @@ static void *brcm_monitor_packets(void *data)
 						sub->dtmf_sending = 0;
 						if (option_debug > 3) {
 							if (!ast_tvzero(sub->dtmf_tv)) {
-								ast_debug(3, "    ---> Time since DTMF BEGIN %d ms Duration %d ms\n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv), (int) (duration / 8));
+								ast_debug(3, "    ---> Time since DTMF BEGIN %lld ms Duration %u ms\n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv), (duration / 8));
 							}
 						}
 						sub->dtmf_tv = ast_tvnow();
@@ -2019,7 +2002,7 @@ static void *brcm_monitor_packets(void *data)
 							fr.frametype = AST_FRAME_DTMF_BEGIN;
 							if (option_debug > 3) {
 								if (!ast_tvzero(sub->dtmf_tv)) {
-									ast_debug(3, "    ---> Time since last DTMF %d ms \n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv));
+									ast_debug(3, "    ---> Time since last DTMF %lld ms \n", ast_tvdiff_ms(ast_tvnow(), sub->dtmf_tv));
 								}
 							}
 							sub->dtmf_tv = ast_tvnow();
@@ -2040,7 +2023,7 @@ static void *brcm_monitor_packets(void *data)
 						fr.len = option_dtmfminduration;
 						adjusted = 1;
 					} 
-					ast_debug(2, "Sending DTMF [%c, Len %d%s] (%s)\n", fr.subclass.integer, fr.len, adjusted ? " Adjusted for min dur." : "", 
+					ast_debug(2, "Sending DTMF [%c, Len %ld%s] (%s)\n", fr.subclass.integer, fr.len, adjusted ? " Adjusted for min dur." : "",
 						(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
 			}
@@ -2065,7 +2048,7 @@ static void *brcm_monitor_packets(void *data)
 						*/
 						cfr = ast_frdup(&fr);
 						cfr->frametype = AST_FRAME_DTMF_CONTINUE;
-						ast_debug(2, "Sending extra DTMF [%c, Len %d] (%s)\n", cfr->subclass.integer, cfr->len, "AST_FRAME_DTMF_CONTINUE");
+						ast_debug(2, "Sending extra DTMF [%c, Len %ld] (%s)\n", cfr->subclass.integer, cfr->len, "AST_FRAME_DTMF_CONTINUE");
 					}
 					ast_queue_frame(owner, &fr);
 					if (cfr) {
@@ -2206,7 +2189,7 @@ static void *brcm_monitor_events(void *data)
 						brcm_signal_dialtone(p);
 						line_settings *s = &line_config[p->line_id];
 
-						if (ast_str_size(s->autodial_ext)) {
+						if (strlen(s->autodial_ext)) {
 							/* Schedule autodial timeout if autodial extension is set */
 							p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
 						}
@@ -2616,19 +2599,6 @@ static int brcm_in_conference(const struct brcm_pvt *p)
 	return p->sub[0]->channel_state == INCALL && p->sub[1]->channel_state == INCALL;
 }
 
-static int brcm_active(const struct brcm_pvt *p)
-{
-	int i;
-	for (i=0; i<NUM_SUBCHANNELS; i++) {
-		if (p->sub[i]->channel_state != ONHOOK &&
-		    p->sub[i]->channel_state != CALLENDED) {
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
 /*
  * Return idle subchannel
  */
@@ -2645,7 +2615,6 @@ struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p)
 
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
 {
-	format_t oldformat;
 	struct brcm_pvt *p;
 	struct brcm_subchannel *sub;
 	struct ast_channel *tmp = NULL;
@@ -2662,7 +2631,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	
 	/* Get line id */
 	line_id = atoi((char*)data);
-	ast_debug(1, "brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, format);
+	ast_debug(1, "brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, (unsigned int) format);
 
 	/* Map id to the correct pvt */
 	p = brcm_get_pvt_from_lineid(iflist, line_id);
@@ -2752,7 +2721,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "Subchannel: %d\n", sub->id);
 		ast_cli(a->fd, "  Connection id       : %d\n", sub->connection_id);
 
-		ast_cli(a->fd, "  Owner               : %d\n", sub->owner);
+		ast_cli(a->fd, "  Owner               : %p\n", sub->owner);
 		ast_cli(a->fd, "  Channel state       : %s\n", state2str(sub->channel_state));
 		ast_cli(a->fd, "  Connection init     : %d\n", sub->connection_init);
 		ast_cli(a->fd, "  Codec used          : %s\n", brcm_get_codec_string(sub->codec));
@@ -2844,8 +2813,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		VRG_UINT32 txgain, rxgain;
 		vrgEndptProvGet(i, EPPROV_TxGain, &txgain, sizeof(VRG_UINT32));
 		vrgEndptProvGet(i, EPPROV_RxGain, &rxgain, sizeof(VRG_UINT32));
-		ast_cli(a->fd, "Tx Gain             : %d\n", txgain);
-		ast_cli(a->fd, "Rx Gain             : %d\n", rxgain);
+		ast_cli(a->fd, "Tx Gain             : %lu\n", txgain);
+		ast_cli(a->fd, "Rx Gain             : %lu\n", rxgain);
 
 		/* Print Jitterbuffer settings */
 		VRG_UINT32 jbfixed, jbmin, jbmax, jbtarget;
@@ -2853,12 +2822,12 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMin, &jbmin, sizeof(VRG_UINT32));
 		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffMax, &jbmax, sizeof(VRG_UINT32));
 		vrgEndptProvGet(i, EPPROV_VoiceJitterBuffTarget, &jbtarget, sizeof(VRG_UINT32));
-		ast_cli(a->fd, "Brcm JitterBuf fix  : %d\n", jbfixed);
-		ast_cli(a->fd, "Brcm JitterBuf min  : %d\n", jbmin);
-		ast_cli(a->fd, "Brcm JitterBuf max  : %d\n", jbmax);
-		ast_cli(a->fd, "Brcm JitterBuf trg  : %d\n", jbtarget);
+		ast_cli(a->fd, "Brcm JitterBuf fix  : %lu\n", jbfixed);
+		ast_cli(a->fd, "Brcm JitterBuf min  : %lu\n", jbmin);
+		ast_cli(a->fd, "Brcm JitterBuf max  : %lu\n", jbmax);
+		ast_cli(a->fd, "Brcm JitterBuf trg  : %lu\n", jbtarget);
 		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
-		ast_cli(a->fd, "Ast JitterBuf max   : %d\n", global_jbconf.max_size);
+		ast_cli(a->fd, "Ast JitterBuf max   : %ld\n", global_jbconf.max_size);
 		ast_cli(a->fd, "Call waiting        : %s\n", s->callwaiting ? "on" : "off");
 		ast_cli(a->fd, "CLIR                : %s\n", s->clir ? "on" : "off");
 
@@ -3749,10 +3718,10 @@ static int load_module(void)
 
 int endpt_deinit(void)
 {
-	int i, rc;
+	int i;
 	/* Destroy Endpt */
 	for ( i = 0; i < num_endpoints; i++ ) {
-		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
+		vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i] );
 	}
 	if (!ast_mutex_lock(&ioctl_lock)) {
 		ast_debug(3, "Endpoint deinit...\n");
@@ -3836,52 +3805,51 @@ static void brcm_provision_endpoints(void)
 
 		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffFixed, &s->jitterFixed, sizeof(VRG_UINT32));
 		if (result != EPSTATUS_SUCCESS) {
-			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffFixed to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterFixed, i, result);
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffFixed to %lu for Endpoint %d failed with EPSTATUS %d\n", s->jitterFixed, i, result);
 		}
 
 		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMax, &s->jitterMax, sizeof(VRG_UINT32));
 		if (result != EPSTATUS_SUCCESS) {
-			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMax to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterMax, i, result);
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMax to %lu for Endpoint %d failed with EPSTATUS %d\n", s->jitterMax, i, result);
 		}
 
 		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffMin, &s->jitterMin, sizeof(VRG_UINT32));
 		if (result != EPSTATUS_SUCCESS) {
-			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMin to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterMin, i, result);
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffMin to %lu for Endpoint %d failed with EPSTATUS %d\n", s->jitterMin, i, result);
 		}
 
 		result = vrgEndptProvSet(i, EPPROV_VoiceJitterBuffTarget, &s->jitterTarget, sizeof(VRG_UINT32));
 		if (result != EPSTATUS_SUCCESS) {
-			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffTarget to %d for Endpoint %d failed with EPSTATUS %d\n", s->jitterTarget, i, result);
+			ast_log(LOG_ERROR, "Setting EPPROV_VoiceJitterBuffTarget to %lu for Endpoint %d failed with EPSTATUS %d\n", s->jitterTarget, i, result);
 		}
 	}
 }
 
 static void brcm_create_endpoints(void)
 {
-	int i, rc;
+	int i;
 
 	/* Creating Endpt */
 	for ( i = 0; i < num_endpoints; i++ )
 	{
-		rc = vrgEndptCreate(i, i,(VRG_ENDPT_STATE *)&endptObjState[i]);
+		vrgEndptCreate(i, i,(VRG_ENDPT_STATE *)&endptObjState[i]);
 	}
 }
 
 
 static void brcm_destroy_endpoints(void)
 {
-	int i, rc;
+	int i;
 
 	for ( i = 0; i < num_endpoints; i++ )
 	{
-		rc = vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i]);
+		vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i]);
 	}
 }
 
 int endpt_init(void)
 {
 	VRG_ENDPT_INIT_CFG   vrgEndptInitCfg;
-	int rc;
 
 	ast_debug(3, "Initializing endpoint interface\n");
 
@@ -3891,7 +3859,7 @@ int endpt_init(void)
 	vrgEndptInitCfg.currentPowerSource = 0;
 
 	/* Intialize endpoint */
-	rc = vrgEndptInit( &vrgEndptInitCfg,
+	vrgEndptInit( &vrgEndptInitCfg,
 			   NULL,
 			   NULL,
 			   NULL,
@@ -4535,7 +4503,7 @@ static void brcm_dialtone_init(struct brcm_pvt *p)
 
 	if (!ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
 		/* Asterisk is not fully booted, wait for dialplan hints to be read */
-		int id = ast_sched_thread_add(sched, 500, dialtone_init_cb, p);
+		ast_sched_thread_add(sched, 500, dialtone_init_cb, p);
 		/* No need to store id */
 		return;
 	}
