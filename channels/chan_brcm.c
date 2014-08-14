@@ -675,7 +675,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 	  	ast_setstate(chan, AST_STATE_RINGING);
 		ast_queue_control(chan, AST_CONTROL_RINGING);
 	}
-	else if (brcm_in_call(p)) {
+	else if (!brcm_subchannel_is_idle(sub_peer)) {
 		ast_debug(1, "Line is busy\n");
 		chan->hangupcause = AST_CAUSE_USER_BUSY;
 		ast_queue_control(chan, AST_CONTROL_BUSY);
