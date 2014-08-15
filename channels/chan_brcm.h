@@ -88,6 +88,7 @@ struct brcm_subchannel {
 	int cw_timer_id;			/* Current call waiting timer id, -1 if no active timer */
 	int cw_rejected;            /* True if a previous waiting call has been rejected during current call */
 	int r4_hangup_timer_id;		/* Current R4 hangup timer id, -1 if no active timer */
+	int onhold_hangup_timer_id;	/* Current onhold hangup timer id, -1 if no active timer */
 	int dtmf_duration;		/* Duration of the DTMF currently sending. Should be zero when not sending */
 	int dtmf_lastwasend;		/* A marker to suppress the end messages. Brcm correctly sends three of them
 					   in sequence and we only need to react on the first one */
@@ -144,6 +145,7 @@ struct brcm_pvt {
 	int interdigit_timer_id;		/* Id of timer that tracks interdigit timeout */
 	int autodial_timer_id;			/* Id of timer that tracks autodial timeout */
 	int dialtone_timeout_timer_id;	/* Id of timer that tracks dialtone timeout */
+	int onhold_hangup_timer_id;		/* Id of timer that tracks onhold hangup timeout */
 };
 
 enum rtp_type {
@@ -253,6 +255,7 @@ static struct ast_jb_conf default_jbconf =
 #define DEFAULT_CALL_WAITING_TIMEOUT 24 // In seconds, Telia uses 24s
 
 #define DEFAULT_R4_HANGUP_TIMEOUT 5000 // In milliseconds
+#define DEFAULT_ONHOLD_HANGUP_TIMEOUT 20 // In seconds
 #define DEFAULT_MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook (in ms)
 
 

@@ -118,6 +118,9 @@ static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 /* R4 transfer */
 static int r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
 
+/* Automatic call on hold hangup */
+static int onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
+
 /* Maximum allowed delay between early on and early off hook for detecting hookflash */
 static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 
@@ -701,7 +704,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 static int brcm_hangup(struct ast_channel *ast)
 {
 	struct brcm_pvt *p;
-	struct brcm_subchannel *sub;
+	struct brcm_subchannel *sub, *sub_peer;
 	sub = ast->tech_pvt;
 
 	if (!ast->tech_pvt) {
@@ -712,15 +715,13 @@ static int brcm_hangup(struct ast_channel *ast)
 	pvt_lock(sub->parent, "BRCM hangup");
 
 	p = sub->parent;
+	sub_peer = brcm_subchannel_get_peer(sub);
 	ast_debug(1, "brcm_hangup(%s) line_id=%d connection_id=%d\n", ast->name, p->line_id, sub->connection_id);
 
 	if (sub->channel_state == CALLWAITING) {
 		brcm_stop_callwaiting(p);
-		if (ast_sched_thread_del(sched, sub->cw_timer_id)) {
-			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer");
-		}
-		sub->cw_timer_id = -1;
-	} else if (sub->channel_state != CALLENDED && !brcm_in_conference(p)) {
+	} else if (sub->channel_state != CALLENDED && !brcm_in_conference(p) &&
+			sub_peer->channel_state != ONHOLD && sub_peer->channel_state != RINGING) { // Don't stop reminder ringing
 		if (!clip) {
 			p->tech->stop_ringing(p);
 		} else {
@@ -728,11 +729,25 @@ static int brcm_hangup(struct ast_channel *ast)
 		}
 	}
 
+	if (sub->cw_timer_id != -1) {
+		if (ast_sched_thread_del(sched, sub->cw_timer_id)) {
+			ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+		}
+		sub->cw_timer_id = -1;
+	}
+
 	if(sub->r4_hangup_timer_id != -1) {
 		if (ast_sched_thread_del(sched, sub->r4_hangup_timer_id)) {
-			ast_log(LOG_WARNING, "Failed to remove scheduled r4 hangup timer");
+			ast_log(LOG_WARNING, "Failed to remove scheduled r4 hangup timer\n");
 		}
 		sub->r4_hangup_timer_id = -1;
+	}
+
+	if(sub->onhold_hangup_timer_id != -1) {
+		if (ast_sched_thread_del(sched, sub->onhold_hangup_timer_id)) {
+			ast_log(LOG_WARNING, "Failed to remove scheduled onhold hangup timer\n");
+		}
+		sub->onhold_hangup_timer_id = -1;
 	}
 	ast_setstate(ast, AST_STATE_DOWN);
 
@@ -1314,6 +1329,35 @@ static int r4hanguptimeout_cb(const void *data)
 	if (peer_sub_owner) {
 		ast_queue_control(peer_sub_owner, AST_CONTROL_HANGUP);
 		ast_channel_unref(peer_sub_owner);
+	}
+
+	return 0;
+}
+
+/* Hangup call onhold if user does not pick up after reminder ringing */
+static int onholdhanguptimeout_cb(const void *data)
+{
+	struct brcm_subchannel *sub;
+	struct ast_channel *sub_owner = NULL;
+
+	ast_debug(2, "No pickup after reminder ringing for call on hold, hanging up\n");
+	sub = (struct brcm_subchannel *) data;
+
+	//ast_mutex_lock(&sub->parent->lock);
+	pvt_lock(sub->parent, "onholdhanguptimeout callback");
+
+	sub->onhold_hangup_timer_id = -1;
+
+	if (sub->owner) {
+		ast_channel_ref(sub->owner);
+		sub_owner = sub->owner;
+	}
+	//ast_mutex_unlock(&sub->parent->lock);
+	pvt_unlock(sub->parent);
+
+	if (sub_owner) {
+		ast_queue_control(sub_owner, AST_CONTROL_HANGUP);
+		ast_channel_unref(sub_owner);
 	}
 
 	return 0;
@@ -2192,8 +2236,30 @@ static void *brcm_monitor_events(void *data)
 							brcm_create_connection(sub);
 						}
 
+						if (sub->cw_timer_id > -1) {
+							/* Picking up during reminder ringing for call waiting */
+							ast_sched_thread_del(sched, sub->cw_timer_id);
+							sub->cw_timer_id = -1;
+						}
+
 						brcm_subchannel_set_state(sub, INCALL);
 						ast_queue_control(owner, AST_CONTROL_ANSWER);
+					}
+					else if (sub_peer->channel_state == ONHOLD) {
+
+						/* Picking up during reminder ringing for call on hold */
+						ast_sched_thread_del(sched, sub_peer->onhold_hangup_timer_id);
+						sub_peer->onhold_hangup_timer_id = -1;
+
+						//Asterisk jitter buffer causes one way audio when going from unhold.
+						//This is a workaround until jitter buffer is handled by DSP.
+						ast_jb_destroy(peer_owner);
+
+						brcm_subchannel_set_state(sub, CALLENDED);
+						brcm_subchannel_set_state(sub_peer, INCALL);
+						brcm_unmute_connection(sub_peer);
+
+						ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
 					}
 					else if (sub->channel_state == OFFHOOK) {
 						/* EPEVT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
@@ -2258,19 +2324,18 @@ static void *brcm_monitor_events(void *data)
 
 					//TODO: possible bug below - we don't change the channel_state when hanging up
 
-					/* Hangup peer subchannels in call, on hold or in call waiting */
 					if (sub_peer->channel_state == CALLWAITING) {
-						if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
-							ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
-						}
-						sub_peer->cw_timer_id = -1;
-
-						if (peer_owner) {
-							peer_owner->hangupcause = AST_CAUSE_USER_BUSY;
-							ast_queue_control(peer_owner, AST_CONTROL_BUSY);
-						}
+						/* Remind user of waiting call */
+						brcm_subchannel_set_state(sub_peer, RINGING);
+						p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
+					}
+					else if (sub_peer->channel_state == ONHOLD) {
+						/* Remind user of call on hold */
+						sub_peer->onhold_hangup_timer_id = ast_sched_thread_add(sched, onholdhanguptimeout * 1000, onholdhanguptimeout_cb, sub_peer);
+						p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
 					}
 					else if (peer_owner && sub_peer->channel_state != TRANSFERING) {
+						/* Hangup peer subchannels in call or on hold */
 						ast_debug(2, "Hanging up call (not transfering)\n");
 						ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
 					}
@@ -2482,6 +2547,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 				sub->parent = tmp;
 				sub->cw_timer_id = -1;
 				sub->r4_hangup_timer_id = -1;
+				sub->onhold_hangup_timer_id = -1;
 				sub->period = 20;
 				sub->conference_initiator = 0;
 				tmp->sub[i] = sub;
@@ -2743,6 +2809,7 @@ static void brcm_show_subchannels(struct ast_cli_args *a, struct brcm_pvt *p)
 		ast_cli(a->fd, "  CW Rejected         : %d\n", sub->cw_rejected);
 		ast_cli(a->fd, "  R4 Hangup Timer id  : %d\n", sub->r4_hangup_timer_id);
 		ast_cli(a->fd, "  Conference initiator: %d\n", sub->conference_initiator);
+		ast_cli(a->fd, "  Onhold Hangup Timer id: %d\n", sub->onhold_hangup_timer_id);
 	}
 }
 
@@ -3636,6 +3703,12 @@ static int load_settings(struct ast_config **cfg)
 			if (r4hanguptimeout > 30000 || r4hanguptimeout < 0) {
 				r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect r4hanguptimeout '%s', defaulting to '%d'\n", v->value, r4hanguptimeout);
+			}
+		} else if (!strcasecmp(v->name, "onholdhanguptimeout")) {
+			onholdhanguptimeout = atoi(v->value);
+			if (onholdhanguptimeout > 60 || onholdhanguptimeout < 0) {
+				onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
+				ast_log(LOG_WARNING, "Incorrect onholdhanguptimeout '%s', defaulting to '%d'\n", v->value, onholdhanguptimeout);
 			}
 		}
 
