@@ -13489,16 +13489,15 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 		 * end up using an outbound proxy. obproxy_get is safe to call with either of r->call
 		 * or peer NULL. Since we're only concerned with its existence, we're not going to
 		 * bother getting a ref to the proxy*/
-		if (!obproxy_get(r->call, peer)) {
+		/* If we need to register before call, we disregard the outbound proxy setting */
+		if ((peer && ast_test_flag(&peer->flags[2], SIP_PAGE3_REG_BEFORE_CALL)) || !obproxy_get(r->call, peer)) {
 			registry_addref(r, "add reg ref for dnsmgr");
 			ast_dnsmgr_lookup_cb(peer ? peer->tohost : r->hostname, &r->us, &r->dnsmgr, sip_cfg.srvlookup ? transport : NULL, on_dns_update_registry, r);
 			if (!r->dnsmgr) {
 				/*dnsmgr refresh disabled, no reference added! */
 				registry_unref(r, "remove reg ref, dnsmgr disabled");
+				ast_debug(2, "   --> No DNS manager used \n");
 			}
-		}
-		if (peer) {
-			peer = unref_peer(peer, "removing peer ref for dnsmgr_lookup");
 		}
 	}
 
@@ -13568,7 +13567,30 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 				ast_log(LOG_WARNING, "Probably a DNS error for registration to %s@%s, trying REGISTER again (after %d seconds)\n", r->username, r->hostname, global_reg_timeout);
 			}
 			r->regattempts++;
+			if (peer) {
+				peer = unref_peer(peer, "removing peer ref for dnsmgr_lookup");
+			}
 			return 0;
+		}
+		ast_debug(3, "  --- 2. Address (p->sa) set to %s port %d \n", ast_sockaddr_stringify_host(&p->sa), ast_sockaddr_port(&p->sa));
+		if (peer && ast_test_flag(&peer->flags[2], SIP_PAGE3_REG_BEFORE_CALL))  {
+			char regstring[512];
+			/* Make an outbound proxy config string */
+			snprintf(regstring, sizeof(regstring), "%s://%s", get_srv_protocol(r->transport), ast_sockaddr_stringify_remote(&p->sa));
+			ast_debug(2, " ==> Setting outbound proxy based on reg for peer %s to %s\n", peer->name, regstring);
+			/* We need to set the IP we register to  as the outbound proxy SKREP 	
+			*/
+			/* If there's a configured outbound proxy, just remove it */
+			if (peer->outboundproxy) {
+				ao2_ref(peer->outboundproxy, -1);
+			}
+
+			/* Add a new outbound proxy */
+			peer->outboundproxy = proxy_from_config(regstring, 0, NULL);
+		}
+		/* Time to delete our peer */
+		if (peer) {
+			peer = unref_peer(peer, "removing peer ref for transmit_register");
 		}
 
 		/* Copy back Call-ID in case create_addr changed it */
@@ -13645,11 +13667,12 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 		ast_debug(1, "Scheduled a registration timeout in %d for %s id  #%d \n", timeout, r->hostname, r->timeout);
 	}
 
-	snprintf(from, sizeof(from), "<sip:%s@%s>;tag=%s", r->username, S_OR(r->regdomain, sip_sanitized_host(p->tohost)), p->tag);
+	/* If the peer has a fromdomain setting, it should be used. */
+	snprintf(from, sizeof(from), "<sip:%s@%s>;tag=%s", r->username, S_OR(p->fromdomain,S_OR(r->regdomain, sip_sanitized_host(p->tohost))), p->tag);
 	if (!ast_strlen_zero(p->theirtag)) {
-		snprintf(to, sizeof(to), "<sip:%s@%s>;tag=%s", r->username, S_OR(r->regdomain, sip_sanitized_host(p->tohost)), p->theirtag);
+		snprintf(to, sizeof(to), "<sip:%s@%s>;tag=%s", r->username, S_OR(p->fromdomain,S_OR(r->regdomain, sip_sanitized_host(p->tohost))), p->theirtag);
 	} else {
-		snprintf(to, sizeof(to), "<sip:%s@%s>", r->username, S_OR(r->regdomain, sip_sanitized_host(p->tohost)));
+		snprintf(to, sizeof(to), "<sip:%s@%s>", r->username, S_OR(p->fromdomain,S_OR(r->regdomain, sip_sanitized_host(p->tohost))));
 	}
 
 	/* Fromdomain is what we are registering to, regardless of actual
@@ -13719,6 +13742,7 @@ static int transmit_register(struct sip_registry *r, int sipmethod, const char *
 	r->regstate = auth ? REG_STATE_AUTHSENT : REG_STATE_REGSENT;
 	r->regattempts++;	/* Another attempt */
 	ast_debug(4, "REGISTER attempt %d to %s@%s\n", r->regattempts, r->username, r->hostname);
+	ast_debug(3, "  --- 3. Address (p->sa) set to %s port %d \n", ast_sockaddr_stringify_host(&p->sa), ast_sockaddr_port(&p->sa));
 	res = send_request(p, &req, XMIT_CRITICAL, p->ocseq);
 	dialog_unref(p, "p is finished here at the end of transmit_register");
 	return res;
@@ -27067,6 +27091,9 @@ static int handle_common_options(struct ast_flags *flags, struct ast_flags *mask
 	} else if (!strcasecmp(v->name, "useclientcode")) {
 		ast_set_flag(&mask[0], SIP_USECLIENTCODE);
 		ast_set2_flag(&flags[0], ast_true(v->value), SIP_USECLIENTCODE);
+	} else if (!strcasecmp(v->name, "regbeforecall")) {
+		ast_set_flag(&mask[2], SIP_PAGE3_REG_BEFORE_CALL);
+		ast_set2_flag(&flags[2], ast_true(v->value), SIP_PAGE3_REG_BEFORE_CALL);
 	} else if (!strcasecmp(v->name, "dtmfmode")) {
 		ast_set_flag(&mask[0], SIP_DTMF);
 		ast_clear_flag(&flags[0], SIP_DTMF);
@@ -28423,6 +28450,7 @@ static int reload_config(enum channelreloadreason reason)
 	sip_cfg.rtautoclear = 120;
 	ast_set_flag(&global_flags[1], SIP_PAGE2_ALLOWSUBSCRIBE);	/* Default for all devices: TRUE */
 	ast_set_flag(&global_flags[1], SIP_PAGE2_ALLOWOVERLAP_YES);	/* Default for all devices: Yes */
+	ast_set_flag(&global_flags[2], DEFAULT_REG_BEFORE_CALL);	/* Default for all devices: No  */
 	sip_cfg.peer_rtupdate = TRUE;
 	global_dynamic_exclude_static = 0;	/* Exclude static peers */
 	sip_cfg.tcp_enabled = FALSE;
