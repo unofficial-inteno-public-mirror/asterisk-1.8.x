@@ -230,6 +230,7 @@ static struct brcm_channel_tech fxs_tech = {
 	.signal_callerid = brcm_signal_callerid,
 	.stop_ringing = brcm_stop_ringing,
 	.stop_ringing_callerid_pending = brcm_stop_ringing_callerid_pending,
+	.release = NULL,
 };
 
 
@@ -720,13 +721,16 @@ static int brcm_hangup(struct ast_channel *ast)
 
 	if (sub->channel_state == CALLWAITING) {
 		brcm_stop_callwaiting(p);
-	} else if (sub->channel_state != CALLENDED && !brcm_in_conference(p) &&
-			sub_peer->channel_state != ONHOLD && sub_peer->channel_state != RINGING) { // Don't stop reminder ringing
+	} else if (sub->channel_state == RINGING || sub->onhold_hangup_timer_id != -1) {
+		//Stop ringing if other end hungup before we answered
 		if (!clip) {
 			p->tech->stop_ringing(p);
 		} else {
 			p->tech->stop_ringing_callerid_pending(p);
 		}
+	} else if (brcm_subchannel_is_idle(sub_peer) && p->tech->release) {
+		//No active subchannel left, release
+		p->tech->release(p);
 	}
 
 	if (sub->cw_timer_id != -1) {
@@ -754,12 +758,12 @@ static int brcm_hangup(struct ast_channel *ast)
 	p->lastformat = -1;
 	p->lastinput = -1;
 	p->hf_detected = 0;
-	brcm_subchannel_set_state(sub, CALLENDED);
-	struct brcm_subchannel *peer_sub = brcm_get_active_subchannel(p);
-	if (peer_sub && peer_sub->channel_state == INCALL) {
+	if (brcm_in_conference(p)) {
 		/* Switch still active call leg out of conference mode */
-		brcm_stop_conference(peer_sub);
+		brcm_stop_conference(sub_peer);
 	}
+	brcm_subchannel_set_state(sub, CALLENDED);
+
 	memset(p->ext, 0, sizeof(p->ext));
 	sub->owner = NULL;
 	sub->conference_initiator = 0;
@@ -769,6 +773,7 @@ static int brcm_hangup(struct ast_channel *ast)
 	ast->tech_pvt = NULL;
 	brcm_close_connection(sub);
 	//ast_mutex_unlock(&p->lock);
+
 	pvt_unlock(p);
 	return 0;
 }

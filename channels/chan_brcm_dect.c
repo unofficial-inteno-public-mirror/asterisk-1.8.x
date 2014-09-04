@@ -99,8 +99,9 @@ const struct brcm_channel_tech dect_tech = {
 	.signal_ringing = dect_signal_ringing,
 	.signal_ringing_callerid_pending = dect_signal_ringing_callerid_pending,
 	.signal_callerid = dect_signal_callerid,
-	.stop_ringing = dect_stop_ringing,
-	.stop_ringing_callerid_pending = dect_stop_ringing_callerid_pending,
+	.stop_ringing = dect_release,
+	.stop_ringing_callerid_pending = dect_release,
+	.release = dect_release,
 };
 
 
@@ -125,25 +126,12 @@ int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 	ast_verbose("Caller id: %s\n", chan->connected.id.number.str);
 	
 	if (bad_handsetnr(handset))
-		return;
-
+		return 1;
 	
 	strncpy(handsets[handset].cid, chan->connected.id.number.str, CID_MAX_LEN);
 
 	return 0;
 }
-
-int dect_stop_ringing(struct brcm_pvt *p) {
-	dect_hangup(p->line_id + 1);
-	return 0;
-}
-
-int dect_stop_ringing_callerid_pending(struct brcm_pvt *p) {
-	dect_hangup(p->line_id + 1);
-	return 0;
-}
-
-
 
 int dect_signal_ringing(struct brcm_pvt *p)
 {
@@ -730,21 +718,18 @@ static void dect_release_cfm(ApiFpCcReleaseCfmType *m) {
 	vrgEndptSendCasEvtToEndpt((ENDPT_STATE *)&endptObjState[handset - 1], CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 }
 
-
-
-
-
-void dect_hangup(int handset) {
+int dect_release(struct brcm_pvt * p) {
+	int handset = p->line_id + 1;
 
 	ApiFpCcReleaseReqType *m = malloc(sizeof(ApiFpCcReleaseReqType));
 
-	ast_verbose("dect_hangup: %d\n", handset);
+	ast_verbose("dect_release: %d\n", handset);
 
 	if (bad_handsetnr(handset))
-		return;
+		return 1; //TODO: leaks *m
 	
 	if (handsets[handset].CallReference.Instance.Fp == 0)
-		return;
+		return 1; //TODO: leaks *m
 
 	m->Primitive = API_FP_CC_RELEASE_REQ;
 	m->CallReference = handsets[handset].CallReference;
@@ -754,9 +739,8 @@ void dect_hangup(int handset) {
 	printf("API_FP_CC_RELEASE_REQ\n");
 	dectDrvWrite(m, sizeof(ApiFpCcReleaseReqType));
 	free(m);
-
+	return 0;
 }
-
 
 static void 
 process_keypad_info(unsigned char handset,

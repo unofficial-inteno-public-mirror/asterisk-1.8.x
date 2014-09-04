@@ -105,6 +105,7 @@ struct brcm_channel_tech {
 	int (* signal_callerid)(const struct ast_channel *chan, struct brcm_subchannel *s);
 	int (* stop_ringing)(struct brcm_pvt *p);
 	int (* stop_ringing_callerid_pending)(struct brcm_pvt *p);
+	int (* release)(struct brcm_pvt *p);
 };
 
 

@@ -41,12 +41,10 @@ void dectSetupPingingCall(int handset);
 void dectDrvWrite(void *data, int size);
 
 void dectRingHandSet( int destHandset, int dspChannel);
-void dect_hangup(int handset);
+int dect_release(struct brcm_pvt *p);
 int dect_signal_ringing(struct brcm_pvt *p);
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
 int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
-int dect_stop_ringing(struct brcm_pvt *p);
-int dect_stop_ringing_callerid_pending(struct brcm_pvt *p);
 
 static void nvs_update_ind(unsigned char *mail);
 void dect_ring_handset(int handset);
