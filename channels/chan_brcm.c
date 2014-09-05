@@ -95,7 +95,7 @@ static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
 static int brcm_in_conference(const struct brcm_pvt *p);
 static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
-static int isEndptInitialized();
+static int isEndptInitialized(void);
 
 /* Global brcm channel parameters */
 
@@ -126,9 +126,6 @@ static int r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
 
 /* Automatic call on hold hangup */
 static int onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
-
-/* Maximum allowed delay between early on and early off hook for detecting hookflash */
-static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 
 /* Global jitterbuffer configuration */
 static struct ast_jb_conf global_jbconf;
@@ -2215,7 +2212,7 @@ void brcm_cancel_dialing_timeouts(struct brcm_pvt *p)
 	}
 }
 
-int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
+static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
 {
 	if (sub->channel_state == INCALL && sub->parent->hf_detected == 0) {
 		return 1;
@@ -2313,8 +2310,29 @@ static void *brcm_monitor_events(void *data)
 								brcm_create_connection(sub);
 							}
 
+							if (sub->cw_timer_id > -1) {
+								/* Picking up during reminder ringing for call waiting */
+								ast_sched_thread_del(sched, sub->cw_timer_id);
+								sub->cw_timer_id = -1;
+							}
 							brcm_subchannel_set_state(sub, INCALL);
 							ast_queue_control(owner, AST_CONTROL_ANSWER);
+						}
+						else if (sub_peer->channel_state == ONHOLD) {
+
+							/* Picking up during reminder ringing for call on hold */
+							ast_sched_thread_del(sched, sub_peer->onhold_hangup_timer_id);
+							sub_peer->onhold_hangup_timer_id = -1;
+
+							//Asterisk jitter buffer causes one way audio when going from unhold.
+							//This is a workaround until jitter buffer is handled by DSP.
+							ast_jb_destroy(peer_owner);
+
+							brcm_subchannel_set_state(sub, CALLENDED);
+							brcm_subchannel_set_state(sub_peer, INCALL);
+							brcm_unmute_connection(sub_peer);
+
+							ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
 						}
 						else if (sub->channel_state == OFFHOOK) {
 							/* EPEVT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
@@ -2379,19 +2397,18 @@ static void *brcm_monitor_events(void *data)
 
 						//TODO: possible bug below - we don't change the channel_state when hanging up
 
-						/* Hangup peer subchannels in call, on hold or in call waiting */
 						if (sub_peer->channel_state == CALLWAITING) {
-							if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
-								ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
-							}
-							sub_peer->cw_timer_id = -1;
-
-							if (peer_owner) {
-								peer_owner->hangupcause = AST_CAUSE_USER_BUSY;
-								ast_queue_control(peer_owner, AST_CONTROL_BUSY);
-							}
+							/* Remind user of waiting call */
+							brcm_subchannel_set_state(sub_peer, RINGING);
+							p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
+						}
+						else if (sub_peer->channel_state == ONHOLD) {
+							/* Remind user of call on hold */
+							sub_peer->onhold_hangup_timer_id = ast_sched_thread_add(sched, onholdhanguptimeout * 1000, onholdhanguptimeout_cb, sub_peer);
+							p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
 						}
 						else if (peer_owner && sub_peer->channel_state != TRANSFERING) {
+							/* Hangup peer subchannels in call or on hold */
 							ast_debug(2, "Hanging up call (not transfering)\n");
 							ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
 						}
@@ -4037,7 +4054,7 @@ int endpt_init(void)
 	vrgEndptInitCfg.currentPowerSource = 0;
 
 	/* Intialize endpoint */
-	rc = vrgEndptInit(&vrgEndptInitCfg,
+	vrgEndptInit(&vrgEndptInitCfg,
 			NULL,
 			NULL,
 			NULL,
@@ -4495,11 +4512,9 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 }
 
 
-static int isEndptInitialized()
+static int isEndptInitialized(void)
 {
 	ENDPOINTDRV_ISINITIALIZED_PARM tInitParm;
-	int retVal = 0;
-
 	tInitParm.size = sizeof(ENDPOINTDRV_ISINITIALIZED_PARM);
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ISINITIALIZED, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
