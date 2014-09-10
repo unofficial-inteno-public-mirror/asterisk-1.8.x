@@ -140,6 +140,15 @@ int ast_dnsmgr_lookup_cb(const char *name, struct ast_sockaddr *result, struct a
 int ast_dnsmgr_refresh(struct ast_dnsmgr_entry *entry);
 
 /*!
+ * \brief Attempt to use next IP from DNS record
+ * Call if there are problems connecting to current IP
+ *
+ * \retval non-zero if the IP was changed
+ * \retval zero if IP is the same as previous
+ */
+int ast_dnsmgr_next(struct ast_dnsmgr_entry *entry);
+
+/*!
  * \brief Check is see if a dnsmgr entry has changed
  *
  * \retval non-zero if the dnsmgr entry has changed since the last call to

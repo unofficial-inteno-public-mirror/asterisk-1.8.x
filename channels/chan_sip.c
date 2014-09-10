@@ -13346,7 +13346,7 @@ static int sip_reg_timeout(const void *data)
 	if (r->dnsmgr) {
 		struct sip_peer *peer;
 		/* If the registration has timed out, maybe the IP changed.  Force a refresh. */
-		ast_dnsmgr_refresh(r->dnsmgr);
+		ast_dnsmgr_next(r->dnsmgr);
 		/* If we are resolving a peer, we have to make sure the refreshed address gets copied */
 		if ((peer = find_peer(r->hostname, NULL, TRUE, FINDPEERS, FALSE, 0, NULL))) {
 			ast_sockaddr_copy(&peer->addr, &r->us);

@@ -50,6 +50,12 @@ static int refresh_sched = -1;
 static pthread_t refresh_thread = AST_PTHREADT_NULL;
 
 struct ast_dnsmgr_entry {
+	/*! number of resolved IP addresses */
+	unsigned int result_length;
+	/*! the resolved IP we currently provide */
+	int result_current;
+	/*! list of resolved IP addresses */
+	struct ast_sockaddr *result_list;
 	/*! where we will store the resulting IP address and port number */
 	struct ast_sockaddr *result;
 	/*! SRV record to lookup, if provided. Composed of service, protocol, and domain name: _Service._Proto.Name */
@@ -98,6 +104,10 @@ struct ast_dnsmgr_entry *ast_dnsmgr_get_family(const char *name, struct ast_sock
 		return NULL;
 	}
 
+	entry->result_length = 0;
+	entry->result_current = -1;
+	entry->result_list = NULL;
+
 	entry->result = result;
 	ast_mutex_init(&entry->lock);
 	strcpy(entry->name, name);
@@ -130,6 +140,7 @@ void ast_dnsmgr_release(struct ast_dnsmgr_entry *entry)
 	ast_verb(4, "removing dns manager for '%s'\n", entry->name);
 
 	ast_mutex_destroy(&entry->lock);
+	ast_free(entry->result_list);
 	ast_free(entry);
 }
 
@@ -159,10 +170,19 @@ static int internal_dnsmgr_lookup(const char *name, struct ast_sockaddr *result,
 	ast_verb(4, "doing dnsmgr_lookup for '%s'\n", name);
 
 	/* do a lookup now but add a manager so it will automagically get updated in the background */
-	ast_get_ip_or_srv(result, name, service);
+	struct ast_sockaddr *result_list = NULL;
+	int result_length;
+	result_length = ast_get_ips_or_srvs(&result_list, name, service, family);
+
+	if (result_length > 0) {
+		ast_sockaddr_copy(result, result_list);
+	}
 	
 	/* if dnsmgr is not enable don't bother adding an entry */
 	if (!enabled) {
+		if (result_length > 0) {
+			ast_free(result_list);
+		}
 		return 0;
 	}
 	
@@ -170,6 +190,9 @@ static int internal_dnsmgr_lookup(const char *name, struct ast_sockaddr *result,
 	*dnsmgr = ast_dnsmgr_get_family(name, result, service, family);
 	(*dnsmgr)->update_func = func;
 	(*dnsmgr)->data = data;
+	(*dnsmgr)->result_list = result_list;
+	(*dnsmgr)->result_length = result_length;
+	(*dnsmgr)->result_current = 0;
 	return !*dnsmgr;
 }
 
@@ -183,13 +206,30 @@ int ast_dnsmgr_lookup_cb(const char *name, struct ast_sockaddr *result, struct a
 	return internal_dnsmgr_lookup(name, result, dnsmgr, service, func, data);
 }
 
+static void reverse(struct ast_sockaddr *a, int sz) {
+	int i, j;
+	for (i = 0, j = sz; i < j; i++, j--) {
+		struct ast_sockaddr *tmp = &(a[i]);
+		a[i] = a[j];
+		a[j] = *tmp;
+	}
+}
+
+static void rotate(struct ast_sockaddr *a, int size, int amt) {
+	if (amt < 0)
+		amt = size + amt;
+	reverse(a, size-amt-1);
+	reverse(a + size-amt, amt-1);
+	reverse(a, size-1);
+}
+
 /*
  * Refresh a dnsmgr entry
  */
 static int dnsmgr_refresh(struct ast_dnsmgr_entry *entry, int verbose)
 {
-	struct ast_sockaddr tmp = { .len = 0, };
 	int changed = 0;
+	int i;
 
 	ast_mutex_lock(&entry->lock);
 
@@ -197,35 +237,97 @@ static int dnsmgr_refresh(struct ast_dnsmgr_entry *entry, int verbose)
 		ast_verb(3, "refreshing '%s'\n", entry->name);
 	}
 
-	tmp.ss.ss_family = entry->family;
-	if (!ast_get_ip_or_srv(&tmp, entry->name, entry->service)) {
-		if (!ast_sockaddr_port(&tmp)) {
-			ast_sockaddr_set_port(&tmp, ast_sockaddr_port(entry->result));
-		}
-		if (ast_sockaddr_cmp(&tmp, entry->result)) {
-			const char *old_addr = ast_strdupa(ast_sockaddr_stringify(entry->result));
-			const char *new_addr = ast_strdupa(ast_sockaddr_stringify(&tmp));
+	struct ast_sockaddr *result_list = NULL;
+	int result_length = 0;
+	result_length = ast_get_ips_or_srvs(&result_list, entry->name, entry->service, entry->family);
 
+	if (result_length > 0) {
+		for (i = 0; i < result_length; i++) {
+			if (!ast_sockaddr_port(&(result_list[i]))) {
+				ast_sockaddr_set_port(&(result_list[i]), ast_sockaddr_port(entry->result));
+			}
+		}
+
+		int current_sockaddr_valid = 0;
+
+		if (entry->result_current >= 0) {
+			//Check if our current IP is still OK to use, if it is we dont change it
+			for (i = 0; i < result_length; i++) {
+				if (ast_sockaddr_cmp(entry->result, &(result_list[i])) == 0) {
+					//Currently used IP is still valid, no need to change it, but we should rotate list to place this one first
+					current_sockaddr_valid = 1;
+					rotate(result_list, result_length, i);
+					break;
+				}
+			}
+		}
+
+		//We need to change IP, because the one we use is not valid any more.
+		if (!current_sockaddr_valid) {
 			if (entry->update_func) {
-				entry->update_func(entry->result, &tmp, entry->data);
+				entry->update_func(entry->result, result_list, entry->data);
 			} else {
+				const char *old_addr = ast_strdupa(ast_sockaddr_stringify(entry->result));
+				const char *new_addr = ast_strdupa(ast_sockaddr_stringify(&(result_list[0])));
 				ast_log(LOG_NOTICE, "dnssrv: host '%s' changed from %s to %s\n",
 						entry->name, old_addr, new_addr);
-
-				ast_sockaddr_copy(entry->result, &tmp);
+				ast_sockaddr_copy(entry->result, result_list);
 				changed = entry->changed = 1;
 			}
 		}
+
+		entry->result_list = result_list;
+		entry->result_current = 0;
+		entry->result_length = result_length;
 	}
 
 	ast_mutex_unlock(&entry->lock);
-
 	return changed;
+}
+
+static int dnsmgr_next(struct ast_dnsmgr_entry *entry)
+{
+	struct ast_sockaddr* next;
+	ast_mutex_lock(&entry->lock);
+
+	if (entry->result_current < entry->result_length - 1) {
+		/* Try next address from our internal list */
+		entry->result_current++;
+		next = &(entry->result_list[entry->result_current]);
+
+		if (!ast_sockaddr_port(next)) {
+			ast_sockaddr_set_port(next, ast_sockaddr_port(entry->result));
+		}
+
+		if (entry->update_func) {
+			entry->update_func(entry->result, next, entry->data);
+		} else {
+			const char *old_addr = ast_strdupa(ast_sockaddr_stringify(entry->result));
+			const char *new_addr = ast_strdupa(ast_sockaddr_stringify(next));
+			ast_log(LOG_NOTICE, "dnssrv: host '%s' changed from %s to %s\n",
+					entry->name, old_addr, new_addr);
+			ast_sockaddr_copy(entry->result, next);
+			entry->changed = 1;
+		}
+		ast_mutex_unlock(&entry->lock);
+		return 1;
+	}
+	else {
+		/* No stored addresses remaining, force refresh */
+		entry->result_current = -1; /* indicate that we have no valid result */
+		ast_mutex_unlock(&entry->lock);
+		return dnsmgr_refresh(entry, 0);
+	}
 }
 
 int ast_dnsmgr_refresh(struct ast_dnsmgr_entry *entry)
 {
 	return dnsmgr_refresh(entry, 0);
+}
+
+int ast_dnsmgr_next(struct ast_dnsmgr_entry *entry)
+{
+	return dnsmgr_next(entry);
 }
 
 /*

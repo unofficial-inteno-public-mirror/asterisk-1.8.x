@@ -611,6 +611,32 @@ int ast_get_ip_or_srv(struct ast_sockaddr *addr, const char *hostname, const cha
 	return 0;
 }
 
+int ast_get_ips_or_srvs(struct ast_sockaddr **addr_list, const char *hostname, const char *service, unsigned int family)
+{
+	int addrs_cnt;
+	char srv[256];
+	char host[256];
+	int srv_ret = 0;
+	int tportno;
+
+	if (service) {
+		snprintf(srv, sizeof(srv), "%s.%s", service, hostname);
+		if ((srv_ret = ast_get_srv(NULL, host, sizeof(host), &tportno, srv)) > 0) {
+			hostname = host;
+		}
+	}
+
+	addrs_cnt = ast_sockaddr_resolve(addr_list, hostname, PARSE_PORT_FORBID, family);
+
+	if (srv_ret > 0) {
+		int i;
+		for (i = 0; i < addrs_cnt; i++) {
+			ast_sockaddr_set_port(addr_list[i], tportno);
+		}
+	}
+	return addrs_cnt;
+}
+
 struct dscp_codepoint {
 	char *name;
 	unsigned int space;

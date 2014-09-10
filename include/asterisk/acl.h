@@ -53,6 +53,8 @@ struct ast_ha {
 	struct ast_ha *next;
 };
 
+int ast_get_ips_or_srvs(struct ast_sockaddr **addr_list, const char *hostname, const char *service, unsigned int family);
+
 /*!
  * \brief Free a list of HAs
  *
