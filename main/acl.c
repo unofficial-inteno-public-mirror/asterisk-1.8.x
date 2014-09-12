@@ -619,6 +619,8 @@ int ast_get_ips_or_srvs(struct ast_sockaddr **addr_list, const char *hostname, c
 	int srv_ret = 0;
 	int tportno;
 
+	ast_debug(1, "Resolving host %s and service %s\n", hostname, service);
+
 	if (service) {
 		snprintf(srv, sizeof(srv), "%s.%s", service, hostname);
 		if ((srv_ret = ast_get_srv(NULL, host, sizeof(host), &tportno, srv)) > 0) {
@@ -634,6 +636,15 @@ int ast_get_ips_or_srvs(struct ast_sockaddr **addr_list, const char *hostname, c
 			ast_sockaddr_set_port(addr_list[i], tportno);
 		}
 	}
+
+	ast_debug(1, "%s resolved to the following %d addresses:\n", hostname, addrs_cnt);
+	int i;
+	for (i=0; i<addrs_cnt; i++) {
+		struct ast_sockaddr *addrpointer = &((*addr_list)[i]);
+		const char *addrstring = ast_strdupa(ast_sockaddr_stringify(addrpointer));
+		ast_debug(1, "%s\n", addrstring);
+	}
+
 	return addrs_cnt;
 }
 
