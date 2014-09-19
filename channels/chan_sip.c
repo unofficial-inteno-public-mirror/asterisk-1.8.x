@@ -714,6 +714,7 @@ static int global_rtpholdtimeout;   /*!< Time out call if no RTP during hold */
 static int global_rtpkeepalive;     /*!< Send RTP keepalives */
 static int global_reg_timeout;      /*!< Global time between attempts for outbound registrations */
 static int global_reg_forb_timeout; /*!< Global time between attempts for outbound registrations, if 403 Forbidden was received */
+static int global_reg_service_unavailable_timeout; /*!< Global time between attempts for outbound registrations, if 503 Service Unavailable was received */
 static int global_regattempts_backoff;   /*!< Registration attempts before entering back-off state */
 static int global_reg_backoff_timeout;   /*!< Global time between attempts for outbound registrations in backoff state */
 static int global_regattempts_max;  /*!< Registration attempts before giving up */
@@ -18441,6 +18442,7 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 	ast_cli(a->fd, "  Outbound reg. backoff timeout: %d\n", global_reg_backoff_timeout);
 	ast_cli(a->fd, "  Outbound reg. attempts: %d\n", global_regattempts_max);
 	ast_cli(a->fd, "  Outbound reg. forb. timeout: %d %s\n", global_reg_forb_timeout, global_reg_forb_timeout ? "" : "(Disabled)");
+	ast_cli(a->fd, "  Outbound reg. unavai. timeout: %d %s\n", global_reg_service_unavailable_timeout, global_reg_service_unavailable_timeout ? "" : "(Disabled)");
 	ast_cli(a->fd, "  Notify ringing state:   %s\n", AST_CLI_YESNO(sip_cfg.notifyringing));
 	if (sip_cfg.notifyringing) {
 		ast_cli(a->fd, "    Include CID:          %s%s\n",
@@ -20912,6 +20914,7 @@ static void handle_response_refer(struct sip_pvt *p, int resp, const char *rest,
 static int handle_response_register(struct sip_pvt *p, int resp, const char *rest, struct sip_request *req, int seqno)
 {
 	int expires, expires_ms;
+	int timeout;
 	struct sip_registry *r;
 	r=p->registry;
 	
@@ -20981,6 +20984,20 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 			r->call = dialog_unref(r->call, "unsetting registry->call pointer-- case 479");
 		r->regstate = REG_STATE_REJECTED;
 		AST_SCHED_DEL_UNREF(sched, r->timeout, registry_unref(r, "reg ptr unref from handle_response_register 479"));
+		break;
+	case 503: /* 503 Service unavailable */
+		ast_log(LOG_WARNING, "Got error 503 on register to %s@%s\n", p->registry->username, p->registry->hostname);
+		AST_SCHED_DEL_UNREF(sched, r->timeout, registry_unref(r, "reg ptr unref from handle_response_register 503"));
+		r->regstate = REG_STATE_UNREGISTERED; //Not an ideal state, but best available?
+		pvt_set_needdestroy(p, "received 503 response");
+		if (global_regattempts_backoff && r->regattempts >= global_regattempts_backoff) {
+			/* In back-off state, keep trying to register but change the timeout */
+			timeout = global_reg_backoff_timeout;
+		} else {
+			timeout = global_reg_service_unavailable_timeout;
+		}
+		r->timeout = ast_sched_add(sched, timeout * 1000, sip_reg_timeout, registry_addref(r, "503 on (re)register"));
+		ast_debug(1, "Scheduled a 503 registration timeout for %s id #%d \n", r->hostname, r->timeout);
 		break;
 	case 200:	/* 200 OK */
 		if (!r) {
@@ -21476,6 +21493,28 @@ static void handle_response(struct sip_pvt *p, int resp, const char *rest, struc
 				handle_response_invite(p, resp, rest, req, seqno);
 			else
 				ast_log(LOG_WARNING, "Host '%s' does not implement '%s'\n", ast_sockaddr_stringify(&p->sa), msg);
+			break;
+		case 503:
+			if (sipmethod == SIP_REGISTER && global_reg_service_unavailable_timeout > 0) {
+				handle_response_register(p, resp, rest, req, seqno);
+			} else {
+				/* Fatal response */
+				ast_verb(3, "Got SIP response %d \"%s\" back from %s\n", resp, rest, ast_sockaddr_stringify(&p->sa));
+
+				if (sipmethod == SIP_INVITE)
+					stop_media_flows(p); /* Immediately stop RTP, VRTP and UDPTL as applicable */
+
+				if (owner)
+					ast_queue_control(p->owner, AST_CONTROL_CONGESTION);
+
+				/* ACK on invite */
+				if (sipmethod == SIP_INVITE)
+					transmit_request(p, SIP_ACK, seqno, XMIT_UNRELIABLE, FALSE);
+				sip_alreadygone(p);
+				if (!p->owner) {
+					pvt_set_needdestroy(p, "transaction completed");
+				}
+			}
 			break;
 		default:
 			if ((resp >= 300) && (resp < 700)) {
@@ -28381,6 +28420,7 @@ static int reload_config(enum channelreloadreason reason)
 	sip_cfg.compactheaders = DEFAULT_COMPACTHEADERS;
 	global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
 	global_reg_forb_timeout = DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT;
+	global_reg_service_unavailable_timeout = DEFAULT_GLOBAL_REG_SERVICE_UNAVAILABLE_TIMEOUT;
 	global_regattempts_max = 0;
 	global_regattempts_backoff = 0;
 	global_reg_backoff_timeout = DEFAULT_REGISTRATION_BACKOFF_TIMEOUT;
@@ -28750,7 +28790,14 @@ static int reload_config(enum channelreloadreason reason)
 			if (global_reg_forb_timeout < 0) {
 				global_reg_forb_timeout = DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT;
 			}
-		} else if (!strcasecmp(v->name, "registerattempts")) {
+		}
+		else if (!strcasecmp(v->name, "register503timeout")) {
+			global_reg_service_unavailable_timeout = atoi(v->value);
+			if (global_reg_service_unavailable_timeout < 0) {
+				global_reg_service_unavailable_timeout = DEFAULT_GLOBAL_REG_SERVICE_UNAVAILABLE_TIMEOUT;
+			}
+		}
+		else if (!strcasecmp(v->name, "registerattempts")) {
 			global_regattempts_max = atoi(v->value);
 		} else if (!strcasecmp(v->name, "bindaddr") || !strcasecmp(v->name, "udpbindaddr")) {
 			if (ast_parse_arg(v->value, PARSE_ADDR, &bindaddr)) {

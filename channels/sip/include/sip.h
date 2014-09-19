@@ -59,6 +59,7 @@
 #define DEFAULT_REGISTRATION_TIMEOUT 20
 #define DEFAULT_REGISTRATION_FORBIDDEN_TIMEOUT 0	/*!< How long before retrying REGISTER after 403, 0 = do not retry */
 #define DEFAULT_REGISTRATION_BACKOFF_TIMEOUT 0	        /*!< How long before retrying REGISTER in backoff state, 0 = do not retry */
+#define DEFAULT_GLOBAL_REG_SERVICE_UNAVAILABLE_TIMEOUT 0    /*!< How long before retrying REGISTER after 503, 0 = do not retry */
 #define DEFAULT_MAX_FORWARDS         70
 
 #define DEFAULT_AUTHLIMIT            100
