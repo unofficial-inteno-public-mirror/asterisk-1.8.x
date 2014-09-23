@@ -323,6 +323,7 @@ void handle_dtmf_calling(struct brcm_subchannel *sub);
 void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
 void brcm_cancel_dialing_timeouts(struct brcm_pvt *p);
 
+int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
 int get_dtmf_relay_type(struct brcm_subchannel *sub);
 
 #endif /* CHAN_BRCM_H */

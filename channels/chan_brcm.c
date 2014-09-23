@@ -94,7 +94,6 @@ static void brcm_extension_state_unregister(struct brcm_pvt *p);
 static dialtone_state extension_state2dialtone_state(int state);
 static int extension_state_cb(char *context, char* exten, int state, void *data);
 static int brcm_in_conference(const struct brcm_pvt *p);
-static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub);
 static int isEndptInitialized(void);
 
 /* Global brcm channel parameters */
@@ -2212,7 +2211,7 @@ void brcm_cancel_dialing_timeouts(struct brcm_pvt *p)
 	}
 }
 
-static int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
+int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
 {
 	if (sub->channel_state == INCALL && sub->parent->hf_detected == 0) {
 		return 1;
