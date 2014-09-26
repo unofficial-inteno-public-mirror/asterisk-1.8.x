@@ -67,16 +67,16 @@
 
 /* guard limit must be larger than guard secs */
 /* guard min must be < 1000, and should be >= 250 */
-#define EXPIRY_GUARD_SECS    15   /*!< How long before expiry do we reregister */
-#define EXPIRY_GUARD_LIMIT   30   /*!< Below here, we use EXPIRY_GUARD_PCT instead of EXPIRY_GUARD_SECS */
-#define EXPIRY_GUARD_MIN     500  /*!< This is the minimum guard time applied. If
-                                   *   GUARD_PCT turns out to be lower than this, it
-                                   *   will use this time instead.
-                                   *   This is in milliseconds.
+#define DEFAULT_EXPIRY_GUARD_SECS    15   /*!< How long before expiry do we reregister */
+#define DEFAULT_EXPIRY_GUARD_LIMIT   30   /*!< Below here, we use EXPIRY_GUARD_PCT instead of EXPIRY_GUARD_SECS */
+#define EXPIRY_GUARD_MIN             500  /*!< This is the minimum guard time applied. If
+                                           *   GUARD_PCT turns out to be lower than this, it
+                                           *   will use this time instead.
+                                           *   This is in milliseconds.
 								   */
-#define EXPIRY_GUARD_PCT     0.20 /*!< Percentage of expires timeout to use when
-                                   *   below EXPIRY_GUARD_LIMIT */
-#define DEFAULT_EXPIRY       900  /*!< Expire slowly */
+#define DEFAULT_EXPIRY_GUARD_PCT     0.20 /*!< Percentage of expires timeout to use when
+                                           *   below EXPIRY_GUARD_LIMIT */
+#define DEFAULT_EXPIRY       900          /*!< Expire slowly */
 
 #define DEFAULT_QUALIFY_GAP   100
 #define DEFAULT_QUALIFY_PEERS 1

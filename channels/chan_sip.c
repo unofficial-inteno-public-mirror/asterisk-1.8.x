@@ -560,6 +560,9 @@ static int min_expiry = DEFAULT_MIN_EXPIRY;        /*!< Minimum accepted registr
 static int max_expiry = DEFAULT_MAX_EXPIRY;        /*!< Maximum accepted registration time */
 static int default_expiry = DEFAULT_DEFAULT_EXPIRY;
 static int mwi_expiry = DEFAULT_MWI_EXPIRY;
+static int expiry_guard_secs = DEFAULT_EXPIRY_GUARD_SECS;
+static int expiry_guard_limit = DEFAULT_EXPIRY_GUARD_LIMIT;
+static double expiry_guard_pct = DEFAULT_EXPIRY_GUARD_PCT;
 
 static int unauth_sessions = 0;
 static int authlimit = DEFAULT_AUTHLIMIT;
@@ -18437,6 +18440,9 @@ static char *sip_show_settings(struct ast_cli_entry *e, int cmd, struct ast_cli_
 	ast_cli(a->fd, "  Reg. min duration       %d secs\n", min_expiry);
 	ast_cli(a->fd, "  Reg. max duration:      %d secs\n", max_expiry);
 	ast_cli(a->fd, "  Reg. default duration:  %d secs\n", default_expiry);
+	ast_cli(a->fd, "  Outbound reg. guard:    %d secs\n", expiry_guard_secs);
+	ast_cli(a->fd, "  Outbound reg. guard limit: %d secs\n", expiry_guard_limit);
+	ast_cli(a->fd, "  Outbound reg. guard pct: %d%%\n", (int) (expiry_guard_pct * 100));
 	ast_cli(a->fd, "  Outbound reg. timeout:  %d secs\n", global_reg_timeout);
 	ast_cli(a->fd, "  Outbound reg. backoff:  %d\n", global_regattempts_backoff);
 	ast_cli(a->fd, "  Outbound reg. backoff timeout: %d\n", global_reg_backoff_timeout);
@@ -21058,10 +21064,10 @@ static int handle_response_register(struct sip_pvt *p, int resp, const char *res
 			expires=default_expiry;
 		
 		expires_ms = expires * 1000;
-		if (expires <= EXPIRY_GUARD_LIMIT)
-			expires_ms -= MAX((expires_ms * EXPIRY_GUARD_PCT), EXPIRY_GUARD_MIN);
+		if (expires <= expiry_guard_limit)
+			expires_ms -= MAX((expires_ms * expiry_guard_pct), EXPIRY_GUARD_MIN);
 		else
-			expires_ms -= EXPIRY_GUARD_SECS * 1000;
+			expires_ms -= expiry_guard_secs * 1000;
 		if (sipdebug)
 			ast_log(LOG_NOTICE, "Outbound Registration: Expiry for %s is %d sec (Scheduling reregistration in %d s)\n", r->hostname, expires, expires_ms/1000);
 		
@@ -28777,6 +28783,21 @@ static int reload_config(enum channelreloadreason reason)
 			global_reg_timeout = atoi(v->value);
 			if (global_reg_timeout < 1) {
 				global_reg_timeout = DEFAULT_REGISTRATION_TIMEOUT;
+			}
+		} else if (!strcasecmp(v->name, "registertimeoutguardsecs")) {
+			expiry_guard_secs = atoi(v->value);
+			if (expiry_guard_secs < 0) {
+				expiry_guard_secs = DEFAULT_EXPIRY_GUARD_SECS;
+			}
+		} else if (!strcasecmp(v->name, "registertimeoutguardlimit")) {
+			expiry_guard_limit = atoi(v->value);
+			if (expiry_guard_limit < 0) {
+				expiry_guard_limit = DEFAULT_EXPIRY_GUARD_LIMIT;
+			}
+		} else if (!strcasecmp(v->name, "registertimeoutguardpct")) {
+			expiry_guard_pct = atoi(v->value) / (double) 100;
+			if (expiry_guard_pct < 0 || expiry_guard_pct > 1) {
+				expiry_guard_pct = DEFAULT_EXPIRY_GUARD_PCT;
 			}
 		} else if (!strcasecmp(v->name, "registertimeoutbackoff")) {
 			global_reg_backoff_timeout = atoi(v->value);
