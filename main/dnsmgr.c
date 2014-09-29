@@ -209,9 +209,9 @@ int ast_dnsmgr_lookup_cb(const char *name, struct ast_sockaddr *result, struct a
 static void reverse(struct ast_sockaddr *a, int sz) {
 	int i, j;
 	for (i = 0, j = sz; i < j; i++, j--) {
-		struct ast_sockaddr *tmp = &(a[i]);
+		struct ast_sockaddr tmp = a[i];
 		a[i] = a[j];
-		a[j] = *tmp;
+		a[j] = tmp;
 	}
 }
 
@@ -256,7 +256,7 @@ static int dnsmgr_refresh(struct ast_dnsmgr_entry *entry, int verbose)
 				if (ast_sockaddr_cmp(entry->result, &(result_list[i])) == 0) {
 					//Currently used IP is still valid, no need to change it, but we should rotate list to place this one first
 					current_sockaddr_valid = 1;
-					rotate(result_list, result_length, i);
+					rotate(result_list, result_length, result_length - i);
 					break;
 				}
 			}
