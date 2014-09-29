@@ -192,7 +192,7 @@ static int internal_dnsmgr_lookup(const char *name, struct ast_sockaddr *result,
 	(*dnsmgr)->data = data;
 	(*dnsmgr)->result_list = result_list;
 	(*dnsmgr)->result_length = result_length;
-	(*dnsmgr)->result_current = 0;
+	(*dnsmgr)->result_current = (result_length > 0) ? 0 : -1; /* Indicate that we have no valid result if lookup was empty */
 	return !*dnsmgr;
 }
 
@@ -290,7 +290,7 @@ static int dnsmgr_next(struct ast_dnsmgr_entry *entry)
 	struct ast_sockaddr* next;
 	ast_mutex_lock(&entry->lock);
 
-	if (entry->result_current < entry->result_length - 1) {
+	if (entry->result_length && entry->result_current < entry->result_length - 1) {
 		/* Try next address from our internal list */
 		entry->result_current++;
 		next = &(entry->result_list[entry->result_current]);
