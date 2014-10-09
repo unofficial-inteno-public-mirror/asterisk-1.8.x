@@ -26,6 +26,9 @@ ifneq ($(findstring $(OSARCH), mingw32 cygwin ),)
   res_agi.so_LIBS:= -lres_speech.so
 endif
 
+res_ubus.so: _ASTLDFLAGS+= \
+	-lubus -lubox
+
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
 ael/ael_lex.o: ael/ael_lex.c ../include/asterisk/ael_structs.h ael/ael.tab.h
