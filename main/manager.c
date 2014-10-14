@@ -1964,7 +1964,7 @@ static int send_string(struct mansession *s, char *string)
 		 * to send responses, we're using the same function
 		 * as for receiving events. We call the event "HookResponse"
 		 */
-		s->hook->helper(EVENT_FLAG_HOOKRESPONSE, "HookResponse", string);
+		s->hook->helper(EVENT_FLAG_HOOKRESPONSE, "HookResponse", string, s->hook->data);
 		return 0;
 	}
        
@@ -5104,7 +5104,7 @@ int __ast_manager_event_multichan(int category, const char *event, int chancount
 	if (!AST_RWLIST_EMPTY(&manager_hooks)) {
 		AST_RWLIST_RDLOCK(&manager_hooks);
 		AST_RWLIST_TRAVERSE(&manager_hooks, hook, list) {
-			hook->helper(category, event, ast_str_buffer(buf));
+			hook->helper(category, event, ast_str_buffer(buf), hook->data);
 		}
 		AST_RWLIST_UNLOCK(&manager_hooks);
 	}

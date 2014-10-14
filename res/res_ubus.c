@@ -1,78 +1,101 @@
 #include "asterisk.h"
 #include "asterisk/module.h"
+#include "asterisk/manager.h"
 #include "asterisk/config.h"
+
+#include "ubus/manager_listener.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/uloop.h>
 #include <libubox/ustream.h>
 #include <libubox/utils.h>
 #include <libubus.h>
+#include <pthread.h>
+#include <signal.h>
 
 static void *ubus_thread(void *arg);
+
 static struct ubus_context *ubus_setup(void);
 static void ubus_disconnect(struct ubus_context **ctx);
 static void ubus_connection_lost_cb(struct ubus_context *ctx);
 static int ubus_add_objects(struct ubus_context *ctx);
 static void system_fd_set_cloexec(int fd);
+static int ubus_connected = 0;
 
-static bool running = false;
+static void manager_handle_event(struct manager_listener *mgr, int fd);
+
+static int running = 0;
 static pthread_t ubus_thread_handle;
-static bool ubus_connected = false;
 
 
 /****************************/
 /* UBUS interface functions */
 /****************************/
 
-/* Main thread */
+// Main thread
 static void *ubus_thread(void *arg)
 {
-	struct ubus_context* ctx;	/* ubus context */
+	struct ubus_context* ctx;		// ubus context
+	struct manager_listener* mgr;	// manager listener context
+	int mgr_fd[2];
 
-	fd_set fset;				/* FD set */
-	struct timeval timeout;		/* Timeout for select */
-	int rv;						/* Select return value */
+	fd_set fset;				// FD set
+	struct timeval timeout;		// Timeout for select
+	int rv;						// select() return value
 
-	/* Initialize */
+	// Setup
 	ctx = ubus_setup();
+	if (pipe(mgr_fd) < 0) {
+		ast_log(LOG_ERROR, "Failed to open pipe: %s\n", strerror(errno));
+		return NULL;
+	}
+	mgr = manager_listener_setup(mgr_fd[1]);
 
 	while (running) {
 		FD_ZERO(&fset);
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
 
+		FD_SET(mgr_fd[0], &fset);
 		if (ubus_connected) {
 			FD_SET(ctx->sock.fd, &fset);
 		}
 
-		/* Wait for events from ubus */
-		ast_log(LOG_ERROR, "ubus select\n");
+		// Wait for events from ubus or manager
 		rv = select(FD_SETSIZE, &fset, NULL, NULL, &timeout);
+		ast_log(LOG_ERROR, "tick\n");
 		if(rv < 0) {
 			if (errno == EINTR) {
 				continue;
 			}
-			ast_log(LOG_ERROR, "res_ubus error: %s\n", strerror(errno));
+			ast_log(LOG_ERROR, "error: %s\n", strerror(errno));
 			ubus_disconnect(&ctx);
 		}
 
 		if (ubus_connected && FD_ISSET(ctx->sock.fd, &fset)) {
-			/* Connected to ubus and data available */
+			// Connected to ubus and data available
 			ubus_handle_event(ctx);
 		}
 		else if (!ubus_connected) {
-			/* Try to setup ubus connection again */
+			// Try to setup ubus connection again
 			if (ctx && ubus_reconnect(ctx, NULL) == 0) {
 				ast_log(LOG_DEBUG, "UBUS reconnected\n");
-				ubus_connected = true;
+				ubus_connected = 1;
 				system_fd_set_cloexec(ctx->sock.fd);
 			}
 			else if (!ctx) {
 				ctx = ubus_setup();
 			}
 		}
+
+		if (FD_ISSET(mgr_fd[0], &fset)) {
+			// New manager data available
+			manager_handle_event(mgr, mgr_fd[0]);
+		}
 	}
 
+	// Teardown
+	manager_listener_free(mgr);
 	if (ctx) {
 		ubus_disconnect(&ctx);
 	}
@@ -80,13 +103,14 @@ static void *ubus_thread(void *arg)
 	return NULL;
 }
 
-/* Initialize ubus connection and register asterisk object */
+// Initialize ubus connection and register asterisk object
 static struct ubus_context *ubus_setup(void)
 {
+	return NULL;
 	struct ubus_context *ctx = NULL;
 
 	ast_log(LOG_DEBUG, "Connecting to UBUS\n");
-	ubus_connected = false;
+	ubus_connected = 0;
 	ctx = ubus_connect(NULL);
 
 	if (ctx) {
@@ -97,7 +121,7 @@ static struct ubus_context *ubus_setup(void)
 			ubus_disconnect(&ctx);
 		}
 		else {
-			ubus_connected = true;
+			ubus_connected = 1;
 		}
 	}
 
@@ -108,13 +132,13 @@ static void ubus_disconnect(struct ubus_context **ctx)
 {
 	ubus_free(*ctx);
 	*ctx = NULL;
-	ubus_connected = false;
+	ubus_connected = 0;
 }
 
 static void ubus_connection_lost_cb(struct ubus_context *ctx)
 {
 	ast_log(LOG_WARNING, "UBUS connection lost\n");
-	ubus_connected = false;
+	ubus_connected = 0;
 }
 
 static void system_fd_set_cloexec(int fd)
@@ -182,15 +206,37 @@ static int ubus_add_objects(struct ubus_context *ctx)
 }
 
 
-/********************/
-/* Module interface */
-/********************/
+/*****************************************/
+/* Asterisk module and manager interface */
+/*****************************************/
+
+void manager_handle_event(struct manager_listener *mgr, int fd)
+{
+	char c;
+
+	if (read(fd, &c, sizeof(char)) < 0) {
+		ast_log(LOG_ERROR, "Failed to read manager fd: %s\n", strerror(errno));
+	}
+	else {
+		struct manager_listener_data *data;
+		while ((data = manager_listener_get_next_data(mgr))) {
+			ast_log(LOG_DEBUG, "Got: [%d] [%s] [%s]\n",
+					manager_listener_data_get_category(data),
+					manager_listener_data_get_event(data),
+					manager_listener_data_get_content(data));
+
+			//TODO
+
+			manager_listener_data_free(data);
+		}
+	}
+}
 
 static int ubus_load(void)
 {
-	running = true;
+	running = 1;
 	if (ast_pthread_create_detached_background(&ubus_thread_handle, NULL, ubus_thread, NULL) < 0) {
-		/* Could not start thread */
+		// Could not start thread
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
@@ -226,6 +272,7 @@ static int unload_module(void)
 {
 	return ubus_unload();
 }
+
 
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_GLOBAL_SYMBOLS | AST_MODFLAG_LOAD_ORDER, "UBUS Resource",
 		.load = load_module,

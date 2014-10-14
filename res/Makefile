@@ -26,8 +26,11 @@ ifneq ($(findstring $(OSARCH), mingw32 cygwin ),)
   res_agi.so_LIBS:= -lres_speech.so
 endif
 
-res_ubus.so: _ASTLDFLAGS+= \
-	-lubus -lubox
+ubus/manager_listener.o: ubus/manager_listener.c ubus/manager_listener.h
+ubus/manager_listener.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
+$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/manager_listener.o
+$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): _ASTLDFLAGS+=-lubus -lubox
+res_ubus.o: ASTCFLAGS+=-Wall -Werror
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
@@ -70,4 +73,4 @@ endif
 ael/pval.o: ael/pval.c
 
 clean::
-	rm -f snmp/*.o snmp/*.i ael/*.o ael/*.i ais/*.o ais/*.i
+	rm -f snmp/*.o snmp/*.i ael/*.o ael/*.i ais/*.o ais/*.i ubus/*.o ubus/*.i
