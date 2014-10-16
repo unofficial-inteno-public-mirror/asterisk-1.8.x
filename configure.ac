@@ -456,6 +456,8 @@ AST_EXT_LIB_SETUP([VORBIS], [Vorbis], [vorbis])
 AST_EXT_LIB_SETUP([VPB], [Voicetronix API], [vpb])
 AST_EXT_LIB_SETUP([X11], [X11], [x11])
 AST_EXT_LIB_SETUP([ZLIB], [zlib compression], [z])
+AST_EXT_LIB_SETUP([UBUS], [ubus lib], [ubus])
+AST_EXT_LIB_SETUP([UBOX], [ubox lib], [ubox])
 
 # check for basic system features and functionality before
 # checking for package libraries
@@ -1995,6 +1997,9 @@ AST_EXT_LIB_CHECK([SQLITE], [sqlite], [sqlite_exec], [sqlite.h])
 AST_EXT_LIB_CHECK([SQLITE3], [sqlite3], [sqlite3_open], [sqlite3.h], [${PTHREAD_LIBS}], [${PTHREAD_CFLAGS}])
 
 AST_EXT_LIB_CHECK([CRYPTO], [crypto], [AES_encrypt], [openssl/aes.h])
+
+AST_EXT_LIB_CHECK([UBUS], [ubus], [ubus_connect], [libubus.h])
+AST_EXT_LIB_CHECK([UBOX], [ubox], [uloop_run], [libubox/uloop.h])
 
 if test "$PBX_CRYPTO" = "1";
 then
