@@ -27,8 +27,9 @@ ifneq ($(findstring $(OSARCH), mingw32 cygwin ),)
 endif
 
 ubus/ami.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o $(UBUS_LIB) $(UBOX_LIB)
 ubus/ami.o: ubus/ami.c ubus/ami.h
+res_ubus.so: LIBS+=-lubus -lubox
+$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
