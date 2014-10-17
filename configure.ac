@@ -1009,7 +1009,7 @@ AC_LINK_IFELSE(
 			#include <resolv.h>],
 			[int foo = res_ninit(NULL);])],
 	AC_MSG_RESULT(yes)
-	AC_DEFINE([HAVE_RES_NINIT], 1, [Define to 1 if your system has the re-entrant resolver functions.])
+	AC_DEFINE([HAVE_RES_NINIT], 0, [Define to 1 if your system has the re-entrant resolver functions.])
 	AC_SEARCH_LIBS(res_9_ndestroy, resolv)
 	AC_MSG_CHECKING(for res_ndestroy)
 	AC_LINK_IFELSE(
