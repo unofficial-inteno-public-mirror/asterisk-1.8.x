@@ -244,7 +244,7 @@ static int dns_parse_answer(void *context,
 	return ret;
 }
 
-#ifndef HAVE_RES_NINIT
+#if !defined(HAVE_RES_NINIT) || defined(__UCLIBC__)
 AST_MUTEX_DEFINE_STATIC(res_lock);
 #endif
 
@@ -262,7 +262,7 @@ int ast_search_dns(void *context,
 	unsigned char answer[MAX_SIZE];
 	int res, ret = -1;
 
-#ifdef HAVE_RES_NINIT
+#if defined(HAVE_RES_NINIT) && !defined(__UCLIBC__)
 	memset(&dnsstate, 0, sizeof(dnsstate));
 	res_ninit(&dnsstate);
 	res = res_nsearch(&dnsstate, dname, class, type, answer, sizeof(answer));
