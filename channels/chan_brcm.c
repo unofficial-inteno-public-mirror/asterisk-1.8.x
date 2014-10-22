@@ -114,9 +114,6 @@ static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | A
 struct ast_sched_thread *sched; //Scheduling thread
 static int pcmShimFile = -1;
 
-sem_t event_available;	// Event available to brcm_monitor_events()?
-sem_t packet_available;	// Packet available to brcm_monitor_packets()?
-
 /* Call waiting */
 static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 
@@ -257,26 +254,6 @@ static struct brcm_channel_tech fxs_tech = {
 	.stop_ringing_callerid_pending = brcm_stop_ringing_callerid_pending,
 	.release = NULL,
 };
-
-/* Called whenever there's a packet or event avialable */
-static void sigio_handler(int sig, siginfo_t* sig_info, void* arg)
-{
-	if (sig != SIGIO) {
-		ast_log(LOG_WARNING, "IO-handler got unexpected signal\n");
-		return;
-	}
-
-	ENDPT_SIGTYPE sig_type = (ENDPT_SIGTYPE) sig_info->si_int;
-	if (sig_type == ENDPT_SIGTYPE_EVENT) {
-		sem_post(&event_available);
-	}
-	else if (sig_type == ENDPT_SIGTYPE_PACKET) {
-		sem_post(&packet_available);
-	}
-	else {
-		ast_log(LOG_WARNING, "IO-handler got unexpected endpoint signal type (%d)\n", sig_type);
-	}
-}
 
 /* Tries to lock 10 timees, then gives up */
 static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
@@ -1986,19 +1963,6 @@ static char phone_2digit(char c)
 		return '?';
 }
 
-/*
- * Wait for semaphore, timeout after one second
- */
-static int brcm_wait(sem_t *sem)
-{
-	struct timespec timeout;
-	struct timeval  tv;
-	gettimeofday(&tv, NULL);
-	timeout.tv_sec = tv.tv_sec + 1;
-	timeout.tv_nsec = tv.tv_usec * 1000;
-	return sem_timedwait(sem, &timeout);
-}
-
 static void *brcm_monitor_packets(void *data)
 {
 	struct brcm_subchannel *sub;
@@ -2011,27 +1975,17 @@ static void *brcm_monitor_packets(void *data)
 
 	while(packets) {
 
-		/* Wait for event, timeout of one second */
-		if (brcm_wait(&packet_available)) {
-			continue;
-		}
+		int drop_frame = 0;
+		struct ast_frame fr  = {0};
+		fr.src = "BRCM";
 
-		while (1) {
+		epPacket.mediaType   = 0;
+		epPacket.packetp     = pdata;
+		tPacketParm.epPacket = &epPacket;
+		tPacketParm.cnxId    = 0;
+		tPacketParm.length   = 0;
 
-			int drop_frame = 0;
-			struct ast_frame fr  = {0};
-			fr.src = "BRCM";
-
-			epPacket.mediaType   = 0;
-			epPacket.packetp     = pdata;
-			tPacketParm.epPacket = &epPacket;
-			tPacketParm.cnxId    = 0;
-			tPacketParm.length   = 0;
-
-			/* Get the packet(s) from the endpoint driver. */
-			if (ioctl(endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) != IOCTL_STATUS_SUCCESS) {
-				break;
-			}
+		if (ioctl(endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_PACKET, &tPacketParm) == IOCTL_STATUS_SUCCESS) {
 
 			if (tPacketParm.length <= 2) {
 				ast_log(LOG_WARNING, "Ignoring RTP package - too short\n");
@@ -2222,277 +2176,277 @@ int brcm_should_relay_dtmf(const struct brcm_subchannel *sub)
 static void *brcm_monitor_events(void *data)
 {
 	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
+	int rc = IOCTL_STATUS_FAILURE;
 
 	while (monitor) {
 
-		/* Wait for event, timeout of one second */
-		if (brcm_wait(&event_available)) {
+		struct brcm_pvt *p = NULL;
+		struct brcm_subchannel *sub = NULL;
+
+		tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
+		tEventParm.length = 0;
+		p = iflist;
+
+		if (option_debug) {
+			ast_debug(2, "Waiting for event\n");
+		}
+		/* Get the event from the endpoint driver. */
+		rc = ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm);
+		if( rc != IOCTL_STATUS_SUCCESS ) {
+			ast_log(LOG_ERROR, "ENDPOINTIOCTL_ENDPT_GET_EVENT failed, endpoint_fd = %x\n", endpoint_fd);
 			continue;
 		}
 
-		while (1) {
-			struct brcm_pvt *p = NULL;
-			struct brcm_subchannel *sub = NULL;
+		ast_debug(9, "Event %d detected\n", tEventParm.event);
+		p = brcm_get_pvt_from_lineid(iflist, tEventParm.lineId);
+		if (!p) {
+			ast_debug(3, "No pvt with the correct line_id %d found!\n", tEventParm.lineId);
+			continue;
+		}
 
-			tEventParm.size = sizeof(ENDPOINTDRV_EVENT_PARM);
-			tEventParm.length = 0;
-			p = iflist;
+		/* Get locks in correct order */
+		//ast_mutex_lock(&p->lock);
+		pvt_lock(p, "brcm monitor events");
+		sub = brcm_get_active_subchannel(p);
+		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+		struct ast_channel *owner = NULL;
+		struct ast_channel *peer_owner = NULL;
+		if (sub->owner) {
+			ast_channel_ref(sub->owner);
+			owner = sub->owner;
+		}
+		if (sub_peer->owner) {
+			ast_channel_ref(sub_peer->owner);
+			peer_owner = sub_peer->owner;
+		}
+		pvt_unlock(p);
+		//ast_mutex_unlock(&p->lock);
 
-			/* Get the event(s) from the endpoint driver. */
-			if (ioctl(endpoint_fd, ENDPOINTIOCTL_ENDPT_GET_EVENT, &tEventParm) != IOCTL_STATUS_SUCCESS) {
-				break;
-			}
-
-			ast_debug(9, "Event %d detected\n", tEventParm.event);
-			p = brcm_get_pvt_from_lineid(iflist, tEventParm.lineId);
-			if (!p) {
-				ast_debug(3, "No pvt with the correct line_id %d found!\n", tEventParm.lineId);
-				continue;
-			}
-
-			/* Get locks in correct order */
-			//ast_mutex_lock(&p->lock);
-			pvt_lock(p, "brcm monitor events");
-			sub = brcm_get_active_subchannel(p);
-			struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
-			struct ast_channel *owner = NULL;
-			struct ast_channel *peer_owner = NULL;
-			if (sub->owner) {
-				ast_channel_ref(sub->owner);
-				owner = sub->owner;
-			}
-			if (sub_peer->owner) {
-				ast_channel_ref(sub_peer->owner);
-				peer_owner = sub_peer->owner;
-			}
-			pvt_unlock(p);
-			//ast_mutex_unlock(&p->lock);
-
-			if (owner && peer_owner) {
-				if (owner < peer_owner) {
-					ast_channel_lock(owner);
-					ast_channel_lock(peer_owner);
-				}
-				else {
-					ast_channel_lock(peer_owner);
-					ast_channel_lock(owner);
-				}
-			}
-			else if (owner) {
+		if (owner && peer_owner) {
+			if (owner < peer_owner) {
 				ast_channel_lock(owner);
-			}
-			else if (peer_owner) {
 				ast_channel_lock(peer_owner);
 			}
-			pvt_lock(p, "brcm monitor events");
-			//ast_mutex_lock(&p->lock);
+			else {
+				ast_channel_lock(peer_owner);
+				ast_channel_lock(owner);
+			}
+		}
+		else if (owner) {
+			ast_channel_lock(owner);
+		}
+		else if (peer_owner) {
+			ast_channel_lock(peer_owner);
+		}
+		pvt_lock(p, "brcm monitor events");
+		//ast_mutex_lock(&p->lock);
 
-			ast_debug(3, "me: got mutex\n");
-			if (sub) {
+		ast_debug(3, "me: got mutex\n");
+		if (sub) {
 
-				switch (tEventParm.event) {
-					case EPEVT_OFFHOOK: {
-						ast_debug(9, "EPEVT_OFFHOOK detected\n");
+			switch (tEventParm.event) {
+				case EPEVT_OFFHOOK: {
+					ast_debug(9, "EPEVT_OFFHOOK detected\n");
 
-						/* Reset the dtmf buffer */
-						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-						p->dtmf_len          = 0;
-						p->dtmf_first        = -1;
-						p->dtmfbuf[p->dtmf_len] = '\0';
-						brcm_subchannel_set_state(sub, OFFHOOK);
-						ast_debug(3, "Sending manager event\n");
-						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
+					/* Reset the dtmf buffer */
+					memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+					p->dtmf_len          = 0;
+					p->dtmf_first        = -1;
+					p->dtmfbuf[p->dtmf_len] = '\0';
+					brcm_subchannel_set_state(sub, OFFHOOK);
+					ast_debug(3, "Sending manager event\n");
+					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: OFF %d\r\n", p->line_id);
 
-						if (owner) {
-							if (!sub->connection_init) {
-								ast_debug(9, "create_connection()\n");
-								brcm_create_connection(sub);
-							}
-
-							if (sub->cw_timer_id > -1) {
-								/* Picking up during reminder ringing for call waiting */
-								ast_sched_thread_del(sched, sub->cw_timer_id);
-								sub->cw_timer_id = -1;
-							}
-							brcm_subchannel_set_state(sub, INCALL);
-							ast_queue_control(owner, AST_CONTROL_ANSWER);
+					if (owner) {
+						if (!sub->connection_init) {
+							ast_debug(9, "create_connection()\n");
+							brcm_create_connection(sub);
 						}
-						else if (sub_peer->channel_state == ONHOLD) {
 
-							/* Picking up during reminder ringing for call on hold */
-							ast_sched_thread_del(sched, sub_peer->onhold_hangup_timer_id);
-							sub_peer->onhold_hangup_timer_id = -1;
-
-							//Asterisk jitter buffer causes one way audio when going from unhold.
-							//This is a workaround until jitter buffer is handled by DSP.
-							ast_jb_destroy(peer_owner);
-
-							brcm_subchannel_set_state(sub, CALLENDED);
-							brcm_subchannel_set_state(sub_peer, INCALL);
-							brcm_unmute_connection(sub_peer);
-
-							ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
+						if (sub->cw_timer_id > -1) {
+							/* Picking up during reminder ringing for call waiting */
+							ast_sched_thread_del(sched, sub->cw_timer_id);
+							sub->cw_timer_id = -1;
 						}
-						else if (sub->channel_state == OFFHOOK) {
-							/* EPEVT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
-							brcm_signal_dialtone(p);
-							line_settings *s = &line_config[p->line_id];
 
-							if (ast_str_size(s->autodial_ext)) {
-								/* Schedule autodial timeout if autodial extension is set */
-								p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
-							}
-							else {
-								/* No autodial, schedule dialtone timeout */
-								p->dialtone_timeout_timer_id = ast_sched_thread_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
-							}
-						}
-						break;
+						brcm_subchannel_set_state(sub, INCALL);
+						ast_queue_control(owner, AST_CONTROL_ANSWER);
 					}
-					case EPEVT_ONHOOK: {
-						ast_debug(9, "EPEVT_ONHOOK detected\n");
+					else if (sub_peer->channel_state == ONHOLD) {
 
-						int perform_remote_transfer = 0;
+						/* Picking up during reminder ringing for call on hold */
+						ast_sched_thread_del(sched, sub_peer->onhold_hangup_timer_id);
+						sub_peer->onhold_hangup_timer_id = -1;
 
-						if (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK) {
-							/* Received EPEVT_ONHOOK in state OFFHOOK/AWAITONHOOK, stop dial/congestion tone */
-							brcm_stop_dialtone(p);
-						}
-						else if (sub->channel_state == RINGBACK) {
-							line_settings *s = &line_config[sub->parent->line_id];
-							ast_debug(2, "Semi-attended transfer active\n");
-							perform_remote_transfer = s->hangup_xfer;
-						}
+						//Asterisk jitter buffer causes one way audio when going from unhold.
+						//This is a workaround until jitter buffer is handled by DSP.
+						ast_jb_destroy(peer_owner);
 
-						brcm_subchannel_set_state(sub, ONHOOK);
-						ast_debug(3, "Sending manager event\n");
-						manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
+						brcm_subchannel_set_state(sub, CALLENDED);
+						brcm_subchannel_set_state(sub_peer, INCALL);
+						brcm_unmute_connection(sub_peer);
 
-						brcm_cancel_dialing_timeouts(p);
-
-						/* Reset the dtmf buffer */
-						memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
-						p->dtmf_len          = 0;
-						p->dtmf_first        = -1;
-						p->dtmfbuf[p->dtmf_len] = '\0';
-						brcm_close_connection(sub);
-
-						if (owner) {
-							ast_queue_control(owner, AST_CONTROL_HANGUP);
-						}
-
-						//TRANSFER_REMOTE
-						if (perform_remote_transfer) {
-							if (sub_peer->channel_state == ONHOLD && peer_owner) {
-								ast_debug(1, "Performing transfer-on-hangup to %s\n", sub_peer->parent->ext);
-
-								struct ast_transfer_remote_data data;
-								strcpy(data.exten, sub_peer->parent->ext);
-								data.replaces[0] = '\0'; //Not replacing any call
-								ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
-								brcm_subchannel_set_state(sub_peer, TRANSFERING);
-							}
-						}
-
-						//TODO: possible bug below - we don't change the channel_state when hanging up
-
-						if (sub_peer->channel_state == CALLWAITING) {
-							/* Remind user of waiting call */
-							brcm_subchannel_set_state(sub_peer, RINGING);
-							p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
-						}
-						else if (sub_peer->channel_state == ONHOLD) {
-							/* Remind user of call on hold */
-							sub_peer->onhold_hangup_timer_id = ast_sched_thread_add(sched, onholdhanguptimeout * 1000, onholdhanguptimeout_cb, sub_peer);
-							p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
-						}
-						else if (peer_owner && sub_peer->channel_state != TRANSFERING) {
-							/* Hangup peer subchannels in call or on hold */
-							ast_debug(2, "Hanging up call (not transfering)\n");
-							ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
-						}
-						break;
+						ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
 					}
-					case EPEVT_DTMF0:
-					case EPEVT_DTMF1:
-					case EPEVT_DTMF2:
-					case EPEVT_DTMF3:
-					case EPEVT_DTMF4:
-					case EPEVT_DTMF5:
-					case EPEVT_DTMF6:
-					case EPEVT_DTMF7:
-					case EPEVT_DTMF8:
-					case EPEVT_DTMF9:
-					case EPEVT_DTMFA:
-					case EPEVT_DTMFB:
-					case EPEVT_DTMFC:
-					case EPEVT_DTMFD:
-					case EPEVT_DTMFS:
-					case EPEVT_DTMFH:
-					{
-						brcm_cancel_dialing_timeouts(p);
+					else if (sub->channel_state == OFFHOOK) {
+						/* EPEVT_OFFHOOK changed endpoint state to OFFHOOK, apply dialtone */
+						brcm_signal_dialtone(p);
+						line_settings *s = &line_config[p->line_id];
 
-						unsigned int old_state = sub->channel_state;
-						ast_debug(2, "====> GOT DTMF %d\n", tEventParm.event-1);
-						handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
-						if (sub->channel_state == DIALING && old_state != sub->channel_state) {
-							/* DTMF event took channel state to DIALING. Stop dial tone. */
-							ast_debug(2, "Dialing. Stop dialtone.\n");
-							brcm_stop_dialtone(p);
+						if (ast_str_size(s->autodial_ext)) {
+							/* Schedule autodial timeout if autodial extension is set */
+							p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
 						}
-
-						if (sub->channel_state == DIALING) {
-							ast_debug(2, "Handle DTMF calling\n");
-							handle_dtmf_calling(sub);
+						else {
+							/* No autodial, schedule dialtone timeout */
+							p->dialtone_timeout_timer_id = ast_sched_thread_add(sched, s->dialtone_timeoutmsec, handle_dialtone_timeout, p);
 						}
-						break;
 					}
-					case EPEVT_DTMFL:
-						ast_debug(1, "EPEVT_DTMFL\n");
-						break;
-					case EPEVT_FLASH:
-						ast_debug(1, "EPEVT_FLASH\n");
-						p->hf_detected = 1;
-
-						/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
-						 * dtmf will be relayed to asterisk. */
-						int timeoutmsec = line_config[p->line_id].timeoutmsec;
-						p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
-
-						handle_hookflash(sub, sub_peer, owner, peer_owner);
-						break;
-					case EPEVT_EARLY_OFFHOOK:
-						ast_debug(1, "EPEVT_EARLY_OFFHOOK\n");
-						break;
-					case EPEVT_EARLY_ONHOOK:
-						ast_debug(1, "EPEVT_EARLY_ONHOOK\n");
-						break;
-					case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
-					case EPEVT_VBD_START:
-						ast_debug(1, "EPEVT_VBD_START\n");
-						if (owner) {
-							ast_jb_destroy(owner);
-						}
-						break;
-					default:
-						ast_debug(1, "UNKNOWN event %d detected\n", tEventParm.event);
-						break;
+					break;
 				}
-			}
+				case EPEVT_ONHOOK: {
+					ast_debug(9, "EPEVT_ONHOOK detected\n");
 
-			//ast_mutex_unlock(&p->lock);
-			pvt_unlock(p);
-			ast_debug(9, "me: unlocked mutex\n");
+					int perform_remote_transfer = 0;
 
-			if (owner) {
-				ast_channel_unlock(owner);
-				ast_channel_unref(owner);
-			}
+					if (sub->channel_state == OFFHOOK || sub->channel_state == AWAITONHOOK) {
+						/* Received EPEVT_ONHOOK in state OFFHOOK/AWAITONHOOK, stop dial/congestion tone */
+						brcm_stop_dialtone(p);
+					}
+					else if (sub->channel_state == RINGBACK) {
+						line_settings *s = &line_config[sub->parent->line_id];
+						ast_debug(2, "Semi-attended transfer active\n");
+						perform_remote_transfer = s->hangup_xfer;
+					}
 
-			if (peer_owner) {
-				ast_channel_unlock(peer_owner);
-				ast_channel_unref(peer_owner);
+					brcm_subchannel_set_state(sub, ONHOOK);
+					ast_debug(3, "Sending manager event\n");
+					manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Status: ON %d\r\n", p->line_id);
+
+					brcm_cancel_dialing_timeouts(p);
+
+					/* Reset the dtmf buffer */
+					memset(p->dtmfbuf, 0, sizeof(p->dtmfbuf));
+					p->dtmf_len          = 0;
+					p->dtmf_first        = -1;
+					p->dtmfbuf[p->dtmf_len] = '\0';
+					brcm_close_connection(sub);
+
+					if (owner) {
+						ast_queue_control(owner, AST_CONTROL_HANGUP);
+					}
+
+					//TRANSFER_REMOTE
+					if (perform_remote_transfer) {
+						if (sub_peer->channel_state == ONHOLD && peer_owner) {
+							ast_debug(1, "Performing transfer-on-hangup to %s\n", sub_peer->parent->ext);
+
+							struct ast_transfer_remote_data data;
+							strcpy(data.exten, sub_peer->parent->ext);
+							data.replaces[0] = '\0'; //Not replacing any call
+							ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
+							brcm_subchannel_set_state(sub_peer, TRANSFERING);
+						}
+					}
+
+					//TODO: possible bug below - we don't change the channel_state when hanging up
+
+					if (sub_peer->channel_state == CALLWAITING) {
+						/* Remind user of waiting call */
+						brcm_subchannel_set_state(sub_peer, RINGING);
+						p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
+						}
+					else if (sub_peer->channel_state == ONHOLD) {
+						/* Remind user of call on hold */
+						sub_peer->onhold_hangup_timer_id = ast_sched_thread_add(sched, onholdhanguptimeout * 1000, onholdhanguptimeout_cb, sub_peer);
+						p->tech->signal_ringing(p); //TODO: This should use CCSS "ringing signal"
+					}
+					else if (peer_owner && sub_peer->channel_state != TRANSFERING) {
+						/* Hangup peer subchannels in call or on hold */
+						ast_debug(2, "Hanging up call (not transfering)\n");
+						ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
+					}
+					break;
+				}
+				case EPEVT_DTMF0:
+				case EPEVT_DTMF1:
+				case EPEVT_DTMF2:
+				case EPEVT_DTMF3:
+				case EPEVT_DTMF4:
+				case EPEVT_DTMF5:
+				case EPEVT_DTMF6:
+				case EPEVT_DTMF7:
+				case EPEVT_DTMF8:
+				case EPEVT_DTMF9:
+				case EPEVT_DTMFA:
+				case EPEVT_DTMFB:
+				case EPEVT_DTMFC:
+				case EPEVT_DTMFD:
+				case EPEVT_DTMFS:
+				case EPEVT_DTMFH:
+				{
+					brcm_cancel_dialing_timeouts(p);
+
+					unsigned int old_state = sub->channel_state;
+					ast_debug(2, "====> GOT DTMF %d\n", tEventParm.event-1);
+					handle_dtmf(tEventParm.event, sub, sub_peer, owner, peer_owner);
+					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+						/* DTMF event took channel state to DIALING. Stop dial tone. */
+						ast_debug(2, "Dialing. Stop dialtone.\n");
+						brcm_stop_dialtone(p);
+					}
+
+					if (sub->channel_state == DIALING) {
+						ast_debug(2, "Handle DTMF calling\n");
+						handle_dtmf_calling(sub);
+					}
+					break;
+				}
+				case EPEVT_DTMFL:
+					ast_debug(1, "EPEVT_DTMFL\n");
+					break;
+				case EPEVT_FLASH:
+					ast_debug(1, "EPEVT_FLASH\n");
+					p->hf_detected = 1;
+
+					/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
+					 * dtmf will be relayed to asterisk. */
+					int timeoutmsec = line_config[p->line_id].timeoutmsec;
+					p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+
+					handle_hookflash(sub, sub_peer, owner, peer_owner);
+					break;
+				case EPEVT_EARLY_OFFHOOK:
+					ast_debug(1, "EPEVT_EARLY_OFFHOOK\n");
+					break;
+				case EPEVT_EARLY_ONHOOK:
+					ast_debug(1, "EPEVT_EARLY_ONHOOK\n");
+					break;
+				case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
+				case EPEVT_VBD_START:
+					ast_debug(1, "EPEVT_VBD_START\n");
+					if (owner) {
+						ast_jb_destroy(owner);
+					}
+					break;
+				default:
+					ast_debug(1, "UNKNOWN event %d detected\n", tEventParm.event);
+					break;
 			}
+		}
+
+		//ast_mutex_unlock(&p->lock);
+		pvt_unlock(p);
+		ast_debug(9, "me: unlocked mutex\n");
+
+		if (owner) {
+			ast_channel_unlock(owner);
+			ast_channel_unref(owner);
+		}
+
+		if (peer_owner) {
+			ast_channel_unlock(peer_owner);
+			ast_channel_unref(peer_owner);
 		}
 	}
 
@@ -3445,9 +3399,6 @@ static int unload_module(void)
 	endpt_deinit();
 	ast_debug(3, "Endpoint deinited...\n");
 
-	sem_destroy(&event_available);
-	sem_destroy(&packet_available);
-
 	ast_sched_thread_destroy(sched);
 
 	return 0;
@@ -3829,17 +3780,6 @@ static int load_module(void)
 	struct ast_config *cfg;
 	int result;
 
-	/* Initialize local semaphores */
-	sem_init(&event_available, 0, 0);
-	sem_init(&packet_available, 0, 0);
-
-	/* Setup signal handler for SIGIO */
-	struct sigaction sa;
-	sa.sa_sigaction = sigio_handler;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_SIGINFO;
-	sigaction(SIGIO, &sa, NULL);
-
 	/* Setup scheduler thread */
 	if (!(sched = ast_sched_thread_create())) {
 		ast_log(LOG_ERROR, "Unable to create scheduler thread/context. Aborting.\n");
@@ -4042,24 +3982,25 @@ int endpt_init(void)
 
 	vrgEndptDriverOpen();
 
-	if (isEndptInitialized()) {
-		/* Endpoint must be initialized by this thread, if not packets/event
-		 * signals will not end up in sigio_handler() */
-		ast_log(LOG_ERROR, "Endpoint already initialized");
-		return 1;
+	if (!isEndptInitialized()) {
+
+		ast_log(LOG_DEBUG, "Endpoint is not initialized\n");
+
+		vrgEndptInitCfg.country = endpoint_country.vrgCountry;
+		vrgEndptInitCfg.currentPowerSource = 0;
+
+		/* Intialize endpoint */
+		vrgEndptInit(&vrgEndptInitCfg,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL);
 	}
-
-	vrgEndptInitCfg.country = endpoint_country.vrgCountry;
-	vrgEndptInitCfg.currentPowerSource = 0;
-
-	/* Intialize endpoint */
-	vrgEndptInit(&vrgEndptInitCfg,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL);
+	else {
+		ast_log(LOG_DEBUG, "Endpoint is already initialized\n");
+	}
 
 	return 0;
 }
