@@ -24,6 +24,7 @@
 struct ami_action
 {
 	char message[AMI_BUFLEN];
+	void *userdata;
 	struct ami_action* next;
 };
 
@@ -185,6 +186,7 @@ void ami_action_send_sip_reload(struct ami *mgr)
 {
 	ast_log(LOG_DEBUG, "Queueing Action: ami_action_queue_sip_reload\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message,"Action: Command\r\nCommand: sip reload\r\n\r\n");
 	send_action(mgr, action);
 }
@@ -216,7 +218,28 @@ void ami_action_send_sip_show_registry(struct ami *mgr)
 {
 	ast_log(LOG_DEBUG, "Queueing Action: SIPshowregistry\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: SIPshowregistry\r\n\r\n");
+	send_action(mgr, action);
+}
+
+void ami_action_send_brcm_dump(struct ami *mgr, void *userdata)
+{
+	ast_log(LOG_DEBUG, "Queueing Action: BRCMdump\n");
+	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
+	sprintf(action->message, "Action: BRCMdump\r\n\r\n");
+	action->userdata = userdata;
+	send_action(mgr, action);
+}
+
+void ami_action_send_sip_dump(struct ami *mgr, void *userdata)
+{
+	ast_log(LOG_DEBUG, "Queueing Action: SIPdump\n");
+	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
+	sprintf(action->message, "Action: SIPdump\r\n\r\n");
+	action->userdata = userdata;
 	send_action(mgr, action);
 }
 
@@ -832,6 +855,14 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 		//Unparsable or incomplete message
 		ami_unlock(mgr);
 		return -1;
+	}
+
+	/* Move user data */
+	if (message->type == RESPONSE_MESSAGE) {
+		if (mgr->out_queue && message->response) {
+			message->response->userdata = mgr->out_queue->userdata;
+			mgr->out_queue->userdata = NULL;
+		}
 	}
 
 	//Push parsed message on in_queue

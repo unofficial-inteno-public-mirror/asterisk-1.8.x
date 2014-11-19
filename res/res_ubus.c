@@ -41,7 +41,17 @@ static void ami_handle_message(                          //Handle events and res
 /******************/
 /* UBUS callbacks */
 /******************/
+static int ubus_asterisk_sip_dump_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
 static int ubus_asterisk_sip_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
+static int ubus_asterisk_brcm_dump_cb(
 		struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg);
@@ -59,6 +69,12 @@ static int ubus_asterisk_cb(
 static void ubus_connection_lost_cb(
 		struct ubus_context *ctx);
 
+struct ami_context
+{
+	struct ubus_context *ctx;
+	struct ubus_request_data req;
+	int (*handle_response)(struct ubus_context *, struct ubus_request_data *, char *);
+};
 
 /***********/
 /* Globals */
@@ -66,7 +82,8 @@ static void ubus_connection_lost_cb(
 static int ubus_connected = 0;
 static int running = 0;
 static pthread_t ubus_thread_handle;
-
+struct ami* mgr; //manager listener context
+int mgr_fd[2];
 
 /*****************/
 /* SIP IP struct */
@@ -204,8 +221,6 @@ static void init_brcm_ports(void);
 static void *ubus_thread(void *arg)
 {
 	struct ubus_context* ctx; //ubus context
-	struct ami* mgr; //manager listener context
-	int mgr_fd[2];
 
 	fd_set fset;              //FD set
 	struct timeval timeout;   //Timeout for select
@@ -377,6 +392,13 @@ static const struct blobmsg_policy ubus_string_argument[__UBUS_ARGMAX] =
 
 static struct blob_buf bb;
 
+static struct ubus_method sip_main_object_methods[] = {
+	{ .name = "dump", .handler = ubus_asterisk_sip_dump_cb },
+};
+
+static struct ubus_object_type sip_main_object_type =
+	UBUS_OBJECT_TYPE("sip_main_object", sip_main_object_methods);
+
 static struct ubus_method sip_object_methods[] = {
 	{ .name = "status", .handler = ubus_asterisk_sip_cb },
 };
@@ -385,6 +407,7 @@ static struct ubus_object_type sip_object_type =
 	UBUS_OBJECT_TYPE("sip_object", sip_object_methods);
 
 static struct ubus_object ubus_sip_objects[] = {
+	{ .name = "asterisk.sip", .type = &sip_main_object_type, .methods = sip_main_object_methods, .n_methods = ARRAY_SIZE(sip_main_object_methods) },
 	{ .name = "asterisk.sip.0", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
 	{ .name = "asterisk.sip.1", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
 	{ .name = "asterisk.sip.2", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
@@ -392,8 +415,15 @@ static struct ubus_object ubus_sip_objects[] = {
 	{ .name = "asterisk.sip.4", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
 	{ .name = "asterisk.sip.5", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
 	{ .name = "asterisk.sip.6", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.7", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
+	{ .name = "asterisk.sip.7", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) }
 };
+
+static struct ubus_method brcm_main_object_methods[] = {
+	{ .name = "dump", .handler = ubus_asterisk_brcm_dump_cb },
+};
+
+static struct ubus_object_type brcm_main_object_type =
+	UBUS_OBJECT_TYPE("brcm_main_object", brcm_main_object_methods);
 
 static struct ubus_method brcm_object_methods[] = {
 	{ .name = "status", .handler = ubus_asterisk_brcm_cb },
@@ -403,12 +433,13 @@ static struct ubus_object_type brcm_object_type =
 	UBUS_OBJECT_TYPE("brcm_object", brcm_object_methods);
 
 static struct ubus_object ubus_brcm_objects[] = {
+	{ .name = "asterisk.brcm", .type = &brcm_main_object_type, .methods = brcm_main_object_methods, .n_methods = ARRAY_SIZE(brcm_main_object_methods) },
 	{ .name = "asterisk.brcm.0", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
 	{ .name = "asterisk.brcm.1", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
 	{ .name = "asterisk.brcm.2", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
 	{ .name = "asterisk.brcm.3", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
 	{ .name = "asterisk.brcm.4", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.5", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
+	{ .name = "asterisk.brcm.5", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) }
 };
 
 static struct ubus_method asterisk_object_methods[] = {
@@ -575,6 +606,62 @@ static int ubus_asterisk_sip_cb(
 	return 0;
 }
 
+static int ubus_asterisk_sip_dump_handle_response_cb(
+	struct ubus_context *ctx, struct ubus_request_data *req,
+	char *data)
+{
+	blob_buf_init(&bb, 0);
+
+	/* Parse AMI response */
+	char outbound_transport[32];
+	char allowed_transports[32];
+
+	memset(outbound_transport, 0, sizeof(outbound_transport));
+	memset(allowed_transports, 0, sizeof(allowed_transports));
+
+	char *sub = strstr(data, "OutboundTransport: ");
+	if (sub) {
+		sscanf(sub, "OutboundTransport: %s\r\n", outbound_transport);
+	}
+
+	sub = strstr(data, "AllowedTransports: ");
+	if (sub) {
+		sscanf(sub, "AllowedTransports: %s\r\n", allowed_transports);
+	}
+
+	/* Reply to ubus */
+	void *a = blobmsg_open_table(&bb, "transports");
+
+	blobmsg_add_string(&bb, "outbound", outbound_transport);
+	blobmsg_add_string(&bb, "allowed", allowed_transports);
+
+	blobmsg_close_table(&bb, a);
+
+	ubus_send_reply(ctx, req, bb.head);
+	ubus_complete_deferred_request(ctx, req, 0);
+
+	return 0;
+}
+
+/*
+ * ubus callback that replies to "asterisk.sip dump"
+ */
+static int ubus_asterisk_sip_dump_cb (
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct ami_context *ami_ctx;
+	ami_ctx = (struct ami_context *)malloc(sizeof(struct ami_context));
+	ami_ctx->ctx = ctx;
+	ami_ctx->handle_response = ubus_asterisk_sip_dump_handle_response_cb;
+
+	ami_action_send_sip_dump(mgr, ami_ctx);
+	ubus_defer_request(ctx, req, &ami_ctx->req);
+
+	return 0;
+}
+
 /*
  * ubus callback that replies to "asterisk.brcm.X status"
  */
@@ -599,6 +686,55 @@ static int ubus_asterisk_brcm_cb (
 	}
 
 	ubus_send_reply(ctx, req, bb.head);
+	return 0;
+}
+
+static int ubus_asterisk_brcm_dump_handle_response_cb(
+	struct ubus_context *ctx, struct ubus_request_data *req,
+	char *data)
+{
+	blob_buf_init(&bb, 0);
+
+	/* Parse AMI response */
+	int num_subchannels = -1;
+	int num_lines = -1;
+
+	char *sub = strstr(data, "NumSubchannels: ");
+	if (sub) {
+		sscanf(sub, "NumSubchannels: %d\r\n", &num_subchannels);
+	}
+
+	sub = strstr(data, "NumLines: ");
+	if (sub) {
+		sscanf(sub, "NumLines: %d\r\n", &num_lines);
+	}
+
+	/* Reply to ubus */
+	blobmsg_add_u32(&bb, "num_subchannels", num_subchannels);
+	blobmsg_add_u32(&bb, "num_lines", num_lines);
+
+	ubus_send_reply(ctx, req, bb.head);
+	ubus_complete_deferred_request(ctx, req, 0);
+
+	return 0;
+}
+
+/*
+ * ubus callback that replies to "asterisk.brcm dump"
+ */
+static int ubus_asterisk_brcm_dump_cb(
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct ami_context *ami_ctx;
+	ami_ctx = (struct ami_context *)malloc(sizeof(struct ami_context));
+	ami_ctx->ctx = ctx;
+	ami_ctx->handle_response = ubus_asterisk_brcm_dump_handle_response_cb;
+
+	ami_action_send_brcm_dump(mgr, ami_ctx);
+	ubus_defer_request(ctx, req, &ami_ctx->req);
+
 	return 0;
 }
 
@@ -818,9 +954,17 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 	}
 }
 
-static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *response)
+static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *resp)
 {
-	//Currently, no actions required on responses
+	struct ami_context *ami_ctx;
+	if (resp->userdata) {
+		ami_ctx = (struct ami_context *)resp->userdata;
+		if (ami_ctx->handle_response) {
+			ami_ctx->handle_response(ami_ctx->ctx, &ami_ctx->req, resp->response);
+		}
+		free(resp->userdata);
+	}
+	free(resp);
 }
 
 

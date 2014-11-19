@@ -85,6 +85,16 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 		<description>
 		</description>
 	</manager>
+	<manager name="BRCMdump" language="en_US">
+		<synopsis>
+			Dump various BRCM data.
+		</synopsis>
+		<syntax>
+			<xi:include xpointer="xpointer(/docs/manager[@name='Login']/syntax/parameter[@name='ActionID'])" />
+		</syntax>
+		<description>
+		</description>
+	</manager>
  ***/
 
 static void brcm_dialtone_init(struct brcm_pvt *p);
@@ -3134,6 +3144,26 @@ static int manager_brcm_ports_show(struct mansession *s, const struct message *m
 	return 0;
 }
 
+static int manager_brcm_dump(struct mansession *s, const struct message *m)
+{
+	char response[64];
+	struct brcm_pvt *p = iflist;
+	int num_pvts = 0;
+
+	for (; p; p = brcm_get_next_pvt(p)) {
+		num_pvts++;
+	}
+
+	snprintf(response, sizeof(response),
+		"NumSubchannels: %d\r\n"
+		"NumLines: %d\r\n",
+		NUM_SUBCHANNELS,
+		num_pvts);
+
+	astman_send_ack(s, m, response);
+	return 0;
+}
+
 static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
 	int on_off = 0;
@@ -3368,8 +3398,8 @@ static int unload_module(void)
 	//ast_sched_dump(sched);
 
 	/* Unregister manager commands */
-	ast_manager_unregister("BRCMDialtoneSet");
 	ast_manager_unregister("BRCMPortsShow");
+	ast_manager_unregister("BRCMdump");
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module unload\r\n");
 
@@ -3902,6 +3932,7 @@ static int load_module(void)
 
 	/* Register manager commands */
 	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
+	ast_manager_register_xml("BRCMdump", EVENT_FLAG_SYSTEM, manager_brcm_dump);
 
 	/* Start channel threads */
 	start_threads();

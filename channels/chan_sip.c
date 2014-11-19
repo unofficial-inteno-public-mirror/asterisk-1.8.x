@@ -554,6 +554,16 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 357264 $")
 			via multiple Variable: name=value sequences.</para>
 		</description>
 	</manager>
+	<manager name="SIPdump" language="en_US">
+		<synopsis>
+			Dump various SIP data.
+		</synopsis>
+		<syntax>
+			<xi:include xpointer="xpointer(/docs/manager[@name='Login']/syntax/parameter[@name='ActionID'])" />
+		</syntax>
+		<description>
+		</description>
+	</manager>
  ***/
 
 static int min_expiry = DEFAULT_MIN_EXPIRY;        /*!< Minimum accepted registration time */
@@ -16893,6 +16903,20 @@ static int manager_sip_show_peers(struct mansession *s, const struct message *m)
 	return 0;
 }
 
+static int manager_sip_dump(struct mansession *s, const struct message *m)
+{
+	char response[64];
+
+	snprintf(response, sizeof(response),
+		"OutboundTransport: %s\r\n"
+		"AllowedTransports: %s\r\n",
+		get_transport(default_primary_transport),
+		get_transport_list(default_transports));
+
+	astman_send_ack(s, m, response);
+	return 0;
+}
+
 /*! \brief  CLI Show Peers command */
 static char *sip_show_peers(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
@@ -30769,6 +30793,7 @@ static int load_module(void)
 	ast_manager_register_xml("SIPqualifypeer", EVENT_FLAG_SYSTEM | EVENT_FLAG_REPORTING, manager_sip_qualify_peer);
 	ast_manager_register_xml("SIPshowregistry", EVENT_FLAG_SYSTEM | EVENT_FLAG_REPORTING, manager_show_registry);
 	ast_manager_register_xml("SIPnotify", EVENT_FLAG_SYSTEM, manager_sipnotify);
+	ast_manager_register_xml("SIPdump", EVENT_FLAG_SYSTEM, manager_sip_dump);
 	sip_poke_all_peers();	
 	sip_send_all_registers();
 	sip_send_all_mwi_subscriptions();
@@ -30868,6 +30893,7 @@ static int unload_module(void)
 	ast_manager_unregister("SIPqualifypeer");
 	ast_manager_unregister("SIPshowregistry");
 	ast_manager_unregister("SIPnotify");
+	ast_manager_unregister("SIPdump");
 	
 	/* Kill TCP/TLS server threads */
 	if (sip_tcp_desc.master) {

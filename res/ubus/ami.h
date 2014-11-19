@@ -87,6 +87,7 @@ struct ami_event {
 
 struct ami_response {
 	char *response;
+	void *userdata;
 };
 
 enum ami_message_type {
@@ -127,5 +128,9 @@ void ami_action_send_sip_show_registry(struct ami *mgr);
 
 /* Queue action 'sip reload' */
 void ami_action_send_sip_reload(struct ami *mgr);
+
+void ami_action_send_brcm_dump(struct ami *mgr, void *userdata);
+
+void ami_action_send_sip_dump(struct ami *mgr, void *userdata);
 
 #endif /* AMI_H_ */
