@@ -82,7 +82,7 @@ void ami_free(struct ami *mgr)
 	//Free any pending actions
 	while (mgr->out_queue) {
 		struct ami_action *next = mgr->out_queue->next;
-		free(next);
+		free(mgr->out_queue);
 		mgr->out_queue = next;
 	}
 

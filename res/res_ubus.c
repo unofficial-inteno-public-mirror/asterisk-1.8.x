@@ -964,7 +964,6 @@ static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, 
 		}
 		free(resp->userdata);
 	}
-	free(resp);
 }
 
 
