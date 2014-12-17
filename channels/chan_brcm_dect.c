@@ -40,7 +40,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <Api/GenEveNot/ApiGenEveNot.h>
 #include <Api/Las/ApiLas.h>
 #include <Api/Linux/ApiLinux.h>
-//#include <Api/Project/ApiProject.h>
+#include <Api/FpGeneral/ApiFpGeneral.h>
 #include <Api/FpAudio/ApiFpAudio.h>
 
 #include "chan_brcm.h"
@@ -1000,7 +1000,7 @@ static init_cfm(unsigned char *buf) {
 	int i;
 	unsigned char o_buf[3];
 	
-	ApiFpCcFeaturesReqType *t = NULL;
+	ApiFpSetFeaturesReqType *t = NULL;
 
 	/* Dect stack initialized */
 	/* Initialize dect procesing in enpoint driver */
@@ -1015,12 +1015,12 @@ static init_cfm(unsigned char *buf) {
 	/* } */
 
 
-	t = (ApiFpCcFeaturesReqType*) malloc(sizeof(ApiFpCcFeaturesReqType));
+	t = (ApiFpSetFeaturesReqType*) malloc(sizeof(ApiFpSetFeaturesReqType));
 
-	t->Primitive = API_FP_CC_FEATURES_REQ;
-	t->ApiFpCcFeature = API_FP_CC_EXTENDED_TERMINAL_ID_SUPPORT;
+	t->Primitive = API_FP_SET_FEATURES_REQ;
+	t->ApiFpFeature = API_FP_EXTENDED_TERMINAL_ID_SUPPORT;
 
-	dectDrvWrite(t, sizeof(ApiFpCcFeaturesReqType));
+	dectDrvWrite(t, sizeof(ApiFpSetFeaturesReqType));
 	free(t);
 
 }
@@ -1224,8 +1224,8 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_MM_GET_HANDSET_IPUI_CFM\n");
 		break;
 
-	case API_FP_CC_FEATURES_CFM:
-		ast_verbose("API_FP_CC_FEATURES_CFM\n");
+	case API_FP_GET_FEATURES_CFM:
+		ast_verbose("API_FP_GET_FEATURES_CFM\n");
 		features_cfm();
 		break;
 
