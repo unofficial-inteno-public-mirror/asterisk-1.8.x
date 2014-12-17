@@ -7114,8 +7114,8 @@ static int sip_indicate(struct ast_channel *ast, int condition, const void *data
 								totag = other_pvt->theirtag;
 								fromtag = other_pvt->tag;
 							} else {
-								totag = other_pvt->theirtag;
-								fromtag = other_pvt->tag;
+								totag = other_pvt->tag;
+								fromtag = other_pvt->theirtag;
 							}
 
 							//Create uri encoded replaces parameter

@@ -1815,7 +1815,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 			if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
 
 				if (owner && peer_owner) {
-					struct ast_channel *bridged_chan = ast_bridged_channel(peer_owner);
+					struct ast_channel *bridged_chan = ast_bridged_channel(owner);
 					if (bridged_chan) {
 						ast_verbose("Performing R4 transfer to %s, replacing call on %s\n", sub->parent->ext, bridged_chan->name);
 
@@ -1823,7 +1823,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 						strcpy(data.exten, sub->parent->ext);
 						strcpy(data.replaces, bridged_chan->name);
 
-						ast_queue_control_data(owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
+						ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
 						brcm_subchannel_set_state(sub, TRANSFERING);
 					}
 					else {
