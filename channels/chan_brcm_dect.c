@@ -1020,6 +1020,7 @@ static init_cfm(unsigned char *buf) {
 	t->Primitive = API_FP_SET_FEATURES_REQ;
 	t->ApiFpFeature = API_FP_EXTENDED_TERMINAL_ID_SUPPORT;
 
+	ast_verbose("API_FP_SET_FEATURES_REQ\n");
 	dectDrvWrite(t, sizeof(ApiFpSetFeaturesReqType));
 	free(t);
 
@@ -1103,16 +1104,14 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 
 static void features_cfm(void)
 {
-	unsigned char o_buf[3];
+	ApiFpMmStartProtocolReqType* 
+		m = (ApiFpMmStartProtocolReqType*)malloc(sizeof(ApiFpMmStartProtocolReqType));
 
-
-	*(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0);
-	*(o_buf + 2) = 0;
+	m->Primitive = API_FP_MM_START_PROTOCOL_REQ;
 
 	ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n");
-	dectDrvWrite(o_buf, 3);
-
+	dectDrvWrite(m, sizeof(ApiFpMmStartProtocolReqType));
+	free(m);
 }
 
 
@@ -1224,8 +1223,8 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_MM_GET_HANDSET_IPUI_CFM\n");
 		break;
 
-	case API_FP_GET_FEATURES_CFM:
-		ast_verbose("API_FP_GET_FEATURES_CFM\n");
+	case API_FP_SET_FEATURES_CFM:
+		ast_verbose("API_FP_SET_FEATURES_CFM\n");
 		features_cfm();
 		break;
 
