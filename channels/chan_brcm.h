@@ -7,6 +7,7 @@
 
 #include <endpointdrv.h>
 #include <pcmshimdrv.h>
+#include <bcm_sdk_version.h>
 
 /* Change this value when needed */
 #define CHANNEL_VERSION "1.2"

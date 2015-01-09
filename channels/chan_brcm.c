@@ -210,7 +210,12 @@ static COUNTRY_MAP country_map[] =
 	{VRG_COUNTRY_CFG_TR57, 			"T57"}, //Not really an iso code
 	{VRG_COUNTRY_MAX, 			"-"}
 };
+
+#if BCM_SDK_VERSION >= 41602
 static COUNTRY_MAP endpoint_country = {.vrgCountry = VRG_COUNTRY_NORTH_AMERICA, .isoCode = "USA"};
+#else
+static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
+#endif
 
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
@@ -2970,7 +2975,11 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
+#if BCM_SDK_VERSION >= 41602
 	ast_cli(a->fd, "Country       : %s\n", endpoint_country.isoCode);
+#else
+	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
+#endif
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 	ast_cli(a->fd, "FAC list      : %s\n", feature_access_code_string(buffer, AST_MAX_EXTENSION));
@@ -3696,7 +3705,12 @@ static int load_settings(struct ast_config **cfg)
 				ast_debug(2, "cmp: [%s] [%s]\n", v->value, countryMap->isoCode);
 				if (!strcmp(v->value, countryMap->isoCode)) {
 					ast_debug(2, "Found country '%s'\n", v->value);
+#if BCM_SDK_VERSION >= 41602
 					endpoint_country = *countryMap;
+#else
+					endpoint_country = countryMap->vrgCountry;
+#endif
+
 					break;
 				}
 
@@ -3797,10 +3811,12 @@ static int load_module(void)
 		return result;
 	}
 
+#if BCM_SDK_VERSION >= 41602
 	/* Set the provision data to the endpoint driver */
 	char config_cmd[32];
 	snprintf(config_cmd, 32, "endptcfg %s", endpoint_country.isoCode);
 	ast_safe_system(config_cmd);
+#endif
 
 	/* Initialize the endpoints */
 	if (endpt_init()) {
@@ -3986,7 +4002,11 @@ int endpt_init(void)
 
 		ast_log(LOG_DEBUG, "Endpoint is not initialized\n");
 
+#if BCM_SDK_VERSION >= 41602
 		vrgEndptInitCfg.country = endpoint_country.vrgCountry;
+#else
+		vrgEndptInitCfg.country = endpoint_country;
+#endif
 		vrgEndptInitCfg.currentPowerSource = 0;
 
 		/* Intialize endpoint */
