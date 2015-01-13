@@ -211,7 +211,7 @@ static COUNTRY_MAP country_map[] =
 	{VRG_COUNTRY_MAX, 			"-"}
 };
 
-#if BCM_SDK_VERSION >= 41602
+#if BCM_SDK_VERSION >= 416021
 static COUNTRY_MAP endpoint_country = {.vrgCountry = VRG_COUNTRY_NORTH_AMERICA, .isoCode = "USA"};
 #else
 static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
@@ -2975,7 +2975,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
-#if BCM_SDK_VERSION >= 41602
+#if BCM_SDK_VERSION >= 416021
 	ast_cli(a->fd, "Country       : %s\n", endpoint_country.isoCode);
 #else
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
@@ -3705,7 +3705,7 @@ static int load_settings(struct ast_config **cfg)
 				ast_debug(2, "cmp: [%s] [%s]\n", v->value, countryMap->isoCode);
 				if (!strcmp(v->value, countryMap->isoCode)) {
 					ast_debug(2, "Found country '%s'\n", v->value);
-#if BCM_SDK_VERSION >= 41602
+#if BCM_SDK_VERSION >= 416021
 					endpoint_country = *countryMap;
 #else
 					endpoint_country = countryMap->vrgCountry;
@@ -3811,7 +3811,7 @@ static int load_module(void)
 		return result;
 	}
 
-#if BCM_SDK_VERSION >= 41602
+#if BCM_SDK_VERSION >= 416021
 	/* Set the provision data to the endpoint driver */
 	char config_cmd[32];
 	snprintf(config_cmd, 32, "endptcfg %s", endpoint_country.isoCode);
@@ -4002,7 +4002,7 @@ int endpt_init(void)
 
 		ast_log(LOG_DEBUG, "Endpoint is not initialized\n");
 
-#if BCM_SDK_VERSION >= 41602
+#if BCM_SDK_VERSION >= 416021
 		vrgEndptInitCfg.country = endpoint_country.vrgCountry;
 #else
 		vrgEndptInitCfg.country = endpoint_country;
