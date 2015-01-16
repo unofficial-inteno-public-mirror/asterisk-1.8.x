@@ -997,32 +997,15 @@ static init_cfm(unsigned char *buf) {
 
 	ENDPT_STATE    endptState;
 	EPCMD_PARMS    consoleCmdParams;
-	int i;
-	unsigned char o_buf[3];
 	
-	ApiFpCcFeaturesReqType *t = NULL;
-
-	/* Dect stack initialized */
-	/* Initialize dect procesing in enpoint driver */
-
-	/* for (i = 0; i < 4; i++) { */
+	/* Dect stack initialized. Initialize dect procesing 
+	   in enpoint driver */
 	memset( &consoleCmdParams,0, sizeof(consoleCmdParams) );
 	memset( &endptState, 0, sizeof(endptState) );
 	endptState.lineId = 0;
 	vrgEndptConsoleCmd( &endptState,
 			    EPCMD_DECT_START_BUFF_PROC,
 			    &consoleCmdParams );
-	/* } */
-
-
-	t = (ApiFpCcFeaturesReqType*) malloc(sizeof(ApiFpCcFeaturesReqType));
-
-	t->Primitive = API_FP_CC_FEATURES_REQ;
-	t->ApiFpCcFeature = API_FP_CC_EXTENDED_TERMINAL_ID_SUPPORT;
-
-	dectDrvWrite(t, sizeof(ApiFpCcFeaturesReqType));
-	free(t);
-
 }
 
 
@@ -1098,20 +1081,6 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 		ast_queue_control(owner, AST_CONTROL_ANSWER);
 		ast_channel_unref(owner);
  	}
-
-}
-
-static void features_cfm(void)
-{
-	unsigned char o_buf[3];
-
-
-	*(o_buf + 0) = ((API_FP_MM_START_PROTOCOL_REQ & 0xff00) >> 8);
-	*(o_buf + 1) = ((API_FP_MM_START_PROTOCOL_REQ & 0x00ff) >> 0);
-	*(o_buf + 2) = 0;
-
-	ast_verbose("API_FP_MM_START_PROTOCOL_REQ\n");
-	dectDrvWrite(o_buf, 3);
 
 }
 
@@ -1226,7 +1195,6 @@ static void handle_data(unsigned char *buf) {
 
 	case API_FP_CC_FEATURES_CFM:
 		ast_verbose("API_FP_CC_FEATURES_CFM\n");
-		features_cfm();
 		break;
 
 	case API_FP_SET_AUDIO_FORMAT_CFM:
