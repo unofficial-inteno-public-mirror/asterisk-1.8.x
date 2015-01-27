@@ -127,6 +127,28 @@ static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 /* Global jitterbuffer configuration */
 static struct ast_jb_conf global_jbconf;
 
+//TODO change AST_MAX_EXTENSION to something shorter
+/* Structure for feature access codes */
+struct feature_access_code {
+	AST_LIST_ENTRY(feature_access_code) list;
+	char code[AST_MAX_EXTENSION];
+};
+
+/* List of configured feature access codes */
+static AST_LIST_HEAD_NOLOCK_STATIC(feature_access_codes, feature_access_code);
+
+/* Format a string of feature access codes */
+static const char *feature_access_code_string(char *buffer, unsigned int buffer_length);
+
+/* Add FAC to list */
+static int feature_access_code_add(const char *code);
+
+/* Clear list of FAC */
+static int feature_access_code_clear();
+
+/* Match dialed digits against feature access codes */
+static int feature_access_code_match(const char *sequence);
+
 /* Boolean value whether the monitoring thread shall continue. */
 static unsigned int monitor;
 static unsigned int dect;
@@ -1519,9 +1541,9 @@ void handle_dtmf_calling(struct brcm_subchannel *sub)
 		ast_debug(9, "Direct extension matching %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context_direct);
 	}
-	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23) {
+	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23 && !feature_access_code_match(p->dtmfbuf)) {
 		//We have a match in the "normal" context, and user ended the dialling sequence with a #,
-		//so have asterisk place a call immediately
+		//so have asterisk place a call immediately if sequence is not matching a feature access code
 		ast_debug(9, "Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context);
 	}
@@ -2944,6 +2966,8 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 
 static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
 {
+	char buffer[AST_MAX_EXTENSION];
+
 	if (cmd == CLI_INIT) {
 		e->command = "brcm show status";
 		e->usage =
@@ -2962,6 +2986,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Country       : %d\n", endpoint_country);
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
+	ast_cli(a->fd, "FAC list      : %s\n", feature_access_code_string(buffer, AST_MAX_EXTENSION));
 
 	/* print status for individual pvts */
 	brcm_show_pvts(a);
@@ -3379,6 +3404,8 @@ static int unload_module(void)
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
+	feature_access_code_clear();
+
 	ast_debug(3, "Deinitializing endpoint...\n");
 	endpt_deinit();
 	ast_debug(3, "Endpoint deinited...\n");
@@ -3715,6 +3742,24 @@ static int load_settings(struct ast_config **cfg)
 				onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect onholdhanguptimeout '%s', defaulting to '%d'\n", v->value, onholdhanguptimeout);
 			}
+		} else if (!strcasecmp(v->name, "featureaccesscodes")) {
+			char *tok;
+
+			if (ast_strlen_zero(v->value)) {
+				ast_log(LOG_WARNING, "No value given for featureaccesscodes on line %d of brcm.conf\n", v->lineno);
+				continue;
+			}
+
+			tok = strtok(ast_strdupa(v->value), ",");
+			while (tok) {
+				char *code = ast_strdupa(tok);
+				code = ast_strip(code);
+
+				feature_access_code_add(code);
+
+				tok = strtok(NULL, ",");
+			}
+
 		}
 
 		v = v->next;
@@ -4713,6 +4758,71 @@ static int extension_state_cb(char *context, char *exten, int state, void *data)
 	brcm_dialtone_set(p, extension_state2dialtone_state(state));
 	//ast_mutex_unlock(&p->lock);
 	pvt_unlock(p);
+	return 0;
+}
+
+static const char *feature_access_code_string(char *buffer, unsigned int buffer_length)
+{
+	struct feature_access_code *current;
+
+	if (AST_LIST_EMPTY(&feature_access_codes)) {
+		strncpy(buffer, "(empty)", buffer_length);
+		return buffer;
+	}
+
+	buffer[0] = '\0';
+	int write_length = 0;
+	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
+		int rv = snprintf(buffer + write_length, buffer_length - write_length, "%s ", current->code);
+		if (rv <= 0) {
+			break;
+		}
+		write_length += rv;
+	}
+
+	return buffer;
+}
+
+static int feature_access_code_add(const char *code)
+{
+	struct feature_access_code *fac;
+
+	if (ast_strlen_zero(code)) {
+		ast_log(LOG_WARNING, "Zero length FAC\n");
+		return 1;
+	}
+
+	if (!(fac = ast_calloc(1, sizeof(*fac)))) {
+		ast_log(LOG_WARNING, "FAC alloc failed\n");
+		return 1;
+	}
+
+	ast_copy_string(fac->code, code, sizeof(fac->code));
+	ast_log(LOG_DEBUG, "Adding FAC: [%s]\n", fac->code);
+
+	AST_LIST_INSERT_TAIL(&feature_access_codes, fac, list);
+	return 0;
+}
+
+static int feature_access_code_clear()
+{
+	struct feature_access_code *fac;
+
+	while ((fac = AST_LIST_REMOVE_HEAD(&feature_access_codes, list))) {
+		ast_free(fac);
+	}
+	return 0;
+}
+
+static int feature_access_code_match(const char *sequence)
+{
+	struct feature_access_code *current;
+
+	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
+		if (!strcmp(sequence, current->code)) {
+			return 1;
+		}
+	}
 	return 0;
 }
 
