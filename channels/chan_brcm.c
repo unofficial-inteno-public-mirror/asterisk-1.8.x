@@ -1541,9 +1541,9 @@ void handle_dtmf_calling(struct brcm_subchannel *sub)
 		ast_debug(9, "Direct extension matching %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context_direct);
 	}
-	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23 && !feature_access_code_match(p->dtmfbuf)) {
+	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23 && feature_access_code_match(p->dtmfbuf) != 1) {
 		//We have a match in the "normal" context, and user ended the dialling sequence with a #,
-		//so have asterisk place a call immediately if sequence is not matching a feature access code
+		//so have asterisk place a call immediately if sequence is not partially matching a feature access code
 		ast_debug(9, "Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context);
 	}
@@ -3053,6 +3053,8 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 
 	/* Acquire locks for all pvt:s to prevent nasty things from happening */
 	brcm_lock_pvts();
+
+	feature_access_code_clear();
 
 	/* Reload configuration */
 	if (load_settings(&cfg)) {
@@ -4817,13 +4819,40 @@ static int feature_access_code_clear()
 static int feature_access_code_match(const char *sequence)
 {
 	struct feature_access_code *current;
+	int retval = -1;
 
 	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
-		if (!strcmp(sequence, current->code)) {
-			return 1;
+		char *seq = sequence;
+		char *fac = current->code;
+
+		int res = -1;
+		for (; *seq && *fac; seq++, fac++) {
+			if (*fac == '.') {
+				/* Perfect match */
+				return 0;
+			}
+			else if (*seq == *fac) {
+				/* Partial match */
+				res = 1;
+			}
+			else {
+				/* No match */
+				res = -1;
+				break;
+			}
+		}
+
+		if (res == 1 && *seq == *fac) {
+			/* Perfect match */
+			return 0;
+		}
+
+		if (res != -1) {
+			retval = res;
 		}
 	}
-	return 0;
+
+	return retval;
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
