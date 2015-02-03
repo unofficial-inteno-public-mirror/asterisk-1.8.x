@@ -23,6 +23,10 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <json/json.h>
 
 #define BUFLEN 512
 
@@ -61,7 +65,17 @@ static int ubus_asterisk_brcm_cb(
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg);
 
-static int ubus_asterisk_cb(
+static int ubus_asterisk_status_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
+static int ubus_asterisk_call_log_list_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
+static int ubus_asterisk_dect_list_cb(
 		struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg);
@@ -443,7 +457,7 @@ static struct ubus_object ubus_brcm_objects[] = {
 };
 
 static struct ubus_method asterisk_object_methods[] = {
-	{ .name = "status", .handler = ubus_asterisk_cb },
+	{ .name = "status", .handler = ubus_asterisk_status_cb }
 };
 
 static struct ubus_object_type asterisk_object_type =
@@ -454,6 +468,32 @@ static struct ubus_object ubus_asterisk_object = {
 		.type = &asterisk_object_type,
 		.methods = asterisk_object_methods,
 		.n_methods = ARRAY_SIZE(asterisk_object_methods) };
+
+static struct ubus_method asterisk_call_log_object_methods[] = {
+	{ .name = "list", .handler = ubus_asterisk_call_log_list_cb }
+};
+
+static struct ubus_object_type asterisk_call_log_object_type =
+	UBUS_OBJECT_TYPE("asterisk_call_log_object", asterisk_call_log_object_methods);
+
+static struct ubus_object ubus_asterisk_call_log_object = {
+		.name = "asterisk.call_log",
+		.type = &asterisk_call_log_object_type,
+		.methods = asterisk_call_log_object_methods,
+		.n_methods = ARRAY_SIZE(asterisk_call_log_object_methods) };
+
+static struct ubus_method asterisk_dect_object_methods[] = {
+	{ .name = "list", .handler = ubus_asterisk_dect_list_cb }
+};
+
+static struct ubus_object_type asterisk_dect_object_type =
+	UBUS_OBJECT_TYPE("asterisk_dect_object", asterisk_dect_object_methods);
+
+static struct ubus_object ubus_asterisk_dect_object = {
+		.name = "asterisk.dect",
+		.type = &asterisk_dect_object_type,
+		.methods = asterisk_dect_object_methods,
+		.n_methods = ARRAY_SIZE(asterisk_dect_object_methods) };
 
 static int ubus_add_objects(struct ubus_context *ctx)
 {
@@ -476,6 +516,8 @@ static int ubus_add_objects(struct ubus_context *ctx)
 	}
 
 	ret &= ubus_add_object(ctx, &ubus_asterisk_object);
+	ret &= ubus_add_object(ctx, &ubus_asterisk_call_log_object);
+	ret &= ubus_add_object(ctx, &ubus_asterisk_dect_object);
 
 	return ret;
 }
@@ -742,7 +784,7 @@ static int ubus_asterisk_brcm_dump_cb(
  * ubus callback that replies to "asterisk status".
  * Recursively reports status for all lines/accounts
  */
-static int ubus_asterisk_cb (
+static int ubus_asterisk_status_cb (
 	struct ubus_context *ctx, struct ubus_object *obj,
 	struct ubus_request_data *req, const char *method,
 	struct blob_attr *msg)
@@ -771,6 +813,195 @@ static int ubus_asterisk_cb (
 		port++;
 	}
 	blobmsg_close_table(&bb, brcm_table);
+
+	ubus_send_reply(ctx, req, bb.head);
+	return 0;
+}
+
+/*
+ * ubus callback that replies to "asterisk.call_log list".
+ */
+static int ubus_asterisk_call_log_list_cb (
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct blob_attr *tb[__UBUS_ARGMAX];
+
+	blobmsg_parse(ubus_string_argument, __UBUS_ARGMAX, tb, blob_data(msg), blob_len(msg));
+	blob_buf_init(&bb, 0);
+
+	void *log = blobmsg_open_array(&bb, "call_log");
+
+	/* Read call log file line by line */
+	FILE *fp;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t read;
+	fp = fopen("/var/call_log", "r");
+	if (fp == NULL) {
+		goto fail;
+	}
+
+	const char delim[] = ";";
+	const char *tokens[3];
+	while ((read = getline(&line, &len, fp)) != -1) {
+		memset(tokens, 0, sizeof(tokens));
+		char *token = strtok(line, delim);
+		int k = 0;
+
+		while (token != NULL && k < (sizeof(tokens) / sizeof(void*))) {
+			/* Trim new-line character */
+			char *nl = strchr(token, '\n');
+			if (nl != NULL) {
+				*nl = '\0';
+			}
+			tokens[k] = token;
+			token = strtok(NULL, delim);
+			k += 1;
+		}
+
+		if (k >= 3) {
+			void *e = blobmsg_open_table(&bb, NULL);
+			blobmsg_add_string(&bb, "time", tokens[0]);
+			blobmsg_add_string(&bb, "direction", tokens[1]);
+			blobmsg_add_string(&bb, "number", tokens[2]);
+			blobmsg_close_table(&bb, e);
+		}
+	}
+
+	fclose(fp);
+	if (line) {
+		free(line);
+	}
+
+fail:
+	blobmsg_close_array(&bb, log);
+
+	ubus_send_reply(ctx, req, bb.head);
+	return 0;
+}
+
+/*
+ * ubus callback that replies to "asterisk.dect list".
+ */
+static int ubus_asterisk_dect_list_cb (
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct blob_attr *tb[__UBUS_ARGMAX];
+
+	blobmsg_parse(ubus_string_argument, __UBUS_ARGMAX, tb, blob_data(msg), blob_len(msg));
+	blob_buf_init(&bb, 0);
+
+	void *handsets = blobmsg_open_array(&bb, "handsets");
+
+	char *buf = NULL;
+	const int buflen = 4096;
+	FILE *fp = NULL;
+	size_t read;
+	struct json_tokener *tok = NULL;
+	json_object *jobj = NULL;
+
+	buf = (char *)calloc(sizeof(char), buflen);
+	if (buf == NULL) {
+		goto reply;
+	}
+
+	fp = popen("/usr/bin/dect -j", "r");
+	if (fp == NULL) {
+		goto reply;
+	}
+
+	/* Read output into buffer */
+	read = fread(buf, sizeof(char), buflen, fp);
+
+	/*
+	 Example:
+	 {
+		"reg_active":false,
+		"handsets":[
+		{
+			"handset":1,
+			"rfpi":"01 5c 64 42 43 ",
+			"present":true,
+			"pinging":false
+		},
+		{
+			"handset":2,
+			"rfpi":"00 c2 82 e4 9a ",
+			"present":true,
+			"pinging":false
+		}
+		],
+		"ule":[
+		]
+	 }
+	 */
+
+	tok = json_tokener_new();
+	jobj = json_tokener_parse_ex(tok, buf, read);
+	if (jobj == NULL) {
+		switch (json_tokener_get_error(tok)) {
+		case json_tokener_continue:
+			/* Not enough data */
+			/* Too bad we did not read enough */
+			goto reply;
+		default:
+			/* Corrupt input to parser */
+			goto reply;
+		}
+	}
+
+	json_object_object_foreach(jobj, key, val) {
+		if (strcmp(key, "handsets") == 0 && json_object_get_type(val) == json_type_array) {
+			json_object *array = json_object_object_get(jobj, key);
+			int arraylen = json_object_array_length(array);
+
+			int i;
+			for (i = 0; i < arraylen; i++) {
+				json_object *item = json_object_array_get_idx(array, i);
+				if (json_object_get_type(item) == json_type_object) {
+					unsigned int handset = 0;
+					unsigned int present = 0;
+
+					json_object_object_foreach(item, k, v) {
+						if (strcmp(k, "handset") == 0 && json_object_get_type(v) == json_type_int) {
+							handset = (unsigned int)json_object_get_int(v);
+						}
+						else if (strcmp(k, "present") == 0 && json_object_get_type(v) == json_type_boolean) {
+							present = (unsigned int)json_object_get_boolean(v);
+						}
+					}
+
+					void *e = blobmsg_open_table(&bb, NULL);
+					blobmsg_add_u32(&bb, "handset", handset);
+					blobmsg_add_u8(&bb, "present", present);
+					blobmsg_close_table(&bb, e);
+				}
+			}
+		}
+	}
+
+reply:
+	if (fp != NULL) {
+		pclose(fp);
+	}
+
+	if (buf != NULL) {
+		free(buf);
+	}
+
+	if (jobj != NULL) {
+		json_object_put(jobj);
+	}
+
+	if (tok != NULL) {
+		json_tokener_free(tok);
+	}
+
+	blobmsg_close_array(&bb, handsets);
 
 	ubus_send_reply(ctx, req, bb.head);
 	return 0;
