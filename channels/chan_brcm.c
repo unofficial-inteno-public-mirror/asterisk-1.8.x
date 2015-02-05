@@ -3749,19 +3749,18 @@ static int load_settings(struct ast_config **cfg)
 
 			if (ast_strlen_zero(v->value)) {
 				ast_log(LOG_WARNING, "No value given for featureaccesscodes on line %d of brcm.conf\n", v->lineno);
-				continue;
 			}
+			else {
+				tok = strtok(ast_strdupa(v->value), ",");
+				while (tok) {
+					char *code = ast_strdupa(tok);
+					code = ast_strip(code);
 
-			tok = strtok(ast_strdupa(v->value), ",");
-			while (tok) {
-				char *code = ast_strdupa(tok);
-				code = ast_strip(code);
+					feature_access_code_add(code);
 
-				feature_access_code_add(code);
-
-				tok = strtok(NULL, ",");
+					tok = strtok(NULL, ",");
+				}
 			}
-
 		}
 
 		v = v->next;
