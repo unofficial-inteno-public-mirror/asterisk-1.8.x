@@ -132,6 +132,9 @@ struct brcm_pvt {
 	char language[MAX_LANGUAGE];
 	char cid_num[AST_MAX_EXTENSION];
 	char cid_name[AST_MAX_EXTENSION];
+#if BCM_SDK_VERSION < 416021
+	unsigned int last_early_onhook_ts;	/* For detecting hook flash */
+#endif
 	int	endpoint_type;				/* Type of the endpoint fxs, fxo, dect */
 
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
@@ -257,7 +260,9 @@ static struct ast_jb_conf default_jbconf =
 
 #define DEFAULT_R4_HANGUP_TIMEOUT 5000 // In milliseconds
 #define DEFAULT_ONHOLD_HANGUP_TIMEOUT 20 // In seconds
+#if BCM_SDK_VERSION < 416021
 #define DEFAULT_MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook (in ms)
+#endif
 
 
 /* function declaration */

@@ -120,6 +120,11 @@ static int cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 /* R4 transfer */
 static int r4hanguptimeout = DEFAULT_R4_HANGUP_TIMEOUT;
 
+#if BCM_SDK_VERSION < 416021
+/* Maximum allowed delay between early on and early off hook for detecting hookflash */
+static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
+#endif
+
 /* Automatic call on hold hangup */
 static int onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
 
@@ -2182,6 +2187,9 @@ static void *brcm_monitor_events(void *data)
 {
 	ENDPOINTDRV_EVENT_PARM tEventParm = {0};
 	int rc = IOCTL_STATUS_FAILURE;
+#if BCM_SDK_VERSION < 416021
+	struct timeval tim;
+#endif
 
 	while (monitor) {
 
@@ -2411,6 +2419,7 @@ static void *brcm_monitor_events(void *data)
 					ast_debug(1, "EPEVT_DTMFL\n");
 					break;
 				case EPEVT_FLASH:
+#if BCM_SDK_VERSION >= 416021
 					ast_debug(1, "EPEVT_FLASH\n");
 					p->hf_detected = 1;
 
@@ -2420,12 +2429,36 @@ static void *brcm_monitor_events(void *data)
 					p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
 
 					handle_hookflash(sub, sub_peer, owner, peer_owner);
+#endif
 					break;
 				case EPEVT_EARLY_OFFHOOK:
 					ast_debug(1, "EPEVT_EARLY_OFFHOOK\n");
+#if BCM_SDK_VERSION < 416021
+					gettimeofday(&tim, NULL);
+					unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+					if (now - p->last_early_onhook_ts < hfmaxdelay) {
+						p->last_early_onhook_ts = 0;
+						if (p->hf_detected == 1) {
+							p->hf_detected = 0;
+						} else {
+							p->hf_detected = 1;
+
+							/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
+							 * dtmf will be relayed to asterisk. */
+							int timeoutmsec = line_config[p->line_id].timeoutmsec;
+							p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+
+							handle_hookflash(sub, sub_peer, owner, peer_owner);
+						}
+					}
+#endif
 					break;
 				case EPEVT_EARLY_ONHOOK:
 					ast_debug(1, "EPEVT_EARLY_ONHOOK\n");
+#if BCM_SDK_VERSION < 416021
+					gettimeofday(&tim, NULL);
+					p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
+#endif
 					break;
 				case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
 				case EPEVT_VBD_START:
@@ -2584,6 +2617,9 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->lastinput = -1;
 		memset(tmp->ext, 0, sizeof(tmp->ext));
 		tmp->next = NULL;
+#if BCM_SDK_VERSION < 416021
+		tmp->last_early_onhook_ts = 0;
+#endif
 		tmp->endpoint_type = endpoint_type;
 		tmp->dialtone = DIALTONE_UNKNOWN;
 		tmp->dialtone_extension_cb_id = -1;
@@ -2854,6 +2890,9 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "DTMF buffer         : %s\n", p->dtmfbuf);
 		ast_cli(a->fd, "Default context     : %s\n", p->context);
 		ast_cli(a->fd, "Direct context      : %s\n", p->context_direct);
+#if BCM_SDK_VERSION < 416021
+		ast_cli(a->fd, "Last early onhook   : %d\n", p->last_early_onhook_ts);
+#endif
 		line_settings* s = &line_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
@@ -3727,6 +3766,14 @@ static int load_settings(struct ast_config **cfg)
 				cwtimeout = DEFAULT_CALL_WAITING_TIMEOUT;
 				ast_log(LOG_WARNING, "Incorrect cwtimeout '%s', defaulting to '%d'\n", v->value, cwtimeout);
 			}
+#if BCM_SDK_VERSION < 416021
+		} else if (!strcasecmp(v->name, "hfmaxdelay")) {
+			hfmaxdelay = atoi(v->value);
+			if (hfmaxdelay > 1000 || hfmaxdelay < 0) {
+				hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
+				ast_log(LOG_WARNING, "Incorrect hfmaxdelay '%s', defaulting to '%d'\n", v->value, hfmaxdelay);
+			}
+#endif
 		} else if (!strcasecmp(v->name, "r4hanguptimeout")) {
 			r4hanguptimeout = atoi(v->value);
 			if (r4hanguptimeout > 30000 || r4hanguptimeout < 0) {
