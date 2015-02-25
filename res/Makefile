@@ -28,8 +28,10 @@ endif
 
 ubus/ami.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
 ubus/ami.o: ubus/ami.c ubus/ami.h
-res_ubus.so: LIBS+=-lubus -lubox -ljson-c
-$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o
+ubus/ucix.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
+ubus/ucix.o: ubus/ucix.c ubus/ucix.h
+res_ubus.so: LIBS+=-lubus -lubox -ljson-c -luci
+$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o ubus/ucix.o
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 

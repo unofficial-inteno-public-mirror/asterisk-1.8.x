@@ -14,6 +14,7 @@
 #include "asterisk/config.h"
 
 #include "ubus/ami.h"
+#include "ubus/ucix.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/uloop.h>
@@ -30,6 +31,9 @@
 
 #define BUFLEN 512
 
+/********/
+/* UBUS */
+/********/
 static void *ubus_thread(void *arg);                     //Main thread
 static struct ubus_context *ubus_setup(void);            //Setup ubus connection and add objects
 static void ubus_disconnect(struct ubus_context **ctx);  //Disconnect from ubus
@@ -41,6 +45,18 @@ static void ami_handle_message(                          //Handle events and res
 		struct ami *mgr,
 		int fd);
 
+/********/
+/* UCIX */
+/********/
+#define UCI_VOICE_PACKAGE "voice_client"
+#define UCI_CODEC_PACKAGE "voice_codecs"
+
+struct codec *uci_get_codecs(void);
+void ucix_reload(void);
+static void uci_codec_cb(const char * name, void *priv);
+
+struct uci_context *uci_voice_client_ctx = NULL;
+struct uci_context *uci_voice_codecs_ctx = NULL;
 
 /******************/
 /* UBUS callbacks */
@@ -76,6 +92,11 @@ static int ubus_asterisk_call_log_list_cb(
 		struct blob_attr *msg);
 
 static int ubus_asterisk_dect_list_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
+static int ubus_asterisk_codecs_cb(
 		struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg);
@@ -226,6 +247,70 @@ static PORT_MAP brcm_ports[] =
 
 static void init_brcm_ports(void);
 
+/*********/
+/* Codec */
+/*********/
+struct codec {
+  char *key;
+  char *value;
+  unsigned int bitrate;
+  struct codec *next;
+};
+static struct codec *codec_create(void);
+static void codec_delete(struct codec *codec);
+
+/***************************/
+/* UCI interface functions */
+/***************************/
+
+/*
+ * Create list of supported codecs, used by ubus_codecs_cb()
+ */
+struct codec *uci_get_codecs(void)
+{
+	/* Create space for first codec */
+	struct codec *c = codec_create();
+
+	ucix_reload();
+	ucix_for_each_section_type(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, "supported_codec", uci_codec_cb, c);
+	return c;
+}
+
+/*
+ * callback, called for each "supported_codec" found
+ */
+static void uci_codec_cb(const char * name, void *priv)
+{
+	struct codec *c = (struct codec *) priv;
+
+	/* Store key/value to last codec in list */
+	while (c->next) {
+		c = c->next;
+	}
+	c->key = strdup(name);
+	c->value = strdup(ucix_get_option(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, name, "name"));
+	const char *bitrate = ucix_get_option(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, name, "bitrate");
+	c->bitrate = bitrate ? atoi(bitrate) : 0;
+
+	/* Create space for next codec */
+	c->next = codec_create();
+}
+
+/*
+ * Reload uci context, as any changes to config will not be read otherwise
+ */
+void ucix_reload(void)
+{
+	if (uci_voice_client_ctx) {
+		ucix_cleanup(uci_voice_client_ctx);
+	}
+	uci_voice_client_ctx = ucix_init(UCI_VOICE_PACKAGE);
+
+	if (uci_voice_codecs_ctx) {
+		ucix_cleanup(uci_voice_codecs_ctx);
+	}
+	uci_voice_codecs_ctx = ucix_init(UCI_CODEC_PACKAGE);
+}
 
 /****************************/
 /* UBUS interface functions */
@@ -457,7 +542,8 @@ static struct ubus_object ubus_brcm_objects[] = {
 };
 
 static struct ubus_method asterisk_object_methods[] = {
-	{ .name = "status", .handler = ubus_asterisk_status_cb }
+	{ .name = "status", .handler = ubus_asterisk_status_cb },
+	{ .name = "codecs", .handler = ubus_asterisk_codecs_cb },
 };
 
 static struct ubus_object_type asterisk_object_type =
@@ -817,7 +903,6 @@ static int ubus_asterisk_status_cb (
 	ubus_send_reply(ctx, req, bb.head);
 	return 0;
 }
-
 /*
  * ubus callback that replies to "asterisk.call_log list".
  */
@@ -1007,6 +1092,45 @@ reply:
 	return 0;
 }
 
+/*
+ * ubus callback that replies to "asterisk.codecs status"
+ */
+static int ubus_asterisk_codecs_cb (
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct blob_attr *tb[__UBUS_ARGMAX];
+	struct codec *codec;
+	struct codec *codec_tmp;
+
+	blobmsg_parse(ubus_string_argument, __UBUS_ARGMAX, tb, blob_data(msg), blob_len(msg));
+	blob_buf_init(&bb, 0);
+
+	codec = uci_get_codecs();
+
+	while (codec) {
+		/* Node with next == NULL serves as end marker */
+		if (codec->next == NULL) {
+			codec_delete(codec);
+			break;
+		}
+
+		void *table = blobmsg_open_table(&bb, codec->key);
+		blobmsg_add_string(&bb, "name", codec->value);
+		if (codec->bitrate) {
+			blobmsg_add_u32(&bb, "bitrate", codec->bitrate);
+		}
+		blobmsg_close_table(&bb, table);
+
+		codec_tmp = codec;
+		codec = codec->next;
+		codec_delete(codec_tmp);
+	}
+
+	ubus_send_reply(ctx, req, bb.head);
+	return 0;
+}
 static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_event *event)
 {
 	const SIP_ACCOUNT* accounts = sip_accounts;
@@ -1224,6 +1348,27 @@ static void ami_handle_message(struct ubus_context *ctx, struct ami *mgr, int fd
 		}
 		ami_message_free(message);
 	}
+}
+
+static struct codec *codec_create(void)
+{
+	struct codec *c = malloc(sizeof(struct codec));
+	memset(c, 0, sizeof(struct codec));
+
+	return c;
+}
+
+static void codec_delete(struct codec *c)
+{
+	if (c->key) {
+		free(c->key);
+	}
+
+	if (c->value) {
+		free(c->value);
+	}
+
+	free(c);
 }
 
 static int ubus_load(void)

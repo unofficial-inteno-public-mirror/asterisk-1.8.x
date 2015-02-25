@@ -458,6 +458,8 @@ AST_EXT_LIB_SETUP([X11], [X11], [x11])
 AST_EXT_LIB_SETUP([ZLIB], [zlib compression], [z])
 AST_EXT_LIB_SETUP([UBUS], [ubus lib], [ubus])
 AST_EXT_LIB_SETUP([UBOX], [ubox lib], [ubox])
+AST_EXT_LIB_SETUP([UCI], [uci lib], [uci])
+AST_EXT_LIB_SETUP([JSONC], [json-c lib], [json-c])
 
 # check for basic system features and functionality before
 # checking for package libraries
@@ -2000,6 +2002,8 @@ AST_EXT_LIB_CHECK([CRYPTO], [crypto], [AES_encrypt], [openssl/aes.h])
 
 AST_EXT_LIB_CHECK([UBUS], [ubus], [ubus_connect], [libubus.h])
 AST_EXT_LIB_CHECK([UBOX], [ubox], [uloop_run], [libubox/uloop.h])
+AST_EXT_LIB_CHECK([UCI], [uci], [uci_alloc_context], [uci.h])
+AST_EXT_LIB_CHECK([JSONC], [json-c], [json_tokener_new], [json-c/json.h])
 
 if test "$PBX_CRYPTO" = "1";
 then
