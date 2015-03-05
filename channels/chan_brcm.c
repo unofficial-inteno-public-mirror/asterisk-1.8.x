@@ -350,35 +350,35 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		/* The other end is out of network resources */
 		if (ast->_state != AST_STATE_UP) {
 			/* If state is UP, we can't do anything */
-                        ast_softhangup_nolock(ast, AST_SOFTHANGUP_DEV);
+			ast_softhangup_nolock(ast, AST_SOFTHANGUP_DEV);
 			brcm_hangup(ast);
 			break;
-                }
-                res = -1;
-                break;
+		}
+		res = -1;
+		break;
 	case AST_CONTROL_CONNECTED_LINE:
 		ast_debug(4, "Got CONNECTED LINE UPDATE on %s\n", ast->name);
 		/* Update caller IDs on display - dect ? */
-                res = -1;
-                break;
+		res = -1;
+		break;
 		
 	case AST_CONTROL_BUSY:
 		ast_debug(4, "Got BUSY on %s\n", ast->name);
 		/* The other end is busy */
-                if (ast->_state != AST_STATE_UP) {
+		if (ast->_state != AST_STATE_UP) {
 			/* XXX We should play a busy tone here!! */
-                        ast_softhangup_nolock(ast, AST_SOFTHANGUP_DEV);
+			ast_softhangup_nolock(ast, AST_SOFTHANGUP_DEV);
 			brcm_hangup(ast);
-                        break;
-                }
-                res = -1;
-                break;
+			break;
+		}
+		res = -1;
+		break;
 	case AST_CONTROL_PROGRESS:
 		ast_debug(4, "Got PROGRESS on %s\n", ast->name);
 		/* Early media is coming our way */
 		/* What do we do with that? */
-                res = -1;
-                break;
+		res = -1;
+		break;
 	default:
 		res = -1;
 		ast_debug(1, "Don't know how to indicate condition %d\n", condition);
