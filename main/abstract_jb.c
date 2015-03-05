@@ -556,6 +556,17 @@ void ast_jb_destroy(struct ast_channel *chan)
 }
 
 
+void ast_jb_disable(struct ast_channel *chan)
+{
+	struct ast_jb *jb = &chan->jb;
+	const struct ast_jb_impl *jbimpl = jb->impl;
+	struct ast_jb_conf *conf = &jb->conf;
+
+	ast_clear_flag(conf, AST_JB_ENABLED);
+	ast_verb(3, "%s jitterbuffer disabled on channel %s\n", jbimpl->name, chan->name);
+}
+
+
 static long get_now(struct ast_jb *jb, struct timeval *when)
 {
 	struct timeval now;

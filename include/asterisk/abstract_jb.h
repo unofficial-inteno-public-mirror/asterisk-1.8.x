@@ -181,6 +181,13 @@ void ast_jb_get_and_deliver(struct ast_channel *c0, struct ast_channel *c1);
  */
 void ast_jb_destroy(struct ast_channel *chan);
 
+/*!
+ * \brief Disables future jitterbuffer usage on a channel.
+ * \param chan channel
+ *
+ * Workaround for one-way jitterbuffer related issues.
+ */
+void ast_jb_disable(struct ast_channel *chan);
 
 /*!
  * \brief Sets jitterbuffer configuration property.

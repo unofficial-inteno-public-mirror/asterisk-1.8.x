@@ -1830,6 +1830,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 					//Asterisk jitter buffer causes one way audio when going from unhold.
 					//This is a workaround until jitter buffer is handled by DSP.
 					ast_jb_destroy(peer_owner);
+					ast_jb_disable(peer_owner);
 
 					ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
 					brcm_subchannel_set_state(sub_peer, INCALL);
@@ -1837,6 +1838,13 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 				/* Switch all connections to conferencing mode */
 				brcm_create_conference(p);
+
+				if (owner) {
+					//Asterisk jitter buffer causes one way audio when going from unhold.
+					//This is a workaround until jitter buffer is handled by DSP.
+					ast_jb_destroy(owner);
+					ast_jb_disable(owner);
+				}
 			}
 			break;
 
