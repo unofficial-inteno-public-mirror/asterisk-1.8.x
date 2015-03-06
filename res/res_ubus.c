@@ -414,6 +414,8 @@ static void *ubus_thread(void *arg)
 	}
 	mgr = ami_setup(mgr_fd[1]);
 
+	ami_action_send_sip_reload(mgr);
+
 	while (running) {
 		FD_ZERO(&fset);
 		timeout.tv_sec = 1;
