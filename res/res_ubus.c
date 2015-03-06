@@ -867,23 +867,26 @@ static struct ubus_method sip_main_object_methods[] = {
 static struct ubus_object_type sip_main_object_type =
 	UBUS_OBJECT_TYPE("sip_main_object", sip_main_object_methods);
 
-static struct ubus_method sip_object_methods[] = {
+static struct ubus_object ubus_sip_main_object[] = {
+	{ .name = "asterisk.sip", .type = &sip_main_object_type, .methods = sip_main_object_methods, .n_methods = ARRAY_SIZE(sip_main_object_methods) }
+};
+
+static struct ubus_method sip_peer_object_methods[] = {
 	{ .name = "status", .handler = ubus_asterisk_sip_cb },
 };
 
-static struct ubus_object_type sip_object_type =
-	UBUS_OBJECT_TYPE("sip_object", sip_object_methods);
+static struct ubus_object_type sip_peer_object_type =
+	UBUS_OBJECT_TYPE("sip_peer_object", sip_peer_object_methods);
 
-static struct ubus_object ubus_sip_objects[] = {
-	{ .name = "asterisk.sip", .type = &sip_main_object_type, .methods = sip_main_object_methods, .n_methods = ARRAY_SIZE(sip_main_object_methods) },
-	{ .name = "asterisk.sip.0", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.1", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.2", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.3", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.4", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.5", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.6", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) },
-	{ .name = "asterisk.sip.7", .type = &sip_object_type, .methods = sip_object_methods, .n_methods = ARRAY_SIZE(sip_object_methods) }
+static struct ubus_object ubus_sip_peer_objects[] = {
+	{ .name = "asterisk.sip.0", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.1", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.2", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.3", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.4", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.5", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.6", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) },
+	{ .name = "asterisk.sip.7", .type = &sip_peer_object_type, .methods = sip_peer_object_methods, .n_methods = ARRAY_SIZE(sip_peer_object_methods) }
 };
 
 static struct ubus_method brcm_main_object_methods[] = {
@@ -893,21 +896,24 @@ static struct ubus_method brcm_main_object_methods[] = {
 static struct ubus_object_type brcm_main_object_type =
 	UBUS_OBJECT_TYPE("brcm_main_object", brcm_main_object_methods);
 
-static struct ubus_method brcm_object_methods[] = {
+static struct ubus_object ubus_brcm_main_object[] = {
+	{ .name = "asterisk.brcm", .type = &brcm_main_object_type, .methods = brcm_main_object_methods, .n_methods = ARRAY_SIZE(brcm_main_object_methods) }
+};
+
+static struct ubus_method brcm_line_object_methods[] = {
 	{ .name = "status", .handler = ubus_asterisk_brcm_cb },
 };
 
-static struct ubus_object_type brcm_object_type =
-	UBUS_OBJECT_TYPE("brcm_object", brcm_object_methods);
+static struct ubus_object_type brcm_line_object_type =
+	UBUS_OBJECT_TYPE("brcm_object", brcm_line_object_methods);
 
-static struct ubus_object ubus_brcm_objects[] = {
-	{ .name = "asterisk.brcm", .type = &brcm_main_object_type, .methods = brcm_main_object_methods, .n_methods = ARRAY_SIZE(brcm_main_object_methods) },
-	{ .name = "asterisk.brcm.0", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.1", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.2", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.3", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.4", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) },
-	{ .name = "asterisk.brcm.5", .type = &brcm_object_type, .methods = brcm_object_methods, .n_methods = ARRAY_SIZE(brcm_object_methods) }
+static struct ubus_object ubus_brcm_line_objects[] = {
+	{ .name = "asterisk.brcm.0", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) },
+	{ .name = "asterisk.brcm.1", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) },
+	{ .name = "asterisk.brcm.2", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) },
+	{ .name = "asterisk.brcm.3", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) },
+	{ .name = "asterisk.brcm.4", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) },
+	{ .name = "asterisk.brcm.5", .type = &brcm_line_object_type, .methods = brcm_line_object_methods, .n_methods = ARRAY_SIZE(brcm_line_object_methods) }
 };
 
 static struct ubus_method asterisk_object_methods[] = {
@@ -957,7 +963,7 @@ static int ubus_add_objects(struct ubus_context *ctx)
 	SIP_PEER *peer;
 	peer = sip_peers;
 	while (peer->account.id != SIP_ACCOUNT_UNKNOWN) {
-		peer->ubus_object = &ubus_sip_objects[peer->account.id];
+		peer->ubus_object = &ubus_sip_peer_objects[peer->account.id];
 		ret &= ubus_add_object(ctx, peer->ubus_object);
 		peer++;
 	}
@@ -965,11 +971,13 @@ static int ubus_add_objects(struct ubus_context *ctx)
 	PORT_MAP *port;
 	port = brcm_ports;
 	while (port->port != PORT_ALL) {
-		port->ubus_object = &ubus_brcm_objects[port->port];
+		port->ubus_object = &ubus_brcm_line_objects[port->port];
 		ret &= ubus_add_object(ctx, port->ubus_object);
 		port++;
 	}
 
+	ret &= ubus_add_object(ctx, &ubus_sip_main_object);
+	ret &= ubus_add_object(ctx, &ubus_brcm_main_object);
 	ret &= ubus_add_object(ctx, &ubus_asterisk_object);
 	ret &= ubus_add_object(ctx, &ubus_asterisk_call_log_object);
 	ret &= ubus_add_object(ctx, &ubus_asterisk_dect_object);
