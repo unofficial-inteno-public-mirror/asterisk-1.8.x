@@ -61,6 +61,7 @@ struct ami *ami_setup(int fd)
 	snprintf(mgr->hook.file, sizeof(char) * BUF_SIZE, "ami_%d", fd);
 	mgr->hook.helper = manager_hook_cb;
 	mgr->hook.data = mgr;
+	mgr->hook.list.next = NULL;
 	ast_manager_register_hook(&mgr->hook);
 
 	return mgr;
