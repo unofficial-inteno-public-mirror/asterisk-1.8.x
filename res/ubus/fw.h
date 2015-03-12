@@ -15,6 +15,7 @@
 struct fw;
 
 struct fw *fw_create(void);
+void fw_delete(struct fw *fw);
 int fw_manage(struct fw *fw, SIP_PEER *peer, int doResolv);
 
 #endif /* FW_H_ */

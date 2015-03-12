@@ -55,6 +55,11 @@ struct fw* fw_create()
 	return fw;
 }
 
+void fw_delete(struct fw *fw)
+{
+	free(fw);
+}
+
 /* Resolv host and add IPs to iptables */
 int fw_manage(struct fw* fw, SIP_PEER *peer, int doResolv)
 {

@@ -10,6 +10,8 @@
 #include "uci.h"
 #include "codec.h"
 #include "ucix.h"
+#include <asterisk.h>
+#include <asterisk/logger.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -21,6 +23,33 @@ static struct uci_context *uci_voice_client_ctx = NULL;
 static struct uci_context *uci_voice_codecs_ctx = NULL;
 
 static void ucix_reload(void);
+
+/*
+ * Determine how many voice leds are present in current hardware config
+ */
+int uci_get_voice_led_count()
+{
+	/* Initialize */
+	struct uci_context *hw_uci_ctx = ucix_init_path("/lib/db/config/", "hw");
+	if(!hw_uci_ctx) {
+		ast_log(LOG_ERROR, "Failed to get uci context for path /lib/db/config\n");
+		return 1; //Assume a single voice led
+	}
+
+	int led_count = ucix_get_option_int(hw_uci_ctx, "hw", "board", "VoiceLeds", 1);
+	ast_log(LOG_DEBUG, "Found %i voice leds\n", led_count);
+	ucix_cleanup(hw_uci_ctx);
+	return led_count;
+}
+
+/*
+ * Get the called_lines configuration for a sip peer
+ */
+const char* uci_get_called_lines(const SIP_PEER* peer)
+{
+	ucix_reload();
+	return ucix_get_option(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "call_lines");
+}
 
 /*
  * Create list of supported codecs, used by ubus_codecs_cb()

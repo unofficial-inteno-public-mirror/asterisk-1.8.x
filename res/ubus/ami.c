@@ -185,7 +185,7 @@ void ami_message_free(struct ami_message *message)
  */
 void ami_action_send_sip_reload(struct ami *mgr)
 {
-	ast_log(LOG_DEBUG, "Queueing Action: ami_action_queue_sip_reload\n");
+	ast_log(LOG_DEBUG, "Queueing Action: sip reload\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message,"Action: Command\r\nCommand: sip reload\r\n\r\n");
@@ -240,6 +240,24 @@ void ami_action_send_sip_dump(struct ami *mgr, void *userdata)
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: SIPdump\r\n\r\n");
+	action->userdata = userdata;
+	send_action(mgr, action);
+}
+
+void ami_send_module_show_brcm(struct ami *mgr, void *userdata) {
+	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_brcm\n");
+	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
+	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_brcm\r\n\r\n");
+	action->userdata = userdata;
+	send_action(mgr, action);
+}
+
+void ami_send_brcm_ports_show(struct ami *mgr, void *userdata) {
+	ast_log(LOG_DEBUG, "Queueing Action: BRCMPortsShow\n");
+	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
+	sprintf(action->message, "Action: BRCMPortsShow\r\n\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -332,6 +350,8 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 
 		*idx = i;
 		return VARSET;
+	} else {
+		ast_log(LOG_ERROR, "[%s]\n", buf);
 
 	} // else if() handle other events
 

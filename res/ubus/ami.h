@@ -133,4 +133,25 @@ void ami_action_send_brcm_dump(struct ami *mgr, void *userdata);
 
 void ami_action_send_sip_dump(struct ami *mgr, void *userdata);
 
+/*
+ * Request an indication on if BRCM module is loaded or not
+ *
+ * Example response:
+ * "Response: Follows
+ * Privilege: Command
+ * --END COMMAND--"
+ */
+void ami_send_module_show_brcm(struct ami *mgr, void *userdata);
+
+/*
+ * Request an indication on the port configuration
+ *
+ * Example response:
+ * "Response: Success
+ * Message:
+ * FXS 2
+ * DECT 4"
+ */
+void ami_send_brcm_ports_show(struct ami *mgr, void *userdata);
+
 #endif /* AMI_H_ */

@@ -13,9 +13,11 @@
 #include "asterisk/manager.h"
 
 #include "ubus/ami.h"
+#include "ubus/brcm.h"
 #include "ubus/codec.h"
 #include "ubus/fw.h"
 #include "ubus/ip.h"
+#include "ubus/leds.h"
 #include "ubus/sip.h"
 #include "ubus/uci.h"
 
@@ -105,59 +107,26 @@ static int running = 0;
 static pthread_t ubus_thread_handle;
 struct ami* mgr; //manager listener context
 struct fw* fw; //Managed firewall struct
+struct leds* leds; //Managed leds struct
 int mgr_fd[2];
 static SIP_PEER sip_peers[SIP_ACCOUNT_UNKNOWN + 1];
+static BRCM_PORT_MAP brcm_ports[BRCM_PORT_UNKNOWN + 1];
 
 #define UCI_BIN "uci"
 #define UCI_VOICE_PACKAGE "voice_client"
 #define UCI_CODEC_PACKAGE "voice_codecs"
 
-/**************/
-/* BRCM stuff */
-/**************/
-//These are used to map SIP peer name to a port
-//CPE may be configured to share the same SIP-account for several ports or to use individual accounts
-typedef enum BRCM_PORT
-{
-	PORT_BRCM0 = 0,
-	PORT_BRCM1,
-	PORT_BRCM2,
-	PORT_BRCM3,
-	PORT_BRCM4,
-	PORT_BRCM5,
-	PORT_ALL,
-	PORT_UNKNOWN
-} BRCM_PORT;
-
-typedef struct SUBCHANNEL
-{
-	char		state[80];
-} SUBCHANNEL;
-
-#define MAX_PORT_NAME	10
-typedef struct PORT_MAP
-{
-	char		name[MAX_PORT_NAME];
-	BRCM_PORT	port;
-	int		off_hook;
-	SUBCHANNEL	sub[2]; //TODO define for number of subchannels?
-	struct ubus_object *ubus_object;
-} PORT_MAP;
-
-static PORT_MAP brcm_ports[] =
-{
-	{"brcm0",	PORT_BRCM0,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"brcm1",	PORT_BRCM1,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"brcm2",	PORT_BRCM2,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"brcm3",	PORT_BRCM3,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"brcm4",	PORT_BRCM4,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"brcm5",	PORT_BRCM5,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	//Add other ports here as needed
-	{"port_all",	PORT_ALL,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-	{"-",		PORT_UNKNOWN,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
-};
-
-static void brcm_port_init_all(void);
+/********************/
+/* Static functions */
+/********************/
+static int module_show_brcm_request(struct ubus_context *ctx, struct ami *mgr);
+static int module_show_brcm_handle_response_cb(struct ubus_context *ctx,
+		struct ubus_request_data *req,
+		char *data);
+static int brcm_ports_show_request(struct ubus_context *ctx, struct ami *mgr);
+static int brcm_ports_show_response_cb(struct ubus_context *ctx,
+		struct ubus_request_data *req,
+		char *data);
 
 /****************************/
 /* UBUS interface functions */
@@ -173,7 +142,7 @@ static void *ubus_thread(void *arg)
 	int rv;                   //select() return value
 
 	//Setup
-	brcm_port_init_all();
+	brcm_port_init_all(brcm_ports);
 	sip_peer_init_all(sip_peers);
 
 	ctx = ubus_setup();
@@ -184,6 +153,7 @@ static void *ubus_thread(void *arg)
 	mgr = ami_setup(mgr_fd[1]);
 	fw = fw_create();
 
+	module_show_brcm_request(ctx, mgr); //Request number of FXS and DECT lines
 	ami_action_send_sip_reload(mgr);
 
 	while (running) {
@@ -198,7 +168,7 @@ static void *ubus_thread(void *arg)
 
 		//Wait for events from ubus or manager
 		rv = select(FD_SETSIZE, &fset, NULL, NULL, &timeout);
-		if(rv < 0) {
+		if (rv < 0) {
 			if (errno == EINTR) {
 				continue;
 			}
@@ -234,6 +204,9 @@ static void *ubus_thread(void *arg)
 		ubus_disconnect(&ctx);
 	}
 
+	fw_delete(fw);
+	leds_delete(leds);
+
 	return NULL;
 }
 
@@ -264,6 +237,7 @@ static struct ubus_context *ubus_setup(void)
 
 static void ubus_disconnect(struct ubus_context **ctx)
 {
+	leds_ubus_disconnected(leds);
 	ubus_free(*ctx);
 	*ctx = NULL;
 	ubus_connected = 0;
@@ -272,6 +246,7 @@ static void ubus_disconnect(struct ubus_context **ctx)
 static void ubus_connection_lost_cb(struct ubus_context *ctx)
 {
 	ast_log(LOG_WARNING, "UBUS connection lost\n");
+	leds_ubus_disconnected(leds);
 	ubus_connected = 0;
 }
 
@@ -280,19 +255,6 @@ static void system_fd_set_cloexec(int fd)
 #ifdef FD_CLOEXEC
 	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
 #endif
-}
-
-static void brcm_port_init_all()
-{
-	PORT_MAP *ports;
-
-	ports = brcm_ports;
-	while (ports->port != PORT_UNKNOWN) {
-		ports->off_hook = 0;
-		strcpy(ports->sub[0].state, "ONHOOK");
-		strcpy(ports->sub[1].state, "ONHOOK");
-		ports++;
-	}
 }
 
 /******************************************/
@@ -424,9 +386,9 @@ static int ubus_add_objects(struct ubus_context *ctx)
 		peer++;
 	}
 
-	PORT_MAP *port;
+	BRCM_PORT_MAP *port;
 	port = brcm_ports;
-	while (port->port != PORT_ALL) {
+	while (port->port != BRCM_PORT_ALL) {
 		port->ubus_object = &ubus_brcm_line_objects[port->port];
 		ret &= ubus_add_object(ctx, port->ubus_object);
 		port++;
@@ -461,7 +423,7 @@ static int ubus_send_sip_event(struct ubus_context *ctx, const SIP_PEER *peer, c
 /*
  * Sends asterisk.brcm events
  */
-static int ubus_send_brcm_event(struct ubus_context *ctx, const PORT_MAP *port, const char *key, const char *value)
+static int ubus_send_brcm_event(struct ubus_context *ctx, const BRCM_PORT_MAP *port, const char *key, const char *value)
 {
 	char id[BUFLEN];
 	snprintf(id, BUFLEN, "asterisk.brcm.%d", port->port);
@@ -477,11 +439,11 @@ static int ubus_send_brcm_event(struct ubus_context *ctx, const PORT_MAP *port, 
  */
 static int ubus_get_brcm_line(struct blob_buf *b, int line)
 {
-	if (line >= PORT_UNKNOWN || line >= PORT_ALL || line < 0) {
+	if (line >= BRCM_PORT_UNKNOWN || line >= BRCM_PORT_ALL || line < 0) {
 		return 1;
 	}
 
-	const PORT_MAP *p = &(brcm_ports[line]);
+	const BRCM_PORT_MAP *p = &(brcm_ports[line]);
 	blobmsg_add_string(b, "sub_0_state", p->sub[0].state);
 	blobmsg_add_string(b, "sub_1_state", p->sub[1].state);
 
@@ -636,9 +598,9 @@ static int ubus_asterisk_brcm_cb (
 	blobmsg_parse(ubus_string_argument, __UBUS_ARGMAX, tb, blob_data(msg), blob_len(msg));
 	blob_buf_init(&bb, 0);
 
-	PORT_MAP *port;
+	BRCM_PORT_MAP *port;
 	port = brcm_ports;
-	while (port->port != PORT_UNKNOWN) {
+	while (port->port != BRCM_PORT_UNKNOWN) {
 		if (port->ubus_object == obj) {
 			ubus_get_brcm_line(&bb, port->port); //Add port status to message
 			break;
@@ -723,9 +685,9 @@ static int ubus_asterisk_status_cb (
 	}
 	blobmsg_close_table(&bb, sip_table);
 
-	PORT_MAP *port = brcm_ports;
+	BRCM_PORT_MAP *port = brcm_ports;
 	void *brcm_table = blobmsg_open_table(&bb, "brcm");
-	while (port->port != PORT_UNKNOWN && port->port != PORT_ALL) {
+	while (port->port != BRCM_PORT_UNKNOWN && port->port != BRCM_PORT_ALL) {
 		void *line_table = blobmsg_open_table(&bb, port->name);
 		ubus_get_brcm_line(&bb, port->port); //Add port status to message
 		blobmsg_close_table(&bb, line_table);
@@ -1063,7 +1025,7 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 		case BRCM_STATUS_EVENT:
 			ast_log(LOG_DEBUG, "Got BRCM_STATUS_EVENT for %d, offhook = %d\n", event->brcm_event->status.line_id, event->brcm_event->status.off_hook);
 			line_id = event->brcm_event->status.line_id;
-			if (line_id >= 0 && line_id < PORT_ALL) {
+			if (line_id >= 0 && line_id < BRCM_PORT_ALL) {
 				brcm_ports[line_id].off_hook = event->brcm_event->status.off_hook;
 			}
 			else {
@@ -1075,7 +1037,7 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 			line_id = event->brcm_event->state.line_id;
 			subchannel_id = event->brcm_event->state.subchannel_id;
 
-			if (line_id >= 0 && line_id < PORT_ALL) {
+			if (line_id >= 0 && line_id < BRCM_PORT_ALL) {
 				strcpy(brcm_ports[line_id].sub[subchannel_id].state, event->brcm_event->state.state);
 				char* subchannel = subchannel_id ? "0" : "1";
 				if (ctx) {
@@ -1087,7 +1049,15 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 			}
 			break;
 		case BRCM_MODULE_EVENT:
-			//No action required
+			if (leds) {
+				leds_set_brcm_loaded(leds, event->brcm_event->module_loaded);
+			}
+			else if (leds == NULL && event->brcm_event->module_loaded) {
+				/* No leds struct created yet and chan_brcm is now loaded.
+				 * Request number of lines for leds management.
+				 */
+				brcm_ports_show_request(ctx, mgr);
+			}
 			break;
 		default:
 			break;
@@ -1124,6 +1094,7 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 		if (event->channel_reload_event->channel_type == CHANNELRELOAD_SIP_EVENT) {
 			ast_log(LOG_DEBUG, "SIP channel was reloaded\n");
 			sip_peer_init_all(sip_peers); //SIP has reloaded, initialize sip peer structs
+			leds_configure(leds);
 		}
 		break;
 	case VARSET:
@@ -1133,13 +1104,17 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 		//No action required
 		break;
 	case FULLYBOOTED:
+		ast_log(LOG_DEBUG, "FULLY BOOTED\n");
 		ami_action_send_sip_reload(mgr);
+		module_show_brcm_request(ctx, mgr);
 		break;
 	case UNKNOWN_EVENT:
 		break; //An event that ami_parser could not handle
 	default:
 		break; //An event that we don't care about
 	}
+
+	leds_manage(leds);
 }
 
 static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *resp)
@@ -1181,6 +1156,102 @@ static void ami_handle_message(struct ubus_context *ctx, struct ami *mgr, int fd
 		}
 		ami_message_free(message);
 	}
+}
+
+int module_show_brcm_handle_response_cb(
+	struct ubus_context *ctx, struct ubus_request_data *req,
+	char *data)
+{
+	if (strstr(data, "1 modules loaded")) {
+		ast_log(LOG_DEBUG, "BRCM channel driver is loaded\n");
+		brcm_ports_show_request(ctx, mgr);
+		leds_set_brcm_loaded(leds, 1);
+	}
+	else {
+		ast_log(LOG_DEBUG, "BRCM channel driver is not loaded\n");
+		leds_set_brcm_loaded(leds, 0);
+	}
+
+	return 0;
+}
+
+int module_show_brcm_request(struct ubus_context *ctx, struct ami *mgr)
+{
+	struct ami_context *ami_ctx;
+	ami_ctx = malloc(sizeof(struct ami_context));
+	ami_ctx->ctx = ctx;
+	ami_ctx->handle_response = module_show_brcm_handle_response_cb;
+
+	ami_send_module_show_brcm(mgr, ami_ctx);
+
+	return 0;
+}
+
+int brcm_ports_show_response_cb(
+	struct ubus_context *ctx, struct ubus_request_data *req,
+	char *data)
+{
+
+	int result = 1;
+	int fxs_line_count = 0;
+	int dect_line_count = 0;
+
+	char* fxs_needle = strstr(data, "FXS");
+	if (fxs_needle == NULL) {
+		ast_log(LOG_ERROR, "Could not find number of FXS ports\n");
+		result = 0;
+	}
+	else {
+		fxs_line_count = strtol(fxs_needle + 4, NULL, 10);
+		ast_log(LOG_DEBUG, "Found %d FXS ports\n", fxs_line_count);
+	}
+
+	char* dect_needle = strstr(data, "DECT");
+	if (dect_needle == NULL) {
+		ast_log(LOG_ERROR, "Could not find number of DECT ports\n");
+		result = 0;
+	}
+	else {
+		dect_line_count = strtol(dect_needle + 5, NULL, 10);
+		ast_log(LOG_DEBUG, "Found %d DECT ports\n", dect_line_count);
+	}
+
+	if (result) {
+		if (leds &&
+				(leds->fxs_line_count != fxs_line_count || leds->dect_line_count != dect_line_count))
+		{
+			/* This will most likely not be reached */
+			leds_delete(leds);
+			leds = NULL;
+		}
+
+		if (!leds) {
+			/* No previous leds struct (probably booting up) or a change in configuration.
+			 * All information needed for led is now gathered, create leds struct */
+			leds = leds_create(ctx,
+					sip_peers,
+					brcm_ports,
+					fxs_line_count,
+					dect_line_count,
+					1); // chan_brcm loaded
+		}
+	}
+
+	leds_manage(leds);
+
+	return result;
+}
+
+int brcm_ports_show_request(struct ubus_context *ctx, struct ami *mgr)
+{
+	struct ami_context *ami_ctx;
+	ami_ctx = malloc(sizeof(struct ami_context));
+	ami_ctx->ctx = ctx;
+	ami_ctx->handle_response = brcm_ports_show_response_cb;
+
+	ami_send_brcm_ports_show(mgr, ami_ctx);
+
+	return 0;
 }
 
 static int ubus_load(void)
