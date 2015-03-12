@@ -11,10 +11,13 @@
 #include "asterisk.h"
 #include "asterisk/module.h"
 #include "asterisk/manager.h"
-#include "asterisk/config.h"
 
 #include "ubus/ami.h"
-#include "ubus/ucix.h"
+#include "ubus/codec.h"
+#include "ubus/fw.h"
+#include "ubus/ip.h"
+#include "ubus/sip.h"
+#include "ubus/uci.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/uloop.h>
@@ -23,10 +26,6 @@
 #include <libubus.h>
 #include <pthread.h>
 #include <signal.h>
-#include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <json/json.h>
 
 #define BUFLEN 512
@@ -105,135 +104,13 @@ static int ubus_connected = 0;
 static int running = 0;
 static pthread_t ubus_thread_handle;
 struct ami* mgr; //manager listener context
+struct fw* fw; //Managed firewall struct
 int mgr_fd[2];
-
-/*****************/
-/* SIP IP struct */
-/*****************/
-#ifndef   NI_MAXHOST
-#define   NI_MAXHOST 65
-#endif
-#define	MAX_IP_LIST_LENGTH	20
-
-typedef struct IP
-{
-	int family;
-	char addr[NI_MAXHOST];
-} IP;
-
-/*************/
-/* SIP stuff */
-/*************/
-typedef enum SIP_ACCOUNT_ID
-{
-	SIP_ACCOUNT_0 = 0,
-	SIP_ACCOUNT_1,
-	SIP_ACCOUNT_2,
-	SIP_ACCOUNT_3,
-	SIP_ACCOUNT_4,
-	SIP_ACCOUNT_5,
-	SIP_ACCOUNT_6,
-	SIP_ACCOUNT_7,
-	SIP_ACCOUNT_UNKNOWN
-} SIP_ACCOUNT_ID;
-
-#define MAX_ACCOUNT_NAME	10
-typedef struct SIP_ACCOUNT
-{
-	SIP_ACCOUNT_ID id;
-	char name[MAX_ACCOUNT_NAME];
-} SIP_ACCOUNT;
-
-static const SIP_ACCOUNT sip_accounts[] = {
-	{SIP_ACCOUNT_0,		"sip0"},
-	{SIP_ACCOUNT_1,		"sip1"},
-	{SIP_ACCOUNT_2,		"sip2"},
-	{SIP_ACCOUNT_3,		"sip3"},
-	{SIP_ACCOUNT_4,		"sip4"},
-	{SIP_ACCOUNT_5,		"sip5"},
-	{SIP_ACCOUNT_6,		"sip6"},
-	{SIP_ACCOUNT_7,		"sip7"},
-	{SIP_ACCOUNT_UNKNOWN,	"-"}
-};
-
-#define MAX_SIP_PEERS 10
-#define MAX_SIP_PEER_NAME 10
-#define MAX_SIP_PEER_USERNAME 128
-#define MAX_SIP_PEER_DOMAIN 128
-#define MAX_SIP_PEER_STATE 128
-typedef struct SIP_PEER
-{
-	SIP_ACCOUNT	account;
-	int		sip_registry_request_sent;		//Bool indicating if we have sent a registration request
-	int		sip_registry_registered;		//Bool indicating if we are registered or not
-	time_t	sip_registry_time;				//The time when we received the registry event
-	IP		ip_list[MAX_IP_LIST_LENGTH];	//IP addresses of the sip registrar
-	int		ip_list_length;					//Number of addresses
-
-	//Info from sip show registry
-	int port;								//The port we are connected to
-	char username[MAX_SIP_PEER_USERNAME];	//Our username
-	char domain[MAX_SIP_PEER_DOMAIN];		//The domain we are registered on
-	int domain_port;						//The domain port
-	int refresh;							//Refresh interval for this registration
-	char state[MAX_SIP_PEER_STATE];			//Registration state e.g. Registered
-	time_t registration_time;				//Registration timestamp, 1401282865
-
-	struct ubus_object *ubus_object;
-} SIP_PEER;
-
 static SIP_PEER sip_peers[SIP_ACCOUNT_UNKNOWN + 1];
-static void init_sip_peers(void);
-static void sip_peer_add_ip(SIP_PEER *peer, char *addr, int family);
-static void sip_peer_log_all(void);
 
-/********/
-/* UCIX */
-/********/
-#define UCI_VOICE_PACKAGE "voice_client"
-#define UCI_CODEC_PACKAGE "voice_codecs"
-
-static struct codec *uci_get_codecs(void);
-static int uci_get_rtp_port_start(void);
-static int uci_get_rtp_port_end(void);
-static int uci_get_sip_proxy(struct list_head *proxies);
-static const char* uci_get_peer_host(SIP_PEER *peer);
-static const char* uci_get_peer_domain(SIP_PEER *peer);
-static int uci_get_peer_enabled(SIP_PEER* peer);
-static void ucix_reload(void);
-static void uci_codec_cb(const char * name, void *priv);
-
-struct uci_context *uci_voice_client_ctx = NULL;
-struct uci_context *uci_voice_codecs_ctx = NULL;
-
-/****************************/
-/* Dynamic firewall support */
-/****************************/
-#define IPTABLES_CHAIN "zone_wan_input"
-#define IPTABLES_BIN "iptables"
-#define IPTABLES_FILE "/etc/firewall.sip"
-#ifdef USE_IPV6
-#define IP6TABLES_BIN "ip6tables"
-#define IP6TABLES_FILE "/etc/firewall6.sip"
-#endif
-#define ECHO_BIN "echo"
 #define UCI_BIN "uci"
 #define UCI_VOICE_PACKAGE "voice_client"
 #define UCI_CODEC_PACKAGE "voice_codecs"
-
-#define RTP_RANGE_START_DEFAULT	10000
-#define RTP_RANGE_END_DEFAULT	20000
-
-static int rtpstart_current = 0;
-static int rtpend_current = 0;
-static IP* ip_list_current = NULL;
-static int ip_list_length_current = 0;
-
-static int fw_resolv(SIP_PEER *peer, const char *domain);
-static IP* fw_ip_set_create(int family, int *ip_list_length);
-static int fw_ip_set_compare(IP* ip_list1, int ip_list_length1, IP* ip_list2, int ip_list_length2);
-static void fw_write(int family);
-static int fw_manage(SIP_PEER *peer, int doResolv);
 
 /**************/
 /* BRCM stuff */
@@ -280,116 +157,7 @@ static PORT_MAP brcm_ports[] =
 	{"-",		PORT_UNKNOWN,	0,	{ {"ONHOOK"}, {"ONHOOK"} }, NULL },
 };
 
-static void init_brcm_ports(void);
-
-/*********/
-/* Codec */
-/*********/
-struct codec {
-  char *key;
-  char *value;
-  unsigned int bitrate;
-  struct codec *next;
-};
-static struct codec *codec_create(void);
-static void codec_delete(struct codec *codec);
-
-/***************************/
-/* UCI interface functions */
-/***************************/
-
-/*
- * Create list of supported codecs, used by ubus_codecs_cb()
- */
-struct codec *uci_get_codecs(void)
-{
-	/* Create space for first codec */
-	struct codec *c = codec_create();
-
-	ucix_reload();
-	ucix_for_each_section_type(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, "supported_codec", uci_codec_cb, c);
-	return c;
-}
-
-/*
- * callback, called for each "supported_codec" found
- */
-static void uci_codec_cb(const char * name, void *priv)
-{
-	struct codec *c = (struct codec *) priv;
-
-	/* Store key/value to last codec in list */
-	while (c->next) {
-		c = c->next;
-	}
-	c->key = strdup(name);
-	c->value = strdup(ucix_get_option(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, name, "name"));
-	const char *bitrate = ucix_get_option(uci_voice_codecs_ctx, UCI_CODEC_PACKAGE, name, "bitrate");
-	c->bitrate = bitrate ? atoi(bitrate) : 0;
-
-	/* Create space for next codec */
-	c->next = codec_create();
-}
-
-int uci_get_rtp_port_start()
-{
-	ucix_reload();
-	return ucix_get_option_int(uci_voice_client_ctx, UCI_VOICE_PACKAGE, "SIP", "rtpstart", RTP_RANGE_START_DEFAULT);
-}
-
-int uci_get_rtp_port_end()
-{
-	ucix_reload();
-	return ucix_get_option_int(uci_voice_client_ctx, UCI_VOICE_PACKAGE, "SIP", "rtpend", RTP_RANGE_END_DEFAULT);
-}
-
-int uci_get_sip_proxy(struct list_head *proxies)
-{
-	ucix_reload();
-	return ucix_get_option_list(uci_voice_client_ctx, UCI_VOICE_PACKAGE, "SIP", "sip_proxy", proxies);
-}
-
-const char* uci_get_peer_host(SIP_PEER *peer)
-{
-	ucix_reload();
-	int enabled = ucix_get_option_int(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "enabled", 0);
-	if (enabled == 0) {
-		return NULL;
-	}
-	return ucix_get_option(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "host");
-}
-
-const char* uci_get_peer_domain(SIP_PEER *peer)
-{
-	ucix_reload();
-	int enabled = ucix_get_option_int(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "enabled", 0);
-	if (enabled == 0) {
-		return NULL;
-	}
-	return ucix_get_option(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "domain");
-}
-
-int uci_get_peer_enabled(SIP_PEER* peer)
-{
-	ucix_reload();
-	return ucix_get_option_int(uci_voice_client_ctx, UCI_VOICE_PACKAGE, peer->account.name, "enabled", 0);
-}
-
-/*
- * Reload uci context, as any changes to config will not be read otherwise
- */
-void ucix_reload(void)
-{
-	if (uci_voice_client_ctx) {
-		ucix_cleanup(uci_voice_client_ctx);
-	}
-	uci_voice_client_ctx = ucix_init(UCI_VOICE_PACKAGE);
-
-	if (uci_voice_codecs_ctx) {
-		ucix_cleanup(uci_voice_codecs_ctx);
-	}
-	uci_voice_codecs_ctx = ucix_init(UCI_CODEC_PACKAGE);
-}
+static void brcm_port_init_all(void);
 
 /****************************/
 /* UBUS interface functions */
@@ -405,14 +173,16 @@ static void *ubus_thread(void *arg)
 	int rv;                   //select() return value
 
 	//Setup
-	init_brcm_ports();
-	init_sip_peers();
+	brcm_port_init_all();
+	sip_peer_init_all(sip_peers);
+
 	ctx = ubus_setup();
 	if (pipe(mgr_fd) < 0) {
 		ast_log(LOG_ERROR, "Failed to open pipe: %s\n", strerror(errno));
 		return NULL;
 	}
 	mgr = ami_setup(mgr_fd[1]);
+	fw = fw_create();
 
 	ami_action_send_sip_reload(mgr);
 
@@ -512,7 +282,7 @@ static void system_fd_set_cloexec(int fd)
 #endif
 }
 
-static void init_brcm_ports()
+static void brcm_port_init_all()
 {
 	PORT_MAP *ports;
 
@@ -522,328 +292,6 @@ static void init_brcm_ports()
 		strcpy(ports->sub[0].state, "ONHOOK");
 		strcpy(ports->sub[1].state, "ONHOOK");
 		ports++;
-	}
-}
-
-static void init_sip_peers()
-{
-	const SIP_ACCOUNT *accounts;
-
-	accounts = sip_accounts;
-	for (;;) {
-		sip_peers[accounts->id].account.id = accounts->id;
-		strcpy(sip_peers[accounts->id].account.name, accounts->name);
-		sip_peers[accounts->id].sip_registry_registered = 0;
-		sip_peers[accounts->id].sip_registry_request_sent = 0;
-		sip_peers[accounts->id].sip_registry_time = 0;
-		sip_peers[accounts->id].ip_list_length = 0;
-
-		/* Init sip show registry data */
-		strcpy(sip_peers[accounts->id].username, "Unknown");
-		strcpy(sip_peers[accounts->id].domain, "Unknown");
-		strcpy(sip_peers[accounts->id].state, "Unknown");
-		sip_peers[accounts->id].port = 0;
-		sip_peers[accounts->id].domain_port = 0;
-		sip_peers[accounts->id].refresh = 0;
-		sip_peers[accounts->id].registration_time = 0;
-
-		/* No need to (re)initialize ubus_object (created once at startup) */
-
-		if (accounts->id == SIP_ACCOUNT_UNKNOWN) {
-			break;
-		}
-		accounts++;
-	}
-}
-
-/* Add IP to list for SIP peer */
-void sip_peer_add_ip(SIP_PEER *peer, char *addr, int family) {
-	int i;
-
-	if (peer->ip_list_length >= MAX_IP_LIST_LENGTH) {
-		ast_log(LOG_WARNING, "Could not add IP %s to peer %s, ip list is full\n", addr, peer->account.name);
-		return;
-	}
-
-	for (i=0; i < peer->ip_list_length; i++) {
-		IP ip = peer->ip_list[i];
-		if (family == ip.family && strcmp(addr, ip.addr) == 0) {
-			return;
-		}
-	}
-	strcpy(peer->ip_list[peer->ip_list_length].addr, addr);
-	peer->ip_list[peer->ip_list_length].family = family;
-	peer->ip_list_length++;
-}
-
-/**********************/
-/* Firewall functions */
-/**********************/
-
-/* Resolv name into ip (A or AAA record), update IP list for peer */
-int fw_resolv(SIP_PEER *peer, const char *domain)
-{
-	struct addrinfo *result;
-	struct addrinfo *res;
-	int error;
-
-	/* Resolve the domain name into a list of addresses, don't specify any services */
-	error = getaddrinfo(domain, NULL, NULL, &result);
-	if (error != 0)
-	{
-		ast_log(LOG_WARNING, "error in getaddrinfo: %s\n", gai_strerror(error));
-		return 1;
-	}
-
-	/* Loop over all returned results and convert IP from network to textual form */
-	for (res = result; res != NULL; res = res->ai_next)
-	{
-		char ip_addr[NI_MAXHOST];
-		void *in_addr;
-		switch (res->ai_family) {
-			case AF_INET: {
-				struct sockaddr_in *s_addr = (struct sockaddr_in *) res->ai_addr;
-				in_addr = &s_addr->sin_addr;
-				break;
-			}
-#ifdef USE_IPV6
-			case AF_INET6: {
-				struct sockaddr_in6 *s_addr6 = (struct sockaddr_in6 *) res->ai_addr;
-				in_addr = &s_addr6->sin6_addr;
-				break;
-			}
-#endif
-			default:
-				continue;
-		}
-		inet_ntop(res->ai_family, in_addr, (void *)&ip_addr, NI_MAXHOST);
-
-		/* Add to list of IPs if not already there */
-		sip_peer_add_ip(peer, ip_addr, res->ai_family);
-	}
-
-	freeaddrinfo(result);
-
-	return 0;
-
-}
-
-/* Create a set of all resolved IPs for all peers */
-IP* fw_ip_set_create(int family, int *ip_list_length) {
-	SIP_PEER *peer;
-	IP *ip_list;
-
-	*ip_list_length = 0;
-	ip_list = (IP *) malloc(MAX_IP_LIST_LENGTH * sizeof(struct IP));
-
-	/* This is O(n^3) but the lists are small... */
-	peer = sip_peers;
-	while (peer->account.id != SIP_ACCOUNT_UNKNOWN) {
-		int i;
-		for (i=0; i<peer->ip_list_length; i++) {
-			int add = 1;
-			int j;
-
-			if (peer->ip_list[i].family != family) {
-				continue;
-			}
-
-			for (j=0; j<*ip_list_length; j++) {
-				if (ip_list[j].family == peer->ip_list[i].family &&
-					strcmp(ip_list[j].addr, peer->ip_list[i].addr) == 0) {
-					/* IP already in set */
-					add = 0;
-					break;
-				}
-			}
-			if (add) {
-				/* IP not found in set */
-				strcpy(ip_list[*ip_list_length].addr, peer->ip_list[i].addr);
-				ip_list[*ip_list_length].family = peer->ip_list[i].family;
-				(*ip_list_length)++;
-				if (*ip_list_length == MAX_IP_LIST_LENGTH) {
-					/* ip_list is full */
-					return ip_list;
-				}
-			}
-		}
-		peer++;
-	}
-
-	return ip_list;
-}
-
-/* Compare two IP sets */
-int fw_ip_set_compare(IP* ip_list1, int ip_list_length1, IP* ip_list2, int ip_list_length2)
-{
-	if (ip_list1 == NULL && ip_list2 == NULL) {
-		return 0;
-	}
-
-	if (ip_list1 == NULL) {
-		return -1;
-	}
-
-	if (ip_list2 == NULL) {
-		return 1;
-	}
-
-	if (ip_list_length1 < ip_list_length2) {
-		return -1;
-	}
-
-	if (ip_list_length2 < ip_list_length1) {
-		return 1;
-	}
-
-	int i;
-	for(i=0; i<ip_list_length1; i++) {
-		int rv = strcmp(ip_list1[i].addr, ip_list2[i].addr);
-		if (rv) {
-			return rv;
-		}
-	}
-	return 0;
-}
-
-void fw_write(int family)
-{
-	char *tables_file;
-	char *iptables_bin;
-	char buf[BUFLEN];
-	int ip_list_length;
-	IP* ip_list;
-
-	/* Is there a change in IP or RTP port range? */
-	ip_list = fw_ip_set_create(family, &ip_list_length);
-	int rtpstart = uci_get_rtp_port_start();
-	int rtpend = uci_get_rtp_port_end();
-
-	if (fw_ip_set_compare(ip_list_current, ip_list_length_current, ip_list, ip_list_length) == 0 &&
-	    rtpstart_current == rtpstart &&
-	    rtpend_current == rtpend) {
-		ast_log(LOG_DEBUG, "No changes in IP or RTP port range\n");
-		free(ip_list);
-		return;
-	}
-
-	/* Clear old firewall settings, write timestamp */
-	time_t rawtime;
-	struct tm * timeinfo;
-	char timebuf[BUFLEN];
-	time(&rawtime);
-	timeinfo = (struct tm*) localtime(&rawtime);
-	strftime(timebuf, BUFLEN, "%Y-%m-%d %H:%M:%S", timeinfo);
-
-	tables_file = IPTABLES_FILE;
-	iptables_bin = IPTABLES_BIN;
-#ifdef USE_IPV6
-	if (family == AF_INET6) {
-		iptables_bin = IP6TABLES_BIN;
-		tables_file = IP6TABLES_FILE;
-	}
-#endif
-	snprintf((char *)&buf, BUFLEN, "%s \"# Created by %s %s\" > %s",
-		ECHO_BIN,
-		__FILE__,
-		timebuf,
-		tables_file);
-	ast_log(LOG_DEBUG, "%s\n", buf);
-	system(buf);
-
-	/* Create an iptables rule for each IP in set */
-	int i;
-	for (i=0; i<ip_list_length; i++) {
-		snprintf((char *)&buf, BUFLEN, "%s \"%s -I %s -s %s -j ACCEPT\" >> %s",
-			ECHO_BIN,
-			iptables_bin,
-			IPTABLES_CHAIN,
-			ip_list[i].addr,
-			tables_file);
-		ast_log(LOG_DEBUG, "%s\n", buf);
-		system(buf);
-	}
-	if (ip_list_current) {
-		free(ip_list_current);
-	}
-	ip_list_current = ip_list;
-	ip_list_length_current = ip_list_length;
-
-	/* Open up for RTP traffic */
-	snprintf((char *)&buf, BUFLEN, "%s \"%s -I %s -p udp --dport %d:%d -j ACCEPT\" >> %s",
-		ECHO_BIN,
-		iptables_bin,
-		IPTABLES_CHAIN,
-		rtpstart,
-		rtpend,
-		tables_file);
-	ast_log(LOG_DEBUG, "%s\n", buf);
-	system(buf);
-	rtpstart_current = rtpstart;
-	rtpend_current = rtpend;
-
-	snprintf((char *)&buf, BUFLEN, "/etc/init.d/firewall reload");
-	ast_log(LOG_DEBUG, "%s\n", buf);
-	system(buf);
-}
-
-/* Resolv host and add IPs to iptables */
-int fw_manage(SIP_PEER *peer, int doResolv)
-{
-	/* Clear old IP list */
-	peer->ip_list_length = 0;
-
-	if (doResolv) {
-		/* Get domain to resolv */
-		const char* domain = uci_get_peer_domain(peer);
-		if (domain) {
-			fw_resolv(peer, domain);
-		}
-		else {
-			ast_log(LOG_WARNING, "Failed to get sip domain\n");
-			return 1;
-		}
-
-		const char* host = uci_get_peer_host(peer);
-		if (host) {
-			fw_resolv(peer, host);
-		}
-
-		/* Get sip proxies and resolv if configured */
-		struct ucilist proxies;
-		INIT_LIST_HEAD(&proxies.list);
-		if (!uci_get_sip_proxy(&proxies.list)) {
-			struct list_head *i;
-			struct list_head *tmp;
-			list_for_each_safe(i, tmp, &proxies.list)
-			{
-				struct ucilist *proxy = list_entry(i, struct ucilist, list);
-				fw_resolv(peer, proxy->val);
-				free(proxy->val);
-				free(proxy);
-			}
-		}
-	}
-
-	/* Write new config to firewall.sip and reload firewall */
-	fw_write(AF_INET);
-#ifdef USE_IPV6
-	fw_write(AF_INET6);
-#endif
-
-	return 0;
-}
-
-void sip_peer_log_all(void)
-{
-	const SIP_PEER *peers = sip_peers;
-	while (peers->account.id != SIP_ACCOUNT_UNKNOWN) {
-		ast_log(LOG_DEBUG, "sip_peer %d:\n", peers->account.id);
-		ast_log(LOG_DEBUG, "\tname %s:\n", peers->account.name);
-		ast_log(LOG_DEBUG, "\tsip_registry_request_sent: %d\n", peers->sip_registry_request_sent);
-		ast_log(LOG_DEBUG, "\tsip_registry_registered: %d\n", peers->sip_registry_registered);
-		ast_log(LOG_DEBUG, "\n");
-		peers++;
 	}
 }
 
@@ -869,8 +317,11 @@ static struct ubus_method sip_main_object_methods[] = {
 static struct ubus_object_type sip_main_object_type =
 	UBUS_OBJECT_TYPE("sip_main_object", sip_main_object_methods);
 
-static struct ubus_object ubus_sip_main_object[] = {
-	{ .name = "asterisk.sip", .type = &sip_main_object_type, .methods = sip_main_object_methods, .n_methods = ARRAY_SIZE(sip_main_object_methods) }
+static struct ubus_object ubus_sip_main_object = {
+		.name = "asterisk.sip",
+		.type = &sip_main_object_type,
+		.methods = sip_main_object_methods,
+		.n_methods = ARRAY_SIZE(sip_main_object_methods)
 };
 
 static struct ubus_method sip_peer_object_methods[] = {
@@ -898,8 +349,11 @@ static struct ubus_method brcm_main_object_methods[] = {
 static struct ubus_object_type brcm_main_object_type =
 	UBUS_OBJECT_TYPE("brcm_main_object", brcm_main_object_methods);
 
-static struct ubus_object ubus_brcm_main_object[] = {
-	{ .name = "asterisk.brcm", .type = &brcm_main_object_type, .methods = brcm_main_object_methods, .n_methods = ARRAY_SIZE(brcm_main_object_methods) }
+static struct ubus_object ubus_brcm_main_object = {
+		.name = "asterisk.brcm",
+		.type = &brcm_main_object_type,
+		.methods = brcm_main_object_methods,
+		.n_methods = ARRAY_SIZE(brcm_main_object_methods)
 };
 
 static struct ubus_method brcm_line_object_methods[] = {
@@ -964,7 +418,7 @@ static int ubus_add_objects(struct ubus_context *ctx)
 
 	SIP_PEER *peer;
 	peer = sip_peers;
-	while (peer->account.id != SIP_ACCOUNT_UNKNOWN) {
+	while (peer->account.id < SIP_ACCOUNT_UNKNOWN) {
 		peer->ubus_object = &ubus_sip_peer_objects[peer->account.id];
 		ret &= ubus_add_object(ctx, peer->ubus_object);
 		peer++;
@@ -1513,17 +967,15 @@ static int ubus_asterisk_codecs_cb (
 
 static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_event *event)
 {
-	const SIP_ACCOUNT* accounts = sip_accounts;
-	SIP_PEER *peer = &sip_peers[PORT_UNKNOWN];
+	SIP_PEER *peer = sip_peers;
 	char* account_name = event->registry_event->account_name;
 
 	//Lookup peer by account name
-	while (accounts->id != SIP_ACCOUNT_UNKNOWN) {
-		if (!strcmp(accounts->name, account_name)) {
-			peer = &sip_peers[accounts->id];
+	while (peer->account.id < SIP_ACCOUNT_UNKNOWN) {
+		if (!strcmp(peer->account.name, account_name)) {
 			break;
 		}
-		accounts++;
+		peer++;
 	}
 
 	if (peer->account.id == SIP_ACCOUNT_UNKNOWN) {
@@ -1541,7 +993,7 @@ static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_even
 				ubus_send_sip_event(ctx, peer, "registered", peer->sip_registry_registered);
 				ubus_send_sip_event(ctx, peer, "registry_request_sent", peer->sip_registry_request_sent);
 			}
-			fw_manage(peer, 1);
+			fw_manage(fw, peer, 1);
 			break;
 		case REGISTRY_UNREGISTERED_EVENT:
 			ast_log(LOG_DEBUG, "sip registry unregistered\n");
@@ -1551,13 +1003,13 @@ static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_even
 				ubus_send_sip_event(ctx, peer, "registered", peer->sip_registry_registered);
 				ubus_send_sip_event(ctx, peer, "registry_request_sent", peer->sip_registry_request_sent);
 			}
-			fw_manage(peer, 0);
+			fw_manage(fw, peer, 0);
 			break;
 		case REGISTRY_REQUEST_SENT_EVENT:
 			if (peer->sip_registry_request_sent == 1) {
 				//This means we sent a "REGISTER" without receiving "Registered" event
 				peer->sip_registry_registered = 0;
-				fw_manage(peer, 0);
+				fw_manage(fw, peer, 0);
 			}
 			peer->sip_registry_request_sent = 1;
 			if (ctx) {
@@ -1573,17 +1025,15 @@ static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_even
 static void ubus_handle_registry_entry_event(struct ami_event *event)
 {
 	ast_log(LOG_NOTICE, "Got registry entry event for SIP account %s\n", event->registry_entry_event->host);
-	const SIP_ACCOUNT* accounts = sip_accounts;
-	SIP_PEER *peer = &sip_peers[PORT_UNKNOWN];
+	SIP_PEER *peer = sip_peers;
 	char* account_name = event->registry_entry_event->host;
 
 	//Lookup peer by account name
-	while (accounts->id != SIP_ACCOUNT_UNKNOWN) {
-		if (!strcmp(accounts->name, account_name)) {
-			peer = &sip_peers[accounts->id];
+	while (peer->account.id < SIP_ACCOUNT_UNKNOWN) {
+		if (!strcmp(peer->account.name, account_name)) {
 			break;
 		}
-		accounts++;
+		peer++;
 	}
 
 	if (peer->account.id == SIP_ACCOUNT_UNKNOWN) {
@@ -1592,12 +1042,12 @@ static void ubus_handle_registry_entry_event(struct ami_event *event)
 	}
 
 	//Update our sip peer with event information
-	strncpy(peer->username, event->registry_entry_event->username, MAX_SIP_PEER_USERNAME);
-	peer->username[MAX_SIP_PEER_USERNAME - 1]= '\0';
-	strncpy(peer->domain, event->registry_entry_event->domain, MAX_SIP_PEER_DOMAIN);
-	peer->domain[MAX_SIP_PEER_USERNAME - 1]= '\0';
-	strncpy(peer->state, event->registry_entry_event->state, MAX_SIP_PEER_STATE);
-	peer->state[MAX_SIP_PEER_USERNAME - 1]= '\0';
+	strncpy(peer->username, event->registry_entry_event->username, SIP_MAX_PEER_USERNAME);
+	peer->username[SIP_MAX_PEER_USERNAME - 1]= '\0';
+	strncpy(peer->domain, event->registry_entry_event->domain, SIP_MAX_PEER_DOMAIN);
+	peer->domain[SIP_MAX_PEER_USERNAME - 1]= '\0';
+	strncpy(peer->state, event->registry_entry_event->state, SIP_MAX_PEER_STATE);
+	peer->state[SIP_MAX_PEER_USERNAME - 1]= '\0';
 	peer->port = event->registry_entry_event->port;
 	peer->domain_port = event->registry_entry_event->domain_port;
 	peer->refresh = event->registry_entry_event->refresh;
@@ -1673,7 +1123,7 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 	case CHANNELRELOAD:
 		if (event->channel_reload_event->channel_type == CHANNELRELOAD_SIP_EVENT) {
 			ast_log(LOG_DEBUG, "SIP channel was reloaded\n");
-			init_sip_peers(); //SIP has reloaded, initialize sip peer structs
+			sip_peer_init_all(sip_peers); //SIP has reloaded, initialize sip peer structs
 		}
 		break;
 	case VARSET:
@@ -1731,27 +1181,6 @@ static void ami_handle_message(struct ubus_context *ctx, struct ami *mgr, int fd
 		}
 		ami_message_free(message);
 	}
-}
-
-static struct codec *codec_create(void)
-{
-	struct codec *c = malloc(sizeof(struct codec));
-	memset(c, 0, sizeof(struct codec));
-
-	return c;
-}
-
-static void codec_delete(struct codec *c)
-{
-	if (c->key) {
-		free(c->key);
-	}
-
-	if (c->value) {
-		free(c->value);
-	}
-
-	free(c);
 }
 
 static int ubus_load(void)

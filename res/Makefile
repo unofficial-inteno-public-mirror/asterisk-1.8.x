@@ -28,10 +28,18 @@ endif
 
 ubus/ami.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
 ubus/ami.o: ubus/ami.c ubus/ami.h
+ubus/codec.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
+ubus/codec.o: ubus/codec.c ubus/codec.h
+ubus/uci.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC  -Wall -Werror
+ubus/uci.o: ubus/uci.c ubus/uci.h
 ubus/ucix.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
 ubus/ucix.o: ubus/ucix.c ubus/ucix.h
+ubus/fw.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
+ubus/fw.o: ubus/fw.c ubus/fw.h ubus/ip.h
+ubus/sip.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
+ubus/sip.o: ubus/sip.c ubus/sip.h ubus/ip.h
 res_ubus.so: LIBS+=-lubus -lubox -ljson-c -luci
-$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o ubus/ucix.o
+$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o ubus/codec.o ubus/ucix.o ubus/uci.o ubus/fw.o ubus/sip.o ubus/ip.h
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
