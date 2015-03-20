@@ -30842,6 +30842,8 @@ static int load_module(void)
 	sip_register_tests();
 	network_change_event_subscribe();
 
+	manager_event(EVENT_FLAG_SYSTEM, "SIP", "Module load\r\n");
+
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
@@ -31010,6 +31012,8 @@ static int unload_module(void)
 
 	sip_reqresp_parser_exit();
 	sip_unregister_tests();
+
+	manager_event(EVENT_FLAG_SYSTEM, "SIP", "Module unload\r\n");
 
 	return 0;
 }

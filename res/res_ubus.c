@@ -31,6 +31,8 @@
 #include <json/json.h>
 
 #define BUFLEN 512
+#define MODULE_SHOW_INTERVAL_S 5
+#define BOOT_WAIT_TIME_S 30
 
 /********/
 /* UBUS */
@@ -45,6 +47,8 @@ static void ami_handle_message(                          //Handle events and res
 		struct ubus_context *ctx,
 		struct ami *mgr,
 		int fd);
+
+static void ami_refresh_action(void *userdata);          //AMI callback, refresh action userdata
 
 /******************/
 /* UBUS callbacks */
@@ -94,9 +98,9 @@ static void ubus_connection_lost_cb(
 
 struct ami_context
 {
-	struct ubus_context *ctx;
+	int ubus_ctx_lost;
 	struct ubus_request_data req;
-	int (*handle_response)(struct ubus_context *, struct ubus_request_data *, char *);
+	int (*handle_response)(struct ubus_request_data *, char *, int ubus_lost);
 };
 
 /***********/
@@ -105,6 +109,7 @@ struct ami_context
 static int ubus_connected = 0;
 static int running = 0;
 static pthread_t ubus_thread_handle;
+struct ubus_context* ctx; //ubus context
 struct ami* mgr; //manager listener context
 struct fw* fw; //Managed firewall struct
 struct leds* leds; //Managed leds struct
@@ -116,17 +121,38 @@ static BRCM_PORT_MAP brcm_ports[BRCM_PORT_UNKNOWN + 1];
 #define UCI_VOICE_PACKAGE "voice_client"
 #define UCI_CODEC_PACKAGE "voice_codecs"
 
+enum modules_loaded_flags {
+	CHAN_SIP_LOADED = (1 << 0),
+	CHAN_BRCM_LOADED = (1 << 1),
+};
+struct ast_flags modules_loaded = { 0 };
+
+time_t sip_timestamp;
+time_t brcm_timestamp;
+
 /********************/
 /* Static functions */
 /********************/
-static int module_show_brcm_request(struct ubus_context *ctx, struct ami *mgr);
-static int module_show_brcm_handle_response_cb(struct ubus_context *ctx,
+static int module_show_brcm_request(void);
+static int module_show_brcm_handle_response_cb(
 		struct ubus_request_data *req,
-		char *data);
-static int brcm_ports_show_request(struct ubus_context *ctx, struct ami *mgr);
-static int brcm_ports_show_response_cb(struct ubus_context *ctx,
+		char *data,
+		int ubus_lost);
+static int brcm_ports_show_request(void);
+static int brcm_ports_show_response_cb(
 		struct ubus_request_data *req,
-		char *data);
+		char *data,
+		int ubus_lost);
+static int module_show_sip_request(void);
+static int module_show_sip_handle_response_cb(
+		struct ubus_request_data *req,
+		char *data,
+		int ubus_lost);
+static void set_brcm_loaded(unsigned int loaded);
+static void set_sip_loaded(unsigned int loaded);
+static void sip_module_status_refresh(void);
+static void brcm_module_status_refresh(void);
+static int all_modules_loaded(void);
 
 /****************************/
 /* UBUS interface functions */
@@ -135,11 +161,36 @@ static int brcm_ports_show_response_cb(struct ubus_context *ctx,
 //Main thread
 static void *ubus_thread(void *arg)
 {
-	struct ubus_context* ctx; //ubus context
-
 	fd_set fset;              //FD set
 	struct timeval timeout;   //Timeout for select
 	int rv;                   //select() return value
+
+	ast_clear_flag(&modules_loaded, CHAN_SIP_LOADED);
+	ast_clear_flag(&modules_loaded, CHAN_BRCM_LOADED);
+
+	time_t start = time(NULL);
+	time_t now = start;
+	while (!ast_test_flag(&ast_options, AST_OPT_FLAG_FULLY_BOOTED)) {
+		if ((now - start) > BOOT_WAIT_TIME_S) {
+			ast_log(LOG_ERROR,
+					"Asterisk was not fully booted in %ds, continuing anyway...\n",
+					BOOT_WAIT_TIME_S);
+			break;
+		}
+
+		//Wait for asterisk to be fully booted
+		struct timespec req, rem;
+		req.tv_sec = 0;
+		req.tv_nsec = 500000000L;
+		while (nanosleep(&req, &rem) < 0) {
+			if (errno != EINTR) {
+				break;
+			}
+			req = rem;
+		}
+
+		now = time(NULL);
+	}
 
 	//Setup
 	brcm_port_init_all(brcm_ports);
@@ -150,13 +201,14 @@ static void *ubus_thread(void *arg)
 		ast_log(LOG_ERROR, "Failed to open pipe: %s\n", strerror(errno));
 		return NULL;
 	}
-	mgr = ami_setup(mgr_fd[1]);
+	mgr = ami_setup(mgr_fd[1], ami_refresh_action);
 	fw = fw_create();
 
-	module_show_brcm_request(ctx, mgr); //Request number of FXS and DECT lines
-	ami_action_send_sip_reload(mgr);
-
 	while (running) {
+
+		sip_module_status_refresh();
+		brcm_module_status_refresh();
+
 		FD_ZERO(&fset);
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
@@ -189,6 +241,9 @@ static void *ubus_thread(void *arg)
 			}
 			else if (!ctx) {
 				ctx = ubus_setup();
+				if (leds) {
+					leds_ubus_connected(leds, ctx);
+				}
 			}
 		}
 
@@ -199,13 +254,16 @@ static void *ubus_thread(void *arg)
 	}
 
 	//Teardown
-	ami_free(mgr);
 	if (ctx) {
 		ubus_disconnect(&ctx);
 	}
+	ami_free(mgr);
 
 	fw_delete(fw);
-	leds_delete(leds);
+
+	if (leds) {
+		leds_delete(leds);
+	}
 
 	return NULL;
 }
@@ -237,7 +295,10 @@ static struct ubus_context *ubus_setup(void)
 
 static void ubus_disconnect(struct ubus_context **ctx)
 {
-	leds_ubus_disconnected(leds);
+	if (leds) {
+		leds_ubus_disconnected(leds);
+	}
+	ami_refresh(mgr);
 	ubus_free(*ctx);
 	*ctx = NULL;
 	ubus_connected = 0;
@@ -246,7 +307,6 @@ static void ubus_disconnect(struct ubus_context **ctx)
 static void ubus_connection_lost_cb(struct ubus_context *ctx)
 {
 	ast_log(LOG_WARNING, "UBUS connection lost\n");
-	leds_ubus_disconnected(leds);
 	ubus_connected = 0;
 }
 
@@ -530,9 +590,15 @@ static int ubus_asterisk_sip_cb(
 }
 
 static int ubus_asterisk_sip_dump_handle_response_cb(
-	struct ubus_context *ctx, struct ubus_request_data *req,
-	char *data)
+	struct ubus_request_data *req,
+	char *data,
+	int ubus_lost)
 {
+	if (ubus_lost) {
+		ast_log(LOG_WARNING, "Ubus context reset while waiting for response from asterisk\n");
+		return 1;
+	}
+
 	blob_buf_init(&bb, 0);
 
 	/* Parse AMI response */
@@ -575,8 +641,8 @@ static int ubus_asterisk_sip_dump_cb (
 	struct blob_attr *msg)
 {
 	struct ami_context *ami_ctx;
-	ami_ctx = (struct ami_context *)malloc(sizeof(struct ami_context));
-	ami_ctx->ctx = ctx;
+	ami_ctx = malloc(sizeof(struct ami_context));
+	memset(ami_ctx, 0, sizeof(struct ami_context));
 	ami_ctx->handle_response = ubus_asterisk_sip_dump_handle_response_cb;
 
 	ami_action_send_sip_dump(mgr, ami_ctx);
@@ -613,9 +679,15 @@ static int ubus_asterisk_brcm_cb (
 }
 
 static int ubus_asterisk_brcm_dump_handle_response_cb(
-	struct ubus_context *ctx, struct ubus_request_data *req,
-	char *data)
+	struct ubus_request_data *req,
+	char *data,
+	int ubus_lost)
 {
+	if (ubus_lost) {
+		ast_log(LOG_WARNING, "Ubus context reset while waiting for response from asterisk\n");
+		return 1;
+	}
+
 	blob_buf_init(&bb, 0);
 
 	/* Parse AMI response */
@@ -651,8 +723,8 @@ static int ubus_asterisk_brcm_dump_cb(
 	struct blob_attr *msg)
 {
 	struct ami_context *ami_ctx;
-	ami_ctx = (struct ami_context *)malloc(sizeof(struct ami_context));
-	ami_ctx->ctx = ctx;
+	ami_ctx = malloc(sizeof(struct ami_context));
+	memset(ami_ctx, 0, sizeof(struct ami_context));
 	ami_ctx->handle_response = ubus_asterisk_brcm_dump_handle_response_cb;
 
 	ami_action_send_brcm_dump(mgr, ami_ctx);
@@ -1039,7 +1111,7 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 
 			if (line_id >= 0 && line_id < BRCM_PORT_ALL) {
 				strcpy(brcm_ports[line_id].sub[subchannel_id].state, event->brcm_event->state.state);
-				char* subchannel = subchannel_id ? "0" : "1";
+				char* subchannel = !subchannel_id ? "0" : "1";
 				if (ctx) {
 					ubus_send_brcm_event(ctx, &brcm_ports[line_id], subchannel, brcm_ports[line_id].sub[subchannel_id].state);
 				}
@@ -1049,14 +1121,25 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 			}
 			break;
 		case BRCM_MODULE_EVENT:
+			set_brcm_loaded(event->brcm_event->module_loaded);
+
 			if (leds) {
-				leds_set_brcm_loaded(leds, event->brcm_event->module_loaded);
+				leds_set_ready(leds, all_modules_loaded());
 			}
-			else if (leds == NULL && event->brcm_event->module_loaded) {
-				/* No leds struct created yet and chan_brcm is now loaded.
-				 * Request number of lines for leds management.
-				 */
-				brcm_ports_show_request(ctx, mgr);
+			break;
+		default:
+			break;
+	}
+}
+
+static void ubus_handle_sip_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
+{
+	switch (event->sip_event->type) {
+		case SIP_MODULE_EVENT:
+			set_sip_loaded(event->sip_event->module_loaded);
+
+			if (leds) {
+				leds_set_ready(leds, all_modules_loaded());
 			}
 			break;
 		default:
@@ -1090,11 +1173,16 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 	case BRCM:
 		ubus_handle_brcm_event(mgr, ctx, event);
 		break;
+	case SIP:
+		ubus_handle_sip_event(mgr, ctx, event);
+		break;
 	case CHANNELRELOAD:
 		if (event->channel_reload_event->channel_type == CHANNELRELOAD_SIP_EVENT) {
 			ast_log(LOG_DEBUG, "SIP channel was reloaded\n");
 			sip_peer_init_all(sip_peers); //SIP has reloaded, initialize sip peer structs
-			leds_configure(leds);
+			if (leds) {
+				leds_configure(leds);
+			}
 		}
 		break;
 	case VARSET:
@@ -1104,9 +1192,7 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 		//No action required
 		break;
 	case FULLYBOOTED:
-		ast_log(LOG_DEBUG, "FULLY BOOTED\n");
-		ami_action_send_sip_reload(mgr);
-		module_show_brcm_request(ctx, mgr);
+		//No action required
 		break;
 	case UNKNOWN_EVENT:
 		break; //An event that ami_parser could not handle
@@ -1114,7 +1200,9 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 		break; //An event that we don't care about
 	}
 
-	leds_manage(leds);
+	if (leds) {
+		leds_manage(leds);
+	}
 }
 
 static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *resp)
@@ -1123,7 +1211,7 @@ static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, 
 	if (resp->userdata) {
 		ami_ctx = (struct ami_context *)resp->userdata;
 		if (ami_ctx->handle_response) {
-			ami_ctx->handle_response(ami_ctx->ctx, &ami_ctx->req, resp->response);
+			ami_ctx->handle_response(&ami_ctx->req, resp->response, ami_ctx->ubus_ctx_lost);
 		}
 		free(resp->userdata);
 	}
@@ -1158,28 +1246,26 @@ static void ami_handle_message(struct ubus_context *ctx, struct ami *mgr, int fd
 	}
 }
 
-int module_show_brcm_handle_response_cb(
-	struct ubus_context *ctx, struct ubus_request_data *req,
-	char *data)
-{
-	if (strstr(data, "1 modules loaded")) {
-		ast_log(LOG_DEBUG, "BRCM channel driver is loaded\n");
-		brcm_ports_show_request(ctx, mgr);
-		leds_set_brcm_loaded(leds, 1);
-	}
-	else {
-		ast_log(LOG_DEBUG, "BRCM channel driver is not loaded\n");
-		leds_set_brcm_loaded(leds, 0);
-	}
-
-	return 0;
-}
-
-int module_show_brcm_request(struct ubus_context *ctx, struct ami *mgr)
+static void ami_refresh_action(void *userdata)
 {
 	struct ami_context *ami_ctx;
+
+	if (!userdata) {
+		return;
+	}
+
+	if (!ctx) {
+		ami_ctx = (struct ami_context *) userdata;
+		ami_ctx->ubus_ctx_lost = 1;
+	}
+}
+
+static int module_show_brcm_request(void)
+{
+	ast_log(LOG_DEBUG, "Requesting BRCM load status\n");
+	struct ami_context *ami_ctx;
 	ami_ctx = malloc(sizeof(struct ami_context));
-	ami_ctx->ctx = ctx;
+	memset(ami_ctx, 0, sizeof(struct ami_context));
 	ami_ctx->handle_response = module_show_brcm_handle_response_cb;
 
 	ami_send_module_show_brcm(mgr, ami_ctx);
@@ -1187,9 +1273,44 @@ int module_show_brcm_request(struct ubus_context *ctx, struct ami *mgr)
 	return 0;
 }
 
+static int module_show_brcm_handle_response_cb(
+	struct ubus_request_data *req,
+	char *data,
+	int ubus_lost)
+{
+	if (strstr(data, "1 modules loaded")) {
+		ast_log(LOG_DEBUG, "BRCM channel driver is loaded\n");
+		brcm_ports_show_request();
+		set_brcm_loaded(1);
+	}
+	else {
+		ast_log(LOG_DEBUG, "BRCM channel driver is not loaded\n");
+		set_brcm_loaded(0);
+	}
+
+	if (leds) {
+		leds_set_ready(leds, all_modules_loaded());
+	}
+
+	return 0;
+}
+
+int brcm_ports_show_request(void)
+{
+	struct ami_context *ami_ctx;
+	ami_ctx = malloc(sizeof(struct ami_context));
+	memset(ami_ctx, 0, sizeof(struct ami_context));
+	ami_ctx->handle_response = brcm_ports_show_response_cb;
+
+	ami_send_brcm_ports_show(mgr, ami_ctx);
+
+	return 0;
+}
+
 int brcm_ports_show_response_cb(
-	struct ubus_context *ctx, struct ubus_request_data *req,
-	char *data)
+	struct ubus_request_data *req,
+	char *data,
+	int ubus_lost)
 {
 
 	int result = 1;
@@ -1218,7 +1339,7 @@ int brcm_ports_show_response_cb(
 
 	if (result) {
 		if (leds &&
-				(leds->fxs_line_count != fxs_line_count || leds->dect_line_count != dect_line_count))
+				(leds_fxs_line_count(leds) != fxs_line_count || leds_dect_line_count(leds) != dect_line_count))
 		{
 			/* This will most likely not be reached */
 			leds_delete(leds);
@@ -1233,25 +1354,108 @@ int brcm_ports_show_response_cb(
 					brcm_ports,
 					fxs_line_count,
 					dect_line_count,
-					1); // chan_brcm loaded
+					all_modules_loaded());
 		}
 	}
-
-	leds_manage(leds);
 
 	return result;
 }
 
-int brcm_ports_show_request(struct ubus_context *ctx, struct ami *mgr)
+int module_show_sip_request(void)
 {
+	ast_log(LOG_DEBUG, "Requesting SIP load status\n");
 	struct ami_context *ami_ctx;
 	ami_ctx = malloc(sizeof(struct ami_context));
-	ami_ctx->ctx = ctx;
-	ami_ctx->handle_response = brcm_ports_show_response_cb;
+	memset(ami_ctx, 0, sizeof(struct ami_context));
+	ami_ctx->handle_response = module_show_sip_handle_response_cb;
 
-	ami_send_brcm_ports_show(mgr, ami_ctx);
+	ami_send_module_show_sip(mgr, ami_ctx);
 
 	return 0;
+}
+
+int module_show_sip_handle_response_cb(
+	struct ubus_request_data *req,
+	char *data,
+	int ubus_lost)
+{
+	if (strstr(data, "1 modules loaded")) {
+		set_sip_loaded(1);
+	}
+	else {
+		set_sip_loaded(0);
+	}
+
+	if (leds) {
+		leds_set_ready(leds, all_modules_loaded());
+	}
+
+	return 0;
+}
+
+static void set_brcm_loaded(unsigned int loaded)
+{
+	brcm_timestamp = time(NULL);
+
+	if (loaded) {
+		ast_set_flag(&modules_loaded, CHAN_BRCM_LOADED);
+	}
+	else {
+		ast_clear_flag(&modules_loaded, CHAN_BRCM_LOADED);
+	}
+
+	ast_log(LOG_NOTICE, "chan_brcm is %sloaded\n",
+			ast_test_flag(&modules_loaded, CHAN_BRCM_LOADED) ? "" : "not ");
+}
+
+static void set_sip_loaded(unsigned int loaded)
+{
+	sip_timestamp = time(NULL);
+
+	if (loaded) {
+		ast_set_flag(&modules_loaded, CHAN_SIP_LOADED);
+		ami_action_send_sip_reload(mgr);
+	}
+	else {
+		ast_clear_flag(&modules_loaded, CHAN_SIP_LOADED);
+	}
+
+	ast_log(LOG_NOTICE, "chan_sip is %sloaded\n",
+			ast_test_flag(&modules_loaded, CHAN_SIP_LOADED) ? "" : "not ");
+}
+
+//Request chan_sip status if needed
+static void sip_module_status_refresh(void)
+{
+	if (ast_test_flag(&modules_loaded, CHAN_SIP_LOADED)) {
+		return;
+	}
+
+	time_t now = time(NULL);
+	if (now >= (sip_timestamp + MODULE_SHOW_INTERVAL_S)) {
+		sip_timestamp = now;
+		module_show_sip_request();
+	}
+}
+
+//Request chan_brcm status if needed
+static void brcm_module_status_refresh(void)
+{
+	if (ast_test_flag(&modules_loaded, CHAN_BRCM_LOADED)) {
+		return;
+	}
+
+	time_t now = time(NULL);
+	if (now >= (brcm_timestamp + MODULE_SHOW_INTERVAL_S)) {
+		brcm_timestamp = now;
+		module_show_brcm_request();
+	}
+}
+
+static int all_modules_loaded(void)
+{
+	return ast_test_flag(&modules_loaded, CHAN_SIP_LOADED) &&
+			ast_test_flag(&modules_loaded, CHAN_BRCM_LOADED);
 }
 
 static int ubus_load(void)

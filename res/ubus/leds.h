@@ -16,17 +16,7 @@ typedef struct Led Led;
 typedef struct SIP_PEER SIP_PEER;
 typedef struct BRCM_PORT_MAP BRCM_PORT_MAP;
 
-struct leds {
-	unsigned int voice_led_count; //Number of voice leds on board
-	unsigned int fxs_line_count; //Number of FXS ports on board
-	unsigned int dect_line_count; //Number of DECT ports on board
-	Led* led_config; //Array of led configs (one for each led)
-	SIP_PEER *sip_peers;
-	BRCM_PORT_MAP *brcm_ports;
-	struct ubus_context *ctx;
-	struct blob_buf b_led;
-	unsigned int brcm_loaded; //True if chan_brcm is loaded
-};
+struct leds;
 
 struct leds *leds_create(struct ubus_context *ctx,
 		SIP_PEER *sip_peers,
@@ -41,8 +31,14 @@ void leds_delete(struct leds *leds);
 
 void leds_manage(struct leds *leds);
 
-void leds_set_brcm_loaded(struct leds *leds, unsigned int);
+void leds_ubus_connected(struct leds *leds, struct ubus_context *ctx);
 
 void leds_ubus_disconnected(struct leds *leds);
+
+int leds_dect_line_count(struct leds *leds);
+
+int leds_fxs_line_count(struct leds *leds);
+
+void leds_set_ready(struct leds *leds, unsigned int);
 
 #endif /* LEDS_H_ */

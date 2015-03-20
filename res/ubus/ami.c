@@ -36,6 +36,7 @@ struct ami
 	struct ami_message *in_queue;     //Events or command response read from manager
 	struct ami_action *out_queue;     //Actions to be sent to manager
 	char *read_buffer;                //Previously read incomplete data
+	void (*refresh_cb)(void *userdata);//Action refresh callback
 };
 
 static int manager_hook_cb(int catergory, const char* event, char* content, void *data);
@@ -46,11 +47,12 @@ static char *trim_whitespace(char *str);
 /********************/
 /* Public functions */
 /********************/
-struct ami *ami_setup(int fd)
+struct ami *ami_setup(int fd, void (*refresh_cb)(void *userdata))
 {
 	//Setup manager listener
 	struct ami *mgr = malloc(sizeof(struct ami));
 	mgr->fd = fd;
+	mgr->refresh_cb = refresh_cb;
 	ast_mutex_init(&mgr->lock);
 	mgr->in_queue = NULL;
 	mgr->out_queue = NULL;
@@ -140,6 +142,9 @@ void ami_message_free(struct ami_message *message)
 				}
 				free(event->brcm_event);
 				break;
+			case SIP:
+				free(event->sip_event);
+				break;
 			case CHANNELRELOAD:
 				free(event->channel_reload_event);
 				break;
@@ -224,6 +229,15 @@ void ami_action_send_sip_show_registry(struct ami *mgr)
 	send_action(mgr, action);
 }
 
+void ami_send_module_show_sip(struct ami *mgr, void *userdata) {
+	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_sip\n");
+	struct ami_action* action = malloc(sizeof(struct ami_action));
+	memset(action, 0, sizeof(struct ami_action));
+	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_sip\r\n\r\n");
+	action->userdata = userdata;
+	send_action(mgr, action);
+}
+
 void ami_action_send_brcm_dump(struct ami *mgr, void *userdata)
 {
 	ast_log(LOG_DEBUG, "Queueing Action: BRCMdump\n");
@@ -260,6 +274,25 @@ void ami_send_brcm_ports_show(struct ami *mgr, void *userdata) {
 	sprintf(action->message, "Action: BRCMPortsShow\r\n\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
+}
+
+void ami_refresh(struct ami *mgr)
+{
+	struct ami_action* action;
+	struct ami_action* next;
+
+	ami_lock(mgr);
+
+	if (mgr->refresh_cb) {
+		action = mgr->out_queue;
+		while (action) {
+			next = action->next;
+			mgr->refresh_cb(action->userdata);
+			action = next;
+		}
+	}
+
+	ami_unlock(mgr);
 }
 
 /**************************/
@@ -329,6 +362,13 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 
 		*idx = i;
 		return BRCM;
+	} else if (!memcmp(buf, "SIP", 3)) {
+		i +=3;
+		while((buf[i] == '\n') || (buf[i] == '\r'))
+			i++;
+
+		*idx = i;
+		return SIP;
 	} else if (!memcmp(buf, "ChannelReload", 13)) {
 		i +=8;
 		while((buf[i] == '\n') || (buf[i] == '\r'))
@@ -611,6 +651,29 @@ static struct ami_event *parse_brcm_event(struct ami_event *event, char* buf)
 }
 
 /*
+ * Parse SIP events
+ */
+static struct ami_event *parse_sip_event(struct ami_event *event, char* buf)
+{
+	event->type = SIP;
+	event->sip_event = malloc(sizeof(struct sip_event));
+	event->sip_event->type = SIP_UNKNOWN_EVENT;
+
+	char* event_type = NULL;
+
+	if ((event_type = strstr(buf, "Module unload"))) {
+		event->sip_event->type = SIP_MODULE_EVENT;
+		event->sip_event->module_loaded = 0;
+	}
+	else if ((event_type = strstr(buf, "Module load"))) {
+		event->sip_event->type = SIP_MODULE_EVENT;
+		event->sip_event->module_loaded = 1;
+	}
+
+	return event;
+}
+
+/*
  * Parse varset events
  */
 static void parse_varset_event(struct ami_event *event, char* buf)
@@ -722,6 +785,9 @@ static struct ami_event* parse_event(char* message)
 	switch(type) {
 		case BRCM:
 			parse_brcm_event(event, &message[idx]);
+			break;
+		case SIP:
+			parse_sip_event(event, &message[idx]);
 			break;
 		case CHANNELRELOAD:
 			parse_channel_reload_event(event, &message[idx]);
@@ -900,10 +966,18 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 
 	//Handle response
 	if (message->type == RESPONSE_MESSAGE) {
+
 		completed_action = mgr->out_queue;
+		if (completed_action) {
+			mgr->out_queue = completed_action->next;
+			free(completed_action);
+		}
+		else {
+			mgr->out_queue = NULL;
+			ast_log(LOG_ERROR, "No pending action stored for received manager response\n");
+		}
 
 		//Send pending action?
-		mgr->out_queue = completed_action->next;
 		if (mgr->out_queue) {
 			if (ast_hook_send_action(&mgr->hook, mgr->out_queue->message) < 0) {
 				ast_log(LOG_ERROR, "Failed to send action\n");
@@ -915,7 +989,6 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 				}
 			}
 		}
-		free(completed_action);
 	}
 
 	//Notify client that new data is available

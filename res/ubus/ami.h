@@ -29,6 +29,14 @@ struct brcm_event {
 	int module_loaded;
 };
 
+struct sip_event {
+	enum {
+		SIP_UNKNOWN_EVENT,
+		SIP_MODULE_EVENT
+	} type;
+	int module_loaded;
+};
+
 struct registry_event {
 	char* account_name;
 	enum {
@@ -69,6 +77,7 @@ enum ami_event_type {
 	REGISTRY_ENTRY,
 	REGISTRATIONS_COMPLETE,
 	BRCM,
+	SIP,
 	CHANNELRELOAD,
 	FULLYBOOTED,
 	VARSET,
@@ -79,6 +88,7 @@ enum ami_event_type {
 struct ami_event {
 	enum ami_event_type type;
 	struct brcm_event *brcm_event;
+	struct sip_event *sip_event;
 	struct registry_event *registry_event;
 	struct registry_entry_event *registry_entry_event;
 	struct channel_reload_event *channel_reload_event;
@@ -106,7 +116,7 @@ struct ami_message {
 
 
 /* Setup a new ami */
-struct ami *ami_setup(int fd);
+struct ami *ami_setup(int fd, void (*refresh_cb)(void *userdata));
 
 /* Disconnect ami and free memory */
 void ami_free(struct ami *mgr);
@@ -125,6 +135,10 @@ void ami_message_free(struct ami_message *data);
 
 /* Queue action 'sip show registry' */
 void ami_action_send_sip_show_registry(struct ami *mgr);
+
+/*
+ * Request an indication on if SIP module is loaded or not */
+void ami_send_module_show_sip(struct ami *mgr, void *userdata);
 
 /* Queue action 'sip reload' */
 void ami_action_send_sip_reload(struct ami *mgr);
@@ -153,5 +167,10 @@ void ami_send_module_show_brcm(struct ami *mgr, void *userdata);
  * DECT 4"
  */
 void ami_send_brcm_ports_show(struct ami *mgr, void *userdata);
+
+/*
+ * Refresh request queue
+ */
+void ami_refresh(struct ami *mgr);
 
 #endif /* AMI_H_ */

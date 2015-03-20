@@ -16,6 +16,18 @@
 #include <asterisk/logger.h>
 #include <string.h>
 
+struct leds {
+	unsigned int voice_led_count; //Number of voice leds on board
+	unsigned int fxs_line_count; //Number of FXS ports on board
+	unsigned int dect_line_count; //Number of DECT ports on board
+	Led* led_config; //Array of led configs (one for each led)
+	SIP_PEER *sip_peers;
+	BRCM_PORT_MAP *brcm_ports;
+	struct ubus_context *ctx;
+	struct blob_buf b_led;
+	unsigned int ready;
+};
+
 typedef enum LED_STATE
 {
 	LS_OK,
@@ -128,7 +140,7 @@ struct leds *leds_create(struct ubus_context *ctx,
 		BRCM_PORT_MAP *brcm_ports,
 		unsigned int fxs_line_count,
 		unsigned int dect_line_count,
-		unsigned int brcm_loaded)
+		unsigned int ready)
 {
 	struct leds *leds = malloc(sizeof(struct leds));
 	memset(leds, 0, sizeof(struct leds));
@@ -142,7 +154,7 @@ struct leds *leds_create(struct ubus_context *ctx,
 	leds->sip_peers = sip_peers;
 	leds->brcm_ports = brcm_ports;
 
-	leds->brcm_loaded = brcm_loaded;
+	leds->ready = ready;
 
 	leds_configure(leds);
 
@@ -159,11 +171,6 @@ struct leds *leds_create(struct ubus_context *ctx,
  */
 void leds_configure(struct leds *leds)
 {
-	if (leds == NULL) {
-		/* Leds struct not yet created */
-		return;
-	}
-
 	if (leds->led_config) {
 		free_led_config(leds);
 	}
@@ -291,11 +298,6 @@ void leds_configure(struct leds *leds)
 
 void leds_delete(struct leds *leds)
 {
-	if (leds == NULL) {
-		/* Leds struct not yet created */
-		return;
-	}
-
 	free_led_config(leds);
 	free(leds);
 }
@@ -304,15 +306,10 @@ void leds_manage(struct leds *leds)
 {
 	int i;
 
-	if (leds == NULL) {
-		/* Leds struct not yet created */
-		return;
-	}
-
 	for (i = 0; i < leds->voice_led_count; i++) {
 		Led* led = &leds->led_config[i];
 		LED_STATE new_state = LS_OFF;
-		if (leds->brcm_loaded) {
+		if (leds->ready) {
 			new_state = get_led_state(led);
 		}
 		if (new_state != led->state) {
@@ -322,24 +319,29 @@ void leds_manage(struct leds *leds)
 	}
 }
 
-void leds_set_brcm_loaded(struct leds *leds, unsigned int loaded)
+void leds_ubus_connected(struct leds *leds, struct ubus_context *ctx)
 {
-	if (leds == NULL) {
-		/* Leds struct not yet created */
-		return;
-	}
-
-	leds->brcm_loaded = loaded;
+	leds->ctx = ctx;
 }
 
 void leds_ubus_disconnected(struct leds *leds)
 {
-	if (leds == NULL) {
-		/* Leds struct not yet created */
-		return;
-	}
-
 	leds->ctx = NULL;
+}
+
+int leds_dect_line_count(struct leds *leds)
+{
+	return leds->dect_line_count;
+}
+
+int leds_fxs_line_count(struct leds *leds)
+{
+	return leds->fxs_line_count;
+}
+
+void leds_set_ready(struct leds *leds, unsigned int ready)
+{
+	leds->ready = ready;
 }
 
 /**************************/
