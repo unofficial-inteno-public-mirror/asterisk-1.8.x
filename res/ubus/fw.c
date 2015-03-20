@@ -169,8 +169,8 @@ void write_firewall(struct fw *fw, SIP_PEER *peer, int family)
 		ast_log(LOG_DEBUG, "%s\n", buf);
 		system(buf);
 	}
-	if (ip_list) {
-		free(ip_list);
+	if (fw->ip_list) {
+		free(fw->ip_list);
 	}
 	fw->ip_list = ip_list;
 	fw->ip_list_length = ip_list_length;
