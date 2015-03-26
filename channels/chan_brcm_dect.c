@@ -104,6 +104,9 @@ const struct brcm_channel_tech dect_tech = {
 	.release = dect_release,
 };
 
+static void logMessage(int read, uint8_t *data, int len);
+static void logDectDrvWrite(uint8_t *data, int size);
+static void logDectDrvRead(uint8_t *data, int size);
 
 static int bad_handsetnr(int handset) {
 
@@ -427,7 +430,7 @@ void dectSendClip(char* cid, int handset)
 		((ApiFpCcInfoReqType *) clipMailPtr)->InfoElementLength = clipIeBlockLength;
 
 		/* Send mail */
-		ast_verbose("OUTPUT: API_FP_CC_INFO_REQ");
+		ast_verbose("OUTPUT: API_FP_CC_INFO_REQ\n");
 
 		dectDrvWrite(clipMailPtr, clipMailLength);
 		
@@ -477,18 +480,25 @@ void dect_ring_handset(int handset) {
 
 void dectDrvWrite(void *data, int size)
 {   
-	int i;
-	unsigned char* cdata = (unsigned char*)data;
-
-	ast_verbose("[WDECT][%04d] - ",size);
-	for (i=0 ; i<size ; i++) {
-		ast_verbose("%02x ",cdata[i]);
-	}
-	ast_verbose("\n");
+	logDectDrvWrite((uint8_t*) data, size);
 
 	if (write(s, data, size) == -1) {
 		ast_verbose("write to API failed\n");
 		return;
+	}
+
+	/* Workaround for kernel code that does not seem to handle
+	 * multiple messages in the same read() call. This sleep
+	 * introduces a 50ms delay so that the current message hopefully
+	 * makes it into the kernel alone... */
+	struct timespec req, rem;
+	req.tv_sec = 0;
+	req.tv_nsec = 50000000L;
+	while (nanosleep(&req, &rem) < 0) {
+		if (errno != EINTR) {
+			break;
+		}
+		req = rem;
 	}
 
 	return;
@@ -1422,11 +1432,7 @@ void *brcm_monitor_dect(void *data) {
 			if (len > 0) {
 
 				/* debug printout */
-				ast_verbose("\n[RDECT][%04d] - ", len);
-				for (i = 0; i < len; i++)
-					ast_verbose("%02x ", p.data[i]);
-				ast_verbose("\n");
-
+				logDectDrvRead(p.data, len);
 			}
 
 			handle_data(p.data);
@@ -1435,5 +1441,32 @@ void *brcm_monitor_dect(void *data) {
 	}
 }
 
+static void logMessage(int read, uint8_t *data, int len)
+{
+	/* len * 3 => Each octet in data will use three chars. */
+	/* 16 + 1  => Length of preamble and null terminator.  */
+	char *msg = malloc(sizeof(char) * (len * 3 + 16 + 1));
+	if (!msg) {
+		ast_log(LOG_ERROR, "malloc failed, can't log\n");
+		return;
+	 }
 
+	sprintf(msg, "[%cDECT][%04d] - ", read ? 'R' : 'W', len);
+	int i;
+	for (i = 0; i < len; i++) {
+			sprintf(msg + strlen(msg), "%02x ", data[i]);
+	}
+	ast_verbose("%s\n", msg);
 
+	free(msg);
+}
+
+static void logDectDrvWrite(uint8_t *data, int size)
+{
+	return logMessage(0, data, size);
+}
+
+static void logDectDrvRead(uint8_t *data, int size)
+{
+	return logMessage(1, data, size);
+}
