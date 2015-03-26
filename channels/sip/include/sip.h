@@ -1285,6 +1285,8 @@ struct sip_peer {
 	enum sip_peer_type type; /*!< Distinguish between "user" and "peer" types. This is used solely for CLI and manager commands */
 	unsigned int disallowed_methods;
 	struct ast_cc_config_params *cc_params;
+
+	struct ast_tls_config tls_cfg;  /*!<   TLS connection configuration */
 };
 
 /*!
