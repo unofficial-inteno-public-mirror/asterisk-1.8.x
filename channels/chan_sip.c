@@ -4672,6 +4672,12 @@ static void sip_destroy_peer(struct sip_peer *peer)
 		peer->socket.tcptls_session = NULL;
 	}
 
+	ast_free(peer->tls_cfg.certfile);
+	ast_free(peer->tls_cfg.pvtfile);
+	ast_free(peer->tls_cfg.cipher);
+	ast_free(peer->tls_cfg.cafile);
+	ast_free(peer->tls_cfg.capath);
+
 	ast_cc_config_params_destroy(peer->cc_params);
 
 	ast_string_field_free_memory(peer);
@@ -25843,31 +25849,39 @@ static int sip_prepare_socket(struct sip_pvt *p)
 		}
 		memcpy(ca->tls_cfg, &default_tls_cfg, sizeof(*ca->tls_cfg));
 
+		if (!(ca->tls_cfg->certfile = ast_strdup(default_tls_cfg.certfile)) ||
+			!(ca->tls_cfg->pvtfile = ast_strdup(default_tls_cfg.pvtfile)) ||
+			!(ca->tls_cfg->cipher = ast_strdup(default_tls_cfg.cipher)) ||
+			!(ca->tls_cfg->cafile = ast_strdup(default_tls_cfg.cafile)) ||
+			!(ca->tls_cfg->capath = ast_strdup(default_tls_cfg.capath))) {
+
+			goto create_tcptls_session_fail;
+		}
+
 		/* Use TLS configuration from SIP peer if available */
 		if (p->relatedpeer) {
 			struct sip_peer *peer = p->relatedpeer;
 
-			ca->tls_cfg->certfile = ast_strdup(peer->tls_cfg.certfile);
-			ca->tls_cfg->pvtfile = ast_strdup(peer->tls_cfg.pvtfile);
-			ca->tls_cfg->cipher = ast_strdup(peer->tls_cfg.cipher);
-			ca->tls_cfg->cafile = ast_strdup(peer->tls_cfg.cafile);
-			ca->tls_cfg->capath = ast_strdup(peer->tls_cfg.capath);
-		}
-
-		if (!ca->tls_cfg->certfile) {
-			ca->tls_cfg->certfile = ast_strdup(default_tls_cfg.certfile);
-		}
-		if (!ca->tls_cfg->pvtfile) {
-			ca->tls_cfg->pvtfile = ast_strdup(default_tls_cfg.pvtfile);
-		}
-		if (!ca->tls_cfg->cipher) {
-			ca->tls_cfg->cipher = ast_strdup(default_tls_cfg.cipher);
-		}
-		if (!ca->tls_cfg->cafile) {
-			ca->tls_cfg->cafile = ast_strdup(default_tls_cfg.cafile);
-		}
-		if (!ca->tls_cfg->capath) {
-			ca->tls_cfg->capath = ast_strdup(default_tls_cfg.capath);
+			if (!ast_strlen_zero(peer->tls_cfg.certfile)) {
+				ast_free(ca->tls_cfg->certfile);
+				ca->tls_cfg->certfile = ast_strdup(peer->tls_cfg.certfile);
+			}
+			if (!ast_strlen_zero(peer->tls_cfg.pvtfile)) {
+				ast_free(ca->tls_cfg->pvtfile);
+				ca->tls_cfg->pvtfile = ast_strdup(peer->tls_cfg.pvtfile);
+			}
+			if (!ast_strlen_zero(peer->tls_cfg.cipher)) {
+				ast_free(ca->tls_cfg->cipher);
+				ca->tls_cfg->cipher = ast_strdup(peer->tls_cfg.cipher);
+			}
+			if (!ast_strlen_zero(peer->tls_cfg.cafile)) {
+				ast_free(ca->tls_cfg->cafile);
+				ca->tls_cfg->cafile = ast_strdup(peer->tls_cfg.cafile);
+			}
+			if (!ast_strlen_zero(peer->tls_cfg.capath)) {
+				ast_free(ca->tls_cfg->capath);
+				ca->tls_cfg->capath = ast_strdup(peer->tls_cfg.capath);
+			}
 		}
 
 		if (!ca->tls_cfg->certfile ||
