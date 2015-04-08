@@ -26,24 +26,24 @@ ifneq ($(findstring $(OSARCH), mingw32 cygwin ),)
   res_agi.so_LIBS:= -lres_speech.so
 endif
 
-ubus/ami.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/ami.o: ubus/ami.c ubus/ami.h
-ubus/brcm.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/brcm.o: ubus/brcm.c ubus/brcm.h
-ubus/codec.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/codec.o: ubus/codec.c ubus/codec.h
-ubus/leds.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/leds.o: ubus/leds.c ubus/leds.h
-ubus/uci.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC  -Wall -Werror
-ubus/uci.o: ubus/uci.c ubus/uci.h
-ubus/ucix.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/ucix.o: ubus/ucix.c ubus/ucix.h
-ubus/fw.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/fw.o: ubus/fw.c ubus/fw.h ubus/ip.h
-ubus/sip.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_ubus) -fPIC -Wall -Werror
-ubus/sip.o: ubus/sip.c ubus/sip.h ubus/ip.h
-res_ubus.so: LIBS+=-lubus -lubox -ljson-c -luci
-$(if $(filter res_ubus,$(EMBEDDED_MODS)),modules.link,res_ubus.so): ubus/ami.o ubus/brcm.o ubus/leds.o ubus/codec.o ubus/ucix.o ubus/uci.o ubus/fw.o ubus/sip.o ubus/ip.h
+voice/ami.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/ami.o: voice/ami.c voice/ami.h
+voice/brcm.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/brcm.o: voice/brcm.c voice/brcm.h
+voice/codec.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/codec.o: voice/codec.c voice/codec.h
+voice/leds.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/leds.o: voice/leds.c voice/leds.h
+voice/uci.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC  -Wall -Werror
+voice/uci.o: voice/uci.c voice/uci.h
+voice/ucix.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/ucix.o: voice/ucix.c voice/ucix.h
+voice/fw.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/fw.o: voice/fw.c voice/fw.h voice/ip.h
+voice/sip.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
+voice/sip.o: voice/sip.c voice/sip.h voice/ip.h
+res_voice.so: LIBS+=-lubus -lubox -ljson-c -luci
+$(if $(filter res_voice,$(EMBEDDED_MODS)),modules.link,res_voice.so): voice/ami.o voice/brcm.o voice/leds.o voice/codec.o voice/ucix.o voice/uci.o voice/fw.o voice/sip.o voice/ip.h
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
@@ -86,4 +86,4 @@ endif
 ael/pval.o: ael/pval.c
 
 clean::
-	rm -f snmp/*.o snmp/*.i ael/*.o ael/*.i ais/*.o ais/*.i ubus/*.o ubus/*.i
+	rm -f snmp/*.o snmp/*.i ael/*.o ael/*.i ais/*.o ais/*.i voice/*.o voice/*.i

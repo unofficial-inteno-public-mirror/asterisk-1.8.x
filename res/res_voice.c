@@ -1,10 +1,10 @@
 /*
- * res_ubus.c
+ * res_voice.c
  *
- * UBUS resource
+ * Voice client/pbx resource
  * -Connects to UBUS and registers commands
  * -Hooks into Asterisk manager interface
- * -Data from either side is handled my main thread ubus_thread()
+ * -Data from either side is handled my main thread res_voice_thread()
  *
  */
 
@@ -12,14 +12,14 @@
 #include "asterisk/module.h"
 #include "asterisk/manager.h"
 
-#include "ubus/ami.h"
-#include "ubus/brcm.h"
-#include "ubus/codec.h"
-#include "ubus/fw.h"
-#include "ubus/ip.h"
-#include "ubus/leds.h"
-#include "ubus/sip.h"
-#include "ubus/uci.h"
+#include "voice/ami.h"
+#include "voice/brcm.h"
+#include "voice/codec.h"
+#include "voice/fw.h"
+#include "voice/ip.h"
+#include "voice/leds.h"
+#include "voice/sip.h"
+#include "voice/uci.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/uloop.h>
@@ -37,7 +37,7 @@
 /********/
 /* UBUS */
 /********/
-static void *ubus_thread(void *arg);                     //Main thread
+static void *res_voice_thread(void *arg);                     //Main thread
 static struct ubus_context *ubus_setup(void);            //Setup ubus connection and add objects
 static void ubus_disconnect(struct ubus_context **ctx);  //Disconnect from ubus
 static int ubus_add_objects(struct ubus_context *ctx);   //Add supported ubus objects
@@ -108,7 +108,7 @@ struct ami_context
 /***********/
 static int ubus_connected = 0;
 static int running = 0;
-static pthread_t ubus_thread_handle;
+static pthread_t res_voice_thread_handle;
 struct ubus_context* ctx; //ubus context
 struct ami* mgr; //manager listener context
 struct fw* fw; //Managed firewall struct
@@ -159,7 +159,7 @@ static int all_modules_loaded(void);
 /****************************/
 
 //Main thread
-static void *ubus_thread(void *arg)
+static void *res_voice_thread(void *arg)
 {
 	fd_set fset;              //FD set
 	struct timeval timeout;   //Timeout for select
@@ -999,7 +999,7 @@ static int ubus_asterisk_codecs_cb (
 	return 0;
 }
 
-static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_event *event)
+static void res_voice_handle_registry_event(struct ubus_context *ctx, struct ami_event *event)
 {
 	SIP_PEER *peer = sip_peers;
 	char* account_name = event->registry_event->account_name;
@@ -1056,7 +1056,7 @@ static void ubus_handle_registry_event(struct ubus_context *ctx, struct ami_even
 	}
 }
 
-static void ubus_handle_registry_entry_event(struct ami_event *event)
+static void res_voice_handle_registry_entry_event(struct ami_event *event)
 {
 	ast_log(LOG_NOTICE, "Got registry entry event for SIP account %s\n", event->registry_entry_event->host);
 	SIP_PEER *peer = sip_peers;
@@ -1088,7 +1088,7 @@ static void ubus_handle_registry_entry_event(struct ami_event *event)
 	peer->registration_time = event->registry_entry_event->registration_time;
 }
 
-static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
+static void res_voice_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
 {
 	int line_id;
 	int subchannel_id;
@@ -1132,7 +1132,7 @@ static void ubus_handle_brcm_event(struct ami *mgr, struct ubus_context *ctx, st
 	}
 }
 
-static void ubus_handle_sip_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
+static void res_voice_handle_sip_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
 {
 	switch (event->sip_event->type) {
 		case SIP_MODULE_EVENT:
@@ -1147,7 +1147,7 @@ static void ubus_handle_sip_event(struct ami *mgr, struct ubus_context *ctx, str
 	}
 }
 
-static void ubus_handle_varset_event(struct ubus_context *ctx, struct ami_event *event)
+static void res_voice_handle_varset_event(struct ubus_context *ctx, struct ami_event *event)
 {
 	if (ctx && event->varset_event->channel && event->varset_event->variable && event->varset_event->value) {
 		//Event contained all vital parts, send ubus event
@@ -1160,21 +1160,21 @@ static void ubus_handle_varset_event(struct ubus_context *ctx, struct ami_event 
 //Handle AMI event
 //Note that ubus_context may be NULL, if we receive messages while not
 //connected to ubus. Each event handler should check this before trying to use ubus.
-static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
+static void res_voice_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, struct ami_event *event)
 {
 	switch (event->type) {
 	case REGISTRY:
-		ubus_handle_registry_event(ctx, event);
+		res_voice_handle_registry_event(ctx, event);
 		ami_action_send_sip_show_registry(mgr);
 		break;
 	case REGISTRY_ENTRY:
-		ubus_handle_registry_entry_event(event);
+		res_voice_handle_registry_entry_event(event);
 		break;
 	case BRCM:
-		ubus_handle_brcm_event(mgr, ctx, event);
+		res_voice_handle_brcm_event(mgr, ctx, event);
 		break;
 	case SIP:
-		ubus_handle_sip_event(mgr, ctx, event);
+		res_voice_handle_sip_event(mgr, ctx, event);
 		break;
 	case CHANNELRELOAD:
 		if (event->channel_reload_event->channel_type == CHANNELRELOAD_SIP_EVENT) {
@@ -1186,7 +1186,7 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 		}
 		break;
 	case VARSET:
-		ubus_handle_varset_event(ctx, event);
+		res_voice_handle_varset_event(ctx, event);
 		break;
 	case REGISTRATIONS_COMPLETE:
 		//No action required
@@ -1205,7 +1205,7 @@ static void ubus_handle_ami_event(struct ami *mgr, struct ubus_context *ctx, str
 	}
 }
 
-static void ubus_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *resp)
+static void res_voice_handle_ami_response(struct ami *mgr, struct ubus_context *ctx, struct ami_response *resp)
 {
 	struct ami_context *ami_ctx;
 	if (resp->userdata) {
@@ -1234,10 +1234,10 @@ static void ami_handle_message(struct ubus_context *ctx, struct ami *mgr, int fd
 	while ((message = ami_get_next_message(mgr))) {
 		switch (message->type) {
 		case EVENT_MESSAGE:
-			ubus_handle_ami_event(mgr, ctx, message->event);
+			res_voice_handle_ami_event(mgr, ctx, message->event);
 			break;
 		case RESPONSE_MESSAGE:
-			ubus_handle_ami_response(mgr, ctx, message->response);
+			res_voice_handle_ami_response(mgr, ctx, message->response);
 			break;
 		default:
 			break; //Message ignored
@@ -1461,7 +1461,7 @@ static int all_modules_loaded(void)
 static int ubus_load(void)
 {
 	running = 1;
-	if (ast_pthread_create_detached_background(&ubus_thread_handle, NULL, ubus_thread, NULL) < 0) {
+	if (ast_pthread_create_detached_background(&res_voice_thread_handle, NULL, res_voice_thread, NULL) < 0) {
 		//Could not start thread
 		return AST_MODULE_LOAD_FAILURE;
 	}
@@ -1473,12 +1473,12 @@ static int ubus_unload(void)
 {
 	if (running) {
 		running = 0;
-		while (pthread_kill(ubus_thread_handle, SIGURG) == 0) {
+		while (pthread_kill(res_voice_thread_handle, SIGURG) == 0) {
 			sched_yield();
 		}
-		pthread_join(ubus_thread_handle, NULL);
+		pthread_join(res_voice_thread_handle, NULL);
 	}
-	ubus_thread_handle = AST_PTHREADT_STOP;
+	res_voice_thread_handle = AST_PTHREADT_STOP;
 
 	return 0;
 }
