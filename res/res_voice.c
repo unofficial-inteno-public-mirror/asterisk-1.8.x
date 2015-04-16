@@ -408,8 +408,18 @@ static struct ubus_object ubus_asterisk_object = {
 		.methods = asterisk_object_methods,
 		.n_methods = ARRAY_SIZE(asterisk_object_methods) };
 
+static struct blobmsg_policy asterisk_call_log_list_policy[] = {
+	{ .name = "number", .type = BLOBMSG_TYPE_STRING },
+	{ .name = "type", .type = BLOBMSG_TYPE_STRING }
+};
+
 static struct ubus_method asterisk_call_log_object_methods[] = {
-	{ .name = "list", .handler = ubus_asterisk_call_log_list_cb }
+	{
+		.name = "list",
+		.handler = ubus_asterisk_call_log_list_cb,
+		.policy = asterisk_call_log_list_policy,
+		.n_policy = ARRAY_SIZE(asterisk_call_log_list_policy)
+	}
 };
 
 static struct ubus_object_type asterisk_call_log_object_type =
@@ -779,9 +789,21 @@ static int ubus_asterisk_call_log_list_cb (
 	struct blob_attr *msg)
 {
 	struct blob_attr *tb[__UBUS_ARGMAX];
+	char *number_filter = NULL;
+	char *type_filter = NULL;
 
-	blobmsg_parse(ubus_string_argument, __UBUS_ARGMAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(asterisk_call_log_list_policy,
+			ARRAY_SIZE(asterisk_call_log_list_policy),
+			tb, blob_data(msg), blob_len(msg));
 	blob_buf_init(&bb, 0);
+
+	if (tb[0]) {
+		number_filter = blobmsg_data(tb[0]);
+	}
+
+	if (tb[1]) {
+		type_filter = blobmsg_data(tb[1]);
+	}
 
 	void *log = blobmsg_open_array(&bb, "call_log");
 
@@ -814,10 +836,40 @@ static int ubus_asterisk_call_log_list_cb (
 		}
 
 		if (k >= 3) {
+			const char* time = tokens[0];
+			const char* direction = tokens[1];
+			const char* number = tokens[2];
+
+			/* If number filter is set to anything else than "all" the
+			 * number from the call log must match exactly.
+			 */
+			if (number_filter && strcmp(number_filter, "all") != 0) {
+				if (strcmp(number_filter, number) != 0) {
+					continue;
+				}
+			}
+
+			if (type_filter) {
+				if (strcmp(type_filter, "outgoing") == 0) {
+					if (strcmp(direction, "Outgoing") != 0) {
+						continue;
+					}
+				}
+				else if (strcmp(type_filter, "incoming") == 0) {
+					if (strcmp(direction, "Incoming") != 0) {
+						continue;
+					}
+				}
+				else {
+					/* Unsupported filter type */
+					continue;
+				}
+			}
+
 			void *e = blobmsg_open_table(&bb, NULL);
-			blobmsg_add_string(&bb, "time", tokens[0]);
-			blobmsg_add_string(&bb, "direction", tokens[1]);
-			blobmsg_add_string(&bb, "number", tokens[2]);
+			blobmsg_add_string(&bb, "time", time);
+			blobmsg_add_string(&bb, "direction", direction);
+			blobmsg_add_string(&bb, "number", number);
 			blobmsg_close_table(&bb, e);
 		}
 	}
