@@ -746,7 +746,7 @@ int dect_release(struct brcm_pvt * p) {
 	m->Reason = API_RR_UNEXPECTED_MESSAGE;
 	m->InfoElementLength = 0;
 
-	printf("API_FP_CC_RELEASE_REQ\n");
+	ast_verbose("API_FP_CC_RELEASE_REQ\n");
 	dectDrvWrite(m, sizeof(ApiFpCcReleaseReqType));
 	free(m);
 	return 0;
