@@ -818,7 +818,7 @@ static int ubus_asterisk_call_log_list_cb (
 	}
 
 	const char delim[] = ";";
-	const char *tokens[3];
+	const char *tokens[4];
 	while ((read = getline(&line, &len, fp)) != -1) {
 		memset(tokens, 0, sizeof(tokens));
 		char *token = strtok(line, delim);
@@ -835,16 +835,34 @@ static int ubus_asterisk_call_log_list_cb (
 			k += 1;
 		}
 
-		if (k >= 3) {
+		if (k >= 4) {
 			const char* time = tokens[0];
 			const char* direction = tokens[1];
-			const char* number = tokens[2];
+			const char* from = tokens[2];
+			const char* to = tokens[3];
 
-			/* If number filter is set to anything else than "all" the
-			 * number from the call log must match exactly.
+			/* This is always our number.
+			 * For an incoming call it should be the to number.
+			 * For an outgoing call it should be the from number.
+			 */
+			const char* our;
+
+			if (strcmp(direction, "Incoming") == 0) {
+				our = to;
+			}
+			else if (strcmp(direction, "Outgoing") == 0) {
+				our = from;
+			}
+			else {
+				/* Invalid direction */
+				continue;
+			}
+
+			/* If number filter is set to anything else than "all" our number
+			 * must match exactly.
 			 */
 			if (number_filter && strcmp(number_filter, "all") != 0) {
-				if (strcmp(number_filter, number) != 0) {
+				if (strcmp(number_filter, our) != 0) {
 					continue;
 				}
 			}
@@ -869,7 +887,8 @@ static int ubus_asterisk_call_log_list_cb (
 			void *e = blobmsg_open_table(&bb, NULL);
 			blobmsg_add_string(&bb, "time", time);
 			blobmsg_add_string(&bb, "direction", direction);
-			blobmsg_add_string(&bb, "number", number);
+			blobmsg_add_string(&bb, "from", from);
+			blobmsg_add_string(&bb, "to", to);
 			blobmsg_close_table(&bb, e);
 		}
 	}
