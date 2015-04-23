@@ -1203,10 +1203,6 @@ static void handle_data(unsigned char *buf) {
 		ast_verbose("API_FP_MM_GET_HANDSET_IPUI_CFM\n");
 		break;
 
-	case API_FP_CC_FEATURES_CFM:
-		ast_verbose("API_FP_CC_FEATURES_CFM\n");
-		break;
-
 	case API_FP_SET_AUDIO_FORMAT_CFM:
 		ast_verbose("API_FP_SET_AUDIO_FORMAT_CFM\n");
 		audio_format_cfm((ApiFpSetAudioFormatCfmType *) buf);
