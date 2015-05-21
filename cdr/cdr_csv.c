@@ -53,6 +53,10 @@ static int usegmtime = 0;
 static int accountlogs;
 static int loguniqueid = 0;
 static int loguserfield = 0;
+
+/* Max number of rows to keep in CSV. 0 means unlimited */
+static int maxrows = 0;
+
 static int loaded = 0;
 static const char config[] = "cdr.conf";
 
@@ -139,6 +143,17 @@ static int load_config(int reload)
 		loguserfield = ast_true(tmp);
 		if (loguserfield)
 			ast_debug(1, "logging CDR user-defined field\n");
+	}
+
+	if ((tmp = ast_variable_retrieve(cfg, "csv", "maxrows"))) {
+		int value = atoi(tmp);
+		if (value <= 0) {
+			maxrows = 0;
+		}
+		else {
+			maxrows = value;
+			ast_debug(1, "limiting max number rows to %d\n", maxrows);
+		}
 	}
 
 	ast_config_destroy(cfg);
@@ -291,10 +306,15 @@ static int writefile(char *s, char *acc)
 static int csv_log(struct ast_cdr *cdr)
 {
 	FILE *mf = NULL;
+	FILE *tmpf = NULL;
+	int rowcount = 0;
 	/* Make sure we have a big enough buf */
 	char buf[1024];
+	char line[1024];
 	char csvmaster[PATH_MAX];
+	char csvtmp[PATH_MAX];
 	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
+	snprintf(csvtmp, sizeof(csvtmp),"%s/%s/%s.tmp", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
 #if 0
 	printf("[CDR] %s ('%s' -> '%s') Dur: %ds Bill: %ds Disp: %s Flags: %s Account: [%s]\n", cdr->channel, cdr->src, cdr->dst, cdr->duration, cdr->billsec, ast_cdr_disp2str(cdr->disposition), ast_cdr_flags2str(cdr->amaflags), cdr->accountcode);
 #endif
@@ -307,9 +327,56 @@ static int csv_log(struct ast_cdr *cdr)
 	   highest reliability possible in writing billing records,
 	   we open write and close the log file each time */
 	ast_mutex_lock(&mf_lock);
-	if ((mf = fopen(csvmaster, "a"))) {
-		fputs(buf, mf);
-		fflush(mf); /* be particularly anal here */
+	if ((mf = fopen(csvmaster, "a+"))) {
+		if (maxrows > 0) {
+			/* count number of rows in CSV */
+			while (fgets(line, sizeof(line), mf) != NULL) {
+				rowcount++;
+			}
+		}
+
+		if (maxrows > 0 && rowcount >= maxrows) {
+			/* we need to make sure that the master file does not grow beyond
+			   maxrows number of rows. This is done by creating a new CSV that
+			   excludes the excess rows. This operation is probably quite I/O
+			   intensive. */
+
+			rewind(mf);
+
+			ast_debug(1, "Throwing away %d old row(s)\n", (rowcount - maxrows + 1));
+			if ((tmpf = fopen(csvtmp, "w"))) {
+				while (rowcount > (maxrows -1)) {
+					/* "throw away" rows */
+					fgets(line, sizeof(line), mf);
+					rowcount--;
+				}
+
+				/* copy rows to the temporary file */
+				while (fgets(line, sizeof(line), mf) != NULL) {
+					fputs(line, tmpf);
+				}
+
+				/* append new row */
+				fputs(buf, tmpf);
+				fflush(tmpf);
+				fclose(tmpf);
+				tmpf = NULL;
+
+				/* replace master with temporary file */
+				if (rename(csvtmp, csvmaster) == -1) {
+					ast_log(LOG_ERROR, "Failed to update master file %s : %s\n", csvmaster, strerror(errno));
+				}
+			} else {
+				ast_log(LOG_ERROR, "Unable to open temporary file %s : %s\n",
+						csvtmp, strerror(errno));
+			}
+		} else {
+			/* CSV file is allowed to grow indefinitely so just
+			   append the new row to the master file */
+			fputs(buf, mf);
+			fflush(mf); /* be particularly anal here */
+		}
+
 		fclose(mf);
 		mf = NULL;
 		ast_mutex_unlock(&mf_lock);
