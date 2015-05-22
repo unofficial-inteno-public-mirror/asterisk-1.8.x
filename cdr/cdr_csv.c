@@ -43,6 +43,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 328209 $")
 #include "asterisk/module.h"
 #include "asterisk/utils.h"
 #include "asterisk/lock.h"
+#include "asterisk/cli.h"
 
 #define CSV_LOG_DIR "/cdr-csv"
 #define CSV_MASTER  "/Master.csv"
@@ -95,6 +96,9 @@ static char *name = "csv";
 
 AST_MUTEX_DEFINE_STATIC(mf_lock);
 AST_MUTEX_DEFINE_STATIC(acf_lock);
+
+static int remove_cdr(const char *uniqueid);
+static int resize_log(int maxrows);
 
 static int load_config(int reload)
 {
@@ -302,19 +306,175 @@ static int writefile(char *s, char *acc)
 	return 0;
 }
 
-
-static int csv_log(struct ast_cdr *cdr)
+static int resize_log(int maxrows)
 {
 	FILE *mf = NULL;
 	FILE *tmpf = NULL;
 	int rowcount = 0;
-	/* Make sure we have a big enough buf */
 	char buf[1024];
-	char line[1024];
 	char csvmaster[PATH_MAX];
 	char csvtmp[PATH_MAX];
+
+	if (maxrows <= 0) {
+		/* nothing to to */
+		return 0;
+	}
+
 	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
 	snprintf(csvtmp, sizeof(csvtmp),"%s/%s/%s.tmp", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
+
+	if ((mf = fopen(csvmaster, "r")) == NULL) {
+		ast_log(LOG_ERROR, "Unable to open master file %s : %s\n", csvmaster, strerror(errno));
+		return -1;
+	}
+
+	/* count number of rows in CSV */
+	while (fgets(buf, sizeof(buf), mf) != NULL) {
+		rowcount++;
+	}
+
+	if (rowcount >= maxrows) {
+		/* we need to make sure that the master file does not grow beyond
+		   maxrows number of rows. This is done by creating a new CSV that
+		   excludes the excess rows. This operation is probably quite I/O
+		   intensive. */
+
+		rewind(mf);
+
+		ast_debug(1, "Removing %d row%s in order to resize log\n", rowcount - maxrows, (rowcount - maxrows == 1) ? "" : "s");
+		if ((tmpf = fopen(csvtmp, "w"))) {
+			while (rowcount > maxrows) {
+				/* "throw away" rows */
+				fgets(buf, sizeof(buf), mf);
+				rowcount--;
+			}
+
+			/* copy rows to the temporary file */
+			while (fgets(buf, sizeof(buf), mf) != NULL) {
+				fputs(buf, tmpf);
+			}
+
+			fclose(mf);
+			fclose(tmpf);
+
+			/* replace master with temporary file */
+			if (rename(csvtmp, csvmaster) == -1) {
+				ast_log(LOG_ERROR, "Failed to resize master file %s : %s\n", csvmaster, strerror(errno));
+				return -1;
+			}
+		} else {
+			ast_log(LOG_ERROR, "Unable to open temporary file %s : %s\n",
+					csvtmp, strerror(errno));
+			fclose(mf);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static int remove_cdr(const char *uniqueid)
+{
+	FILE *mf = NULL;
+	FILE *tmpf = NULL;
+	char buf[1024];
+	char token[32];
+	char cmpbuf[32];
+	char csvmaster[PATH_MAX];
+	char csvtmp[PATH_MAX];
+
+	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
+	snprintf(csvtmp, sizeof(csvtmp),"%s/%s/%s.tmp", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
+
+	if ((mf = fopen(csvmaster, "r")) == NULL) {
+		ast_log(LOG_ERROR, "Unable to open master file %s : %s\n", csvmaster, strerror(errno));
+		return -1;
+	}
+
+	if ((tmpf = fopen(csvtmp, "w")) == NULL) {
+		ast_log(LOG_ERROR, "Unable to open temporary file %s : %s\n",
+				csvtmp, strerror(errno));
+		fclose(mf);
+		return -1;
+	}
+
+	int foundcdr = 0;
+	while (fgets(buf, sizeof(buf), mf) != NULL) {
+		if (!foundcdr) {
+			/* check if row contains the CDR with the given unique id */
+			char *start = buf;
+			char *cursor = start;
+			char delim = ',';
+			int inquotation = 0;
+			int tokenindex = 0;
+
+			while (cursor < (buf + sizeof(buf)) && *cursor) {
+				if (inquotation) {
+					if (cursor[0] == '"') {
+						if (&cursor[1] < (buf + sizeof(buf)) && cursor[1] == '"') {
+							/* quotation mark inside string */
+							cursor += 2;
+							continue;
+						} else {
+							/* exit quoted string */
+							inquotation = 0;
+						}
+					}
+				}
+				else {
+					if (cursor[0] == '"') {
+						/* enter quoted string */
+						inquotation = 1;
+					}
+					else if (cursor[0] == delim) {
+						/* found new token */
+						memset(token, 0, sizeof(token));
+						strncpy(token, start, (size_t)(cursor - start));
+
+						if (tokenindex == 16) {
+							/* compare uniqueids */
+							snprintf(cmpbuf, sizeof(cmpbuf), "\"%s\"", uniqueid);
+							if (strncmp(token, cmpbuf, sizeof(cmpbuf)) == 0) {
+								foundcdr = 1;
+							}
+						}
+
+						start = cursor + sizeof(delim);
+						tokenindex++;
+					}
+				}
+
+				cursor++;
+			}
+
+			if (foundcdr) {
+				continue;
+			}
+		}
+
+		/* copy the row to the temporary file */
+		fputs(buf, tmpf);
+	}
+
+	fclose(mf);
+	fclose(tmpf);
+
+	/* replace master with temporary file */
+	if (rename(csvtmp, csvmaster) == -1) {
+		ast_log(LOG_ERROR, "Failed to update master file %s : %s\n", csvmaster, strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
+
+static int csv_log(struct ast_cdr *cdr)
+{
+	FILE *mf = NULL;
+	/* Make sure we have a big enough buf */
+	char buf[1024];
+	char csvmaster[PATH_MAX];
+	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
 #if 0
 	printf("[CDR] %s ('%s' -> '%s') Dur: %ds Bill: %ds Disp: %s Flags: %s Account: [%s]\n", cdr->channel, cdr->src, cdr->dst, cdr->duration, cdr->billsec, ast_cdr_disp2str(cdr->disposition), ast_cdr_flags2str(cdr->amaflags), cdr->accountcode);
 #endif
@@ -327,56 +487,18 @@ static int csv_log(struct ast_cdr *cdr)
 	   highest reliability possible in writing billing records,
 	   we open write and close the log file each time */
 	ast_mutex_lock(&mf_lock);
-	if ((mf = fopen(csvmaster, "a+"))) {
-		if (maxrows > 0) {
-			/* count number of rows in CSV */
-			while (fgets(line, sizeof(line), mf) != NULL) {
-				rowcount++;
-			}
+
+	if (maxrows > 0) {
+		if (resize_log(maxrows - 1) == -1) {
+			/* not safe to continue */
+			ast_mutex_unlock(&mf_lock);
+			return -1;
 		}
+	}
 
-		if (maxrows > 0 && rowcount >= maxrows) {
-			/* we need to make sure that the master file does not grow beyond
-			   maxrows number of rows. This is done by creating a new CSV that
-			   excludes the excess rows. This operation is probably quite I/O
-			   intensive. */
-
-			rewind(mf);
-
-			ast_debug(1, "Throwing away %d old row(s)\n", (rowcount - maxrows + 1));
-			if ((tmpf = fopen(csvtmp, "w"))) {
-				while (rowcount > (maxrows -1)) {
-					/* "throw away" rows */
-					fgets(line, sizeof(line), mf);
-					rowcount--;
-				}
-
-				/* copy rows to the temporary file */
-				while (fgets(line, sizeof(line), mf) != NULL) {
-					fputs(line, tmpf);
-				}
-
-				/* append new row */
-				fputs(buf, tmpf);
-				fflush(tmpf);
-				fclose(tmpf);
-				tmpf = NULL;
-
-				/* replace master with temporary file */
-				if (rename(csvtmp, csvmaster) == -1) {
-					ast_log(LOG_ERROR, "Failed to update master file %s : %s\n", csvmaster, strerror(errno));
-				}
-			} else {
-				ast_log(LOG_ERROR, "Unable to open temporary file %s : %s\n",
-						csvtmp, strerror(errno));
-			}
-		} else {
-			/* CSV file is allowed to grow indefinitely so just
-			   append the new row to the master file */
-			fputs(buf, mf);
-			fflush(mf); /* be particularly anal here */
-		}
-
+	if ((mf = fopen(csvmaster, "a"))) {
+		fputs(buf, mf);
+		fflush(mf); /* be particularly anal here */
 		fclose(mf);
 		mf = NULL;
 		ast_mutex_unlock(&mf_lock);
@@ -393,8 +515,39 @@ static int csv_log(struct ast_cdr *cdr)
 	return 0;
 }
 
+static char *cdr_csv_remove_cdr(struct ast_cli_entry *e, int cmd, struct ast_cli_args *a)
+{
+	const char *uniqueid = NULL;
+
+	if (cmd == CLI_INIT) {
+		e->command = "cdr_csv remove cdr";
+		e->usage =
+			"Usage: cdr_csv remove cdr <uniqueid>\n"
+			"       Remove a CDR given a unique channel identifier for the call.\n";
+		return NULL;
+	} else if (cmd == CLI_GENERATE)
+		return NULL;
+
+    if (a->argc <= 3) {
+        return CLI_SHOWUSAGE;
+    }
+
+    uniqueid = a->argv[3];
+    remove_cdr(uniqueid);
+
+	return CLI_SUCCESS;
+}
+
+/*! \brief CLI commands definition */
+static struct ast_cli_entry cli_cdr_csv[] = {
+	AST_CLI_DEFINE(cdr_csv_remove_cdr,  "Remove a call data record"),
+};
+
 static int unload_module(void)
 {
+	/* Unregister CLI commands */
+	ast_cli_unregister_multiple(cli_cdr_csv, ARRAY_LEN(cli_cdr_csv));
+
 	ast_cdr_unregister(name);
 	loaded = 0;
 	return 0;
@@ -412,6 +565,10 @@ static int load_module(void)
 	} else {
 		loaded = 1;
 	}
+
+	/* Register all CLI functions this module */
+	ast_cli_register_multiple(cli_cdr_csv, ARRAY_LEN(cli_cdr_csv));
+
 	return res;
 }
 
