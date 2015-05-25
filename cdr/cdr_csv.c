@@ -379,7 +379,6 @@ static int remove_cdr(const char *uniqueid)
 	FILE *tmpf = NULL;
 	char buf[1024];
 	char token[32];
-	char cmpbuf[32];
 	char csvmaster[PATH_MAX];
 	char csvtmp[PATH_MAX];
 
@@ -398,13 +397,17 @@ static int remove_cdr(const char *uniqueid)
 		return -1;
 	}
 
+	static char delim = ',';
+
 	int foundcdr = 0;
 	while (fgets(buf, sizeof(buf), mf) != NULL) {
 		if (!foundcdr) {
-			/* check if row contains the CDR with the given unique id */
+			/* parse CSV row to check if row contains the CDR with the given
+			 * unique id */
+
+			/* reset CSV row parser state */
 			char *start = buf;
 			char *cursor = start;
-			char delim = ',';
 			int inquotation = 0;
 			int tokenindex = 0;
 
@@ -426,15 +429,20 @@ static int remove_cdr(const char *uniqueid)
 						/* enter quoted string */
 						inquotation = 1;
 					}
-					else if (cursor[0] == delim) {
+					else if (cursor[0] == delim || cursor[0] == '\n') {
 						/* found new token */
 						memset(token, 0, sizeof(token));
-						strncpy(token, start, (size_t)(cursor - start));
+						if (start[0] == '"') {
+							/* strip quotations */
+							strncpy(token, &start[1], (size_t)(cursor - start - 2));
+						}
+						else {
+							strncpy(token, start, (size_t)(cursor - start));
+						}
 
 						if (tokenindex == 16) {
 							/* compare uniqueids */
-							snprintf(cmpbuf, sizeof(cmpbuf), "\"%s\"", uniqueid);
-							if (strncmp(token, cmpbuf, sizeof(cmpbuf)) == 0) {
+							if (strncmp(token, uniqueid, sizeof(token)) == 0) {
 								foundcdr = 1;
 							}
 						}

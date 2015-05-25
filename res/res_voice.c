@@ -11,6 +11,7 @@
 #include "asterisk.h"
 #include "asterisk/module.h"
 #include "asterisk/manager.h"
+#include "asterisk/paths.h"
 
 #include "voice/ami.h"
 #include "voice/brcm.h"
@@ -33,6 +34,9 @@
 #define BUFLEN 512
 #define MODULE_SHOW_INTERVAL_S 5
 #define BOOT_WAIT_TIME_S 30
+
+#define CSV_LOG_DIR "/cdr-csv"
+#define CSV_MASTER  "/Master.csv"
 
 /********/
 /* UBUS */
@@ -410,7 +414,8 @@ static struct ubus_object ubus_asterisk_object = {
 
 static struct blobmsg_policy asterisk_call_log_list_policy[] = {
 	{ .name = "number", .type = BLOBMSG_TYPE_STRING },
-	{ .name = "type", .type = BLOBMSG_TYPE_STRING }
+	{ .name = "type", .type = BLOBMSG_TYPE_STRING },
+	{ .name = "limit", .type = BLOBMSG_TYPE_INT32 }
 };
 
 static struct ubus_method asterisk_call_log_object_methods[] = {
@@ -791,6 +796,7 @@ static int ubus_asterisk_call_log_list_cb (
 	struct blob_attr *tb[__UBUS_ARGMAX];
 	char *number_filter = NULL;
 	char *type_filter = NULL;
+	int maxresults = 0; /* Max number of results to return. 0 means unlimited. */
 
 	blobmsg_parse(asterisk_call_log_list_policy,
 			ARRAY_SIZE(asterisk_call_log_list_policy),
@@ -805,100 +811,175 @@ static int ubus_asterisk_call_log_list_cb (
 		type_filter = blobmsg_data(tb[1]);
 	}
 
+	if (tb[2]) {
+		maxresults = blobmsg_get_u32(tb[2]);
+	}
+
 	void *log = blobmsg_open_array(&bb, "call_log");
 
-	/* Read call log file line by line */
-	FILE *fp;
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t read;
-	fp = fopen("/var/call_log", "r");
-	if (fp == NULL) {
-		goto fail;
+	/* Read CDRs one by one */
+	FILE *mf = NULL;
+	char buf[1024];
+	char token[32];
+	char csvmaster[PATH_MAX];
+
+	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
+
+	if ((mf = fopen(csvmaster, "r")) == NULL) {
+		ast_log(LOG_ERROR, "Unable to open master file %s : %s\n", csvmaster, strerror(errno));
+		return -1;
 	}
 
-	const char delim[] = ";";
-	const char *tokens[4];
-	while ((read = getline(&line, &len, fp)) != -1) {
-		memset(tokens, 0, sizeof(tokens));
-		char *token = strtok(line, delim);
-		int k = 0;
+	char time[20];
+	int duration;
+	char disposition[32];
+	char direction[16];
+	char from[32];
+	char to[32];
 
-		while (token != NULL && k < (sizeof(tokens) / sizeof(void*))) {
-			/* Trim new-line character */
-			char *nl = strchr(token, '\n');
-			if (nl != NULL) {
-				*nl = '\0';
-			}
-			tokens[k] = token;
-			token = strtok(NULL, delim);
-			k += 1;
-		}
+	int numresults = 0; /* Number of rows included in results so far */
 
-		if (k >= 4) {
-			const char* time = tokens[0];
-			const char* direction = tokens[1];
-			const char* from = tokens[2];
-			const char* to = tokens[3];
+	static char delim = ',';
 
-			/* This is always our number.
-			 * For an incoming call it should be the to number.
-			 * For an outgoing call it should be the from number.
-			 */
-			const char* our;
+	while (fgets(buf, sizeof(buf), mf) != NULL) {
+		/* reset variables */
+		memset(time, 0, sizeof(time));
+		duration = 0;
+		memset(disposition, 0, sizeof(disposition));
+		memset(direction, 0, sizeof(direction));
+		memset(from, 0, sizeof(from));
+		memset(to, 0, sizeof(to));
 
-			if (strcmp(direction, "Incoming") == 0) {
-				our = to;
-			}
-			else if (strcmp(direction, "Outgoing") == 0) {
-				our = from;
+		/* reset CSV row parser state */
+		char *start = buf;
+		char *cursor = start;
+		int inquotation = 0;
+		int tokenindex = 0;
+
+		while (cursor < (buf + sizeof(buf)) && *cursor) {
+			if (inquotation) {
+				if (cursor[0] == '"') {
+					if (&cursor[1] < (buf + sizeof(buf)) && cursor[1] == '"') {
+						/* quotation mark inside string */
+						cursor += 2;
+						continue;
+					} else {
+						/* exit quoted string */
+						inquotation = 0;
+					}
+				}
 			}
 			else {
-				/* Invalid direction */
+				if (cursor[0] == '"') {
+					/* enter quoted string */
+					inquotation = 1;
+				}
+				else if (cursor[0] == delim || cursor[0] == '\n') {
+					/* found new token */
+					memset(token, 0, sizeof(token));
+					if (start[0] == '"') {
+						/* strip quotations */
+						strncpy(token, &start[1], (size_t)(cursor - start - 2));
+					}
+					else {
+						strncpy(token, start, (size_t)(cursor - start));
+					}
+
+					switch (tokenindex) {
+					case 1: /* src */
+						strncpy(from, token, sizeof(from));
+						break;
+					case 2: /* dst */
+						strncpy(to, token, sizeof(to));
+						break;
+					case 3: /* dcontext */
+						if (strncmp(token, "sip", 3) == 0) {
+							strncpy(direction, "OUTGOING", sizeof(direction));
+						}
+						else {
+							strncpy(direction, "INCOMING", sizeof(direction));
+						}
+						break;
+					case 9: /* start */
+						strncpy(time, token, sizeof(time));
+						break;
+					case 13: /* billsec */
+						duration = atoi(token);
+						break;
+					case 14: /* disposition */
+						strncpy(disposition, token, sizeof(disposition));
+						break;
+					default:
+						break;
+					}
+
+					start = cursor + sizeof(delim);
+					tokenindex++;
+				}
+			}
+
+			cursor++;
+		}
+
+		/* Process CDR */
+
+		if (maxresults > 0 && numresults >= maxresults) {
+			break;
+		}
+
+		/* This is always our number.
+		 * For an incoming call it should be the to number.
+		 * For an outgoing call it should be the from number.
+		 */
+		const char* our;
+
+		if (strcmp(direction, "INCOMING") == 0) {
+			our = to;
+		}
+		else {
+			our = from;
+		}
+
+		/* If number filter is set to anything else than "all" our number
+		 * must match exactly.
+		 */
+		if (number_filter && strcmp(number_filter, "all") != 0) {
+			if (strcmp(number_filter, our) != 0) {
 				continue;
 			}
-
-			/* If number filter is set to anything else than "all" our number
-			 * must match exactly.
-			 */
-			if (number_filter && strcmp(number_filter, "all") != 0) {
-				if (strcmp(number_filter, our) != 0) {
-					continue;
-				}
-			}
-
-			if (type_filter) {
-				if (strcmp(type_filter, "outgoing") == 0) {
-					if (strcmp(direction, "Outgoing") != 0) {
-						continue;
-					}
-				}
-				else if (strcmp(type_filter, "incoming") == 0) {
-					if (strcmp(direction, "Incoming") != 0) {
-						continue;
-					}
-				}
-				else {
-					/* Unsupported filter type */
-					continue;
-				}
-			}
-
-			void *e = blobmsg_open_table(&bb, NULL);
-			blobmsg_add_string(&bb, "time", time);
-			blobmsg_add_string(&bb, "direction", direction);
-			blobmsg_add_string(&bb, "from", from);
-			blobmsg_add_string(&bb, "to", to);
-			blobmsg_close_table(&bb, e);
 		}
+
+		if (type_filter) {
+			if (strcmp(type_filter, "outgoing") == 0) {
+				if (strcmp(direction, "OUTGOING") != 0) {
+					continue;
+				}
+			}
+			else if (strcmp(type_filter, "incoming") == 0) {
+				if (strcmp(direction, "INCOMING") != 0) {
+					continue;
+				}
+			}
+			else {
+				/* Unsupported filter type */
+				continue;
+			}
+		}
+
+		void *e = blobmsg_open_table(&bb, NULL);
+		blobmsg_add_string(&bb, "time", time);
+		blobmsg_add_u32(&bb, "duration", duration);
+		blobmsg_add_string(&bb, "disposition", disposition);
+		blobmsg_add_string(&bb, "direction", direction);
+		blobmsg_add_string(&bb, "from", from);
+		blobmsg_add_string(&bb, "to", to);
+		blobmsg_close_table(&bb, e);
+
+		numresults++;
 	}
 
-	fclose(fp);
-	if (line) {
-		free(line);
-	}
+	fclose(mf);
 
-fail:
 	blobmsg_close_array(&bb, log);
 
 	ubus_send_reply(ctx, req, bb.head);
