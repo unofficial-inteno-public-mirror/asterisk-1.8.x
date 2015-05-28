@@ -87,6 +87,11 @@ static int ubus_asterisk_call_log_list_cb(
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg);
 
+static int ubus_asterisk_call_log_delete_cb(
+		struct ubus_context *ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *method,
+		struct blob_attr *msg);
+
 static int ubus_asterisk_dect_list_cb(
 		struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
@@ -418,12 +423,22 @@ static struct blobmsg_policy asterisk_call_log_list_policy[] = {
 	{ .name = "limit", .type = BLOBMSG_TYPE_INT32 }
 };
 
+static struct blobmsg_policy asterisk_call_log_delete_policy[] = {
+	{ .name = "uniqueid", .type = BLOBMSG_TYPE_STRING }
+};
+
 static struct ubus_method asterisk_call_log_object_methods[] = {
 	{
 		.name = "list",
 		.handler = ubus_asterisk_call_log_list_cb,
 		.policy = asterisk_call_log_list_policy,
 		.n_policy = ARRAY_SIZE(asterisk_call_log_list_policy)
+	},
+	{
+		.name = "delete",
+		.handler = ubus_asterisk_call_log_delete_cb,
+		.policy = asterisk_call_log_delete_policy,
+		.n_policy = ARRAY_SIZE(asterisk_call_log_delete_policy)
 	}
 };
 
@@ -785,6 +800,7 @@ static int ubus_asterisk_status_cb (
 	ubus_send_reply(ctx, req, bb.head);
 	return 0;
 }
+
 /*
  * ubus callback that replies to "asterisk.call_log list".
  */
@@ -836,6 +852,7 @@ static int ubus_asterisk_call_log_list_cb (
 	char direction[16];
 	char from[32];
 	char to[32];
+	char uniqueid[150];
 
 	int numresults = 0; /* Number of rows included in results so far */
 
@@ -909,6 +926,9 @@ static int ubus_asterisk_call_log_list_cb (
 					case 14: /* disposition */
 						strncpy(disposition, token, sizeof(disposition));
 						break;
+					case 16: /* uniqueid */
+						strncpy(uniqueid, token, sizeof(uniqueid));
+						break;
 					default:
 						break;
 					}
@@ -967,6 +987,7 @@ static int ubus_asterisk_call_log_list_cb (
 		}
 
 		void *e = blobmsg_open_table(&bb, NULL);
+		blobmsg_add_string(&bb, "uniqueid", uniqueid);
 		blobmsg_add_string(&bb, "time", time);
 		blobmsg_add_u32(&bb, "duration", duration);
 		blobmsg_add_string(&bb, "disposition", disposition);
@@ -981,6 +1002,40 @@ static int ubus_asterisk_call_log_list_cb (
 	fclose(mf);
 
 	blobmsg_close_array(&bb, log);
+
+	ubus_send_reply(ctx, req, bb.head);
+	return 0;
+}
+
+/*
+ * ubus callback that replies to "asterisk.call_log delete".
+ */
+static int ubus_asterisk_call_log_delete_cb (
+	struct ubus_context *ctx, struct ubus_object *obj,
+	struct ubus_request_data *req, const char *method,
+	struct blob_attr *msg)
+{
+	struct blob_attr *tb[__UBUS_ARGMAX];
+	char *uniqueid = NULL;
+
+	blobmsg_parse(asterisk_call_log_delete_policy,
+			ARRAY_SIZE(asterisk_call_log_delete_policy),
+			tb, blob_data(msg), blob_len(msg));
+	blob_buf_init(&bb, 0);
+
+	if (tb[0]) {
+		uniqueid = blobmsg_data(tb[0]);
+	}
+
+	char cmd[128];
+
+	if (uniqueid) {
+		/* This is a bit ugly.
+		 * CDRs can only be removed through the Asterisk CLI.
+		 */
+		snprintf(cmd, sizeof(cmd), "asterisk -rx \"cdr_csv remove cdr %s\"", uniqueid);
+		system(cmd);
+	}
 
 	ubus_send_reply(ctx, req, bb.head);
 	return 0;
