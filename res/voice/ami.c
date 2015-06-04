@@ -356,7 +356,7 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 		*idx = i;
 		return REGISTRATIONS_COMPLETE;
 	} else if (!memcmp(buf, "BRCM", 4)) {
-		i +=8;
+		i +=8; /* SUSPICIOUS! */
 		while((buf[i] == '\n') || (buf[i] == '\r'))
 			i++;
 
@@ -784,6 +784,7 @@ static struct ami_event* parse_event(char* message)
 
 	switch(type) {
 		case BRCM:
+			ast_log(LOG_DEBUG, "parsing brcm event: %s\n",  &message[idx]);
 			parse_brcm_event(event, &message[idx]);
 			break;
 		case SIP:
@@ -901,6 +902,8 @@ static struct ami_message *parse_data(struct ami *mgr, const char *in_buf)
 		return NULL;
 	}
 
+	ast_log(LOG_DEBUG, "found frame: %s\n", buf);
+
 	parsed_message->type = parse_message_type(buf);
 	if (parsed_message->type == UNKNOWN_MESSAGE) {
 		free(buf);
@@ -910,6 +913,7 @@ static struct ami_message *parse_data(struct ami *mgr, const char *in_buf)
 
 	switch (parsed_message->type) {
 		case EVENT_MESSAGE:
+			ast_log(LOG_DEBUG, "parsing event: %s\n", buf + 7);
 			parsed_message->event = parse_event(buf + 7);
 			break;
 		case RESPONSE_MESSAGE:
@@ -937,6 +941,7 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 	ami_lock(mgr);
 
 	//Parse content and create message
+	ast_log(LOG_DEBUG, "manager_hook_cb received: %s\n", content);
 	struct ami_message *message = parse_data(mgr, content);
 	if (!message) {
 		//Unparsable or incomplete message
