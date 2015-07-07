@@ -46,11 +46,16 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
+#include "event_base.h"
+#include "busmail.h"
+
 void dectSendClip(char* cid, int handset);
 
 #define DECT_NVS_SIZE 4096
 #define API_LINUX_MAX_MAIL_SIZE 0x100
 #define R_KEY 0x15
+
+void * event_base, * client_bus, * server_stream;
 
 typedef struct
 {
@@ -1373,15 +1378,28 @@ int do_read(int fd, void *buf, int size) {
 }
 
 
+void eap(packet_t *p) {
+	printf("eap packet");
+}
+
+
+void server_handler(void * stream, void * event) {
+	ast_verbose("server data\n");
+	eap_write(client_bus, event);
+	eap_dispatch(client_bus);
+}
+
+
 void *brcm_monitor_dect(void *data) {
   
 	int len, i, res;
 	struct sockaddr_in remote_addr;
 	unsigned char buf[API_LINUX_MAX_MAIL_SIZE];
-	int fdmax, pkt_len;
+	int fdmax, pkt_len, size;
 	fd_set rd_fdset;
 	fd_set rfds;
-  
+	
+
 	memset(&remote_addr, 0, sizeof(remote_addr));
 	remote_addr.sin_family = AF_INET;
 	remote_addr.sin_addr.s_addr = INADDR_ANY;
@@ -1399,43 +1417,20 @@ void *brcm_monitor_dect(void *data) {
 	}
 
 
-	fdmax = s;
-
-	FD_SET(s, &rd_fdset);
-
 	/* Initialize dectshim layer */
 	dect_init();
+	
+	/* Setup handlers */
+	event_base = event_base_new(10);
+	server_stream = stream_new(s);
+	stream_add_handler(server_stream, server_handler);
+	client_bus = eap_new(s, eap);
 
-	/* Read loop */
-	while (1) {
-    
-		memcpy(&rfds, &rd_fdset, sizeof(fd_set));
-
-		res = select(fdmax + 1, &rfds, NULL, NULL, NULL);
-		if (res == -1) {
-			ast_verbose("error: select");
-			return NULL;
-		}
-
-		if (FD_ISSET(s, &rfds)) {
-
-                        struct dect_packet p;
-                        len = do_read(s, &p, sizeof(struct packet_header));
-
-			if (p.size <= MAX_MAIL_SIZE)
-				len = do_read(s, p.data, p.size - sizeof(struct packet_header));
-
-			if (len > 0) {
-
-				/* debug printout */
-				logDectDrvRead(p.data, len);
-			}
-
-			handle_data(p.data);
-
-		}
-	}
+	/* Read incomming events on registered streams 
+	   and dispatch them to event handlers. Does not return. */
+	event_base_dispatch(event_base);
 }
+
 
 static void logMessage(int read, uint8_t *data, int len)
 {
