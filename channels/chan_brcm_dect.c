@@ -585,7 +585,7 @@ static void dectDumpHsetCodecList( ApiInfoElementType* IePtr)
 
 void dect_conf_init(void)
 {
-	ast_verbose("\n\n\nDECT conf init\n\n\n");
+	ast_verbose("\n\n\n fuck DECT conf init\n\n\n");
 	NarrowBandCodecIe->Ie = API_IE_CODEC_LIST;
 	NarrowBandCodecIe->IeLength = 6;
 	NarrowBandCodecIe->IeData[0] = 0x01; // NegotiationIndicator , Negotiation possible                              
@@ -1305,7 +1305,7 @@ static int dect_init(void)
 	int fd, r;
 	ApiLinuxInitReqType *t = NULL;
 	DECTSHIMDRV_INIT_PARAM parm;
-	
+	ast_verbose("\n\n\nDECT init 1\n\n\n");	
 	dect_conf_init();
 	
 	fd = open("/dev/dectshim", O_RDWR);
@@ -1315,23 +1315,23 @@ static int dect_init(void)
 		return -1;
 	}
 
-
+	ast_verbose("\n\n\nDECT init 2\n\n\n");	
 	r = ioctl(fd, DECTSHIMIOCTL_INIT_CMD, &parm);
 	if (r != 0) {
 		ast_verbose("%s: ioctl error %d\n", __FUNCTION__, errno);
 	}
 
 	close(fd);
-  
-	ast_verbose("sizeof(ApiLinuxInitReqType): %d\n", sizeof(ApiLinuxInitReqType));
+  	ast_verbose("\n\n\nDECT init 3\n\n\n");	
+	/* ast_verbose("sizeof(ApiLinuxInitReqType): %d\n", sizeof(ApiLinuxInitReqType)); */
 
-	/* download the eeprom values to the DECT driver*/
-	t = (ApiLinuxInitReqType*) malloc(RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE);
-	t->Primitive = API_LINUX_INIT_REQ;
-	t->LengthOfData = DECT_NVS_SIZE;
-	nvs_get_data(t->Data);
+	/* /\* download the eeprom values to the DECT driver*\/ */
+	/* t = (ApiLinuxInitReqType*) malloc(RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE); */
+	/* t->Primitive = API_LINUX_INIT_REQ; */
+	/* t->LengthOfData = DECT_NVS_SIZE; */
+	/* nvs_get_data(t->Data); */
 
-	dectDrvWrite(t, RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE);
+	/* dectDrvWrite(t, RSOFFSETOF(ApiLinuxInitReqType, Data) + DECT_NVS_SIZE); */
 	
 
 	return r;
