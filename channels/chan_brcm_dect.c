@@ -45,6 +45,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
+#include "hej.h"
 
 void dectSendClip(char* cid, int handset);
 
@@ -1405,6 +1406,7 @@ void *brcm_monitor_dect(void *data) {
 
 	/* Initialize dectshim layer */
 	dect_init();
+	hej();
 
 	/* Read loop */
 	while (1) {
