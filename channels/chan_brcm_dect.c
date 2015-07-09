@@ -46,6 +46,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 #include "hej.h"
+//#include "buffer.h"
 
 void dectSendClip(char* cid, int handset);
 
@@ -410,7 +411,6 @@ void dectSendClip(char* cid, int handset)
 		memset(queuePtr, 0, 2 + clipMailLength);
 		queuePtr[0] = (unsigned char)(clipMailLength >>8);
 		queuePtr[1] = (unsigned char)(clipMailLength & 0x00FF);
-
 		/* Assign mail pointer */
 		clipMailPtr = (ApiFpCcInfoReqType *) (queuePtr + 2);
 		
@@ -1407,6 +1407,8 @@ void *brcm_monitor_dect(void *data) {
 	/* Initialize dectshim layer */
 	dect_init();
 	hej();
+	//void * buffer = buffer_new(500);
+	ast_verbose("\n\nbuffer_new fucked\n\n");
 
 	/* Read loop */
 	while (1) {
