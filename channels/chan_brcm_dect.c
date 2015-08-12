@@ -1405,16 +1405,10 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 		return -1;
 	}
 
-	ast_verbose("\n\n\Registered event handler\n\n\n");
-
 	uloop_init();
 	ubus_add_uloop(ctx);
-	ast_verbose("\n\nloop_run\n\n\n");
 	uloop_run();
-	ast_verbose("\n\nuloop_done\n\n\n");
 	uloop_done();
-	ast_verbose("\n\nexit\n\n\n");
-
 	
 	return 0;
 }
@@ -1431,69 +1425,18 @@ void *brcm_monitor_dect(void *data) {
   
 	static struct ubus_context *ctx;
 
+	/* Initialize dectshim layer */
+	dect_init();
+
+	/* Initialize ubus connecton */
 	ctx = ubus_connect(NULL);
 	if (!ctx) {
 		ast_verbose("Failed to connect to ubus\n");
 		return -1;
 	}
 
-	ast_verbose("\n\n\Connected to ubus\n\n\n");	
 	ast_ubus_listen(ctx);
-
-
-	memset(&remote_addr, 0, sizeof(remote_addr));
-	remote_addr.sin_family = AF_INET;
-	remote_addr.sin_addr.s_addr = INADDR_ANY;
-	remote_addr.sin_port = htons(7777);
-
-
-	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		perror("socket");
-		return -1;
-	}
-
-	if (connect(s, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr)) < 0) {
-		perror("connect");
-		return -1;
-	}
-
-
-	fdmax = s;
-
-	FD_SET(s, &rd_fdset);
-
-	/* Initialize dectshim layer */
-	dect_init();
-
-	/* Read loop */
-	while (1) {
-    
-		memcpy(&rfds, &rd_fdset, sizeof(fd_set));
-
-		res = select(fdmax + 1, &rfds, NULL, NULL, NULL);
-		if (res == -1) {
-			ast_verbose("error: select");
-			return NULL;
-		}
-
-		if (FD_ISSET(s, &rfds)) {
-
-                        struct dect_packet p;
-                        len = do_read(s, &p, sizeof(struct packet_header));
-
-			if (p.size <= MAX_MAIL_SIZE)
-				len = do_read(s, p.data, p.size - sizeof(struct packet_header));
-
-			if (len > 0) {
-
-				/* debug printout */
-				logDectDrvRead(p.data, len);
-			}
-
-			handle_data(p.data);
-
-		}
-	}
+	ubus_free(ctx);
 }
 
 static void logMessage(int read, uint8_t *data, int len)
