@@ -11,6 +11,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <signal.h>
+#include <string.h>
 
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
@@ -45,6 +46,9 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
+
+#include <libubox/blobmsg_json.h>
+#include <libubus.h>
 
 void dectSendClip(char* cid, int handset);
 
@@ -1372,6 +1376,49 @@ int do_read(int fd, void *buf, int size) {
 	return count;
 }
 
+void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
+			  const char *type, struct blob_attr *msg)
+{
+	/* char *str; */
+	/* str = blobmsg_format_json(msg, true); */
+	ast_verbose("Got ubus event:\n");
+	/* ast_verbose("{ \"%s\": %s }\n", type, str); */
+	/* free(str); */
+}
+
+
+int ast_ubus_listen(struct ubus_context *ctx) {
+
+	static struct ubus_event_handler listener;
+	const char *event;
+	int ret = 0;
+
+	memset(&listener, 0, sizeof(listener));
+	listener.cb = ast_ubus_event;
+
+	event = "*";
+
+	ret = ubus_register_event_handler(ctx, &listener, event);
+	if (ret) {
+		ast_verbose("Error while registering for event '%s': %s\n",
+			    event, ubus_strerror(ret));
+		return -1;
+	}
+
+	ast_verbose("\n\n\Registered event handler\n\n\n");
+
+	uloop_init();
+	ubus_add_uloop(ctx);
+	ast_verbose("\n\nloop_run\n\n\n");
+	uloop_run();
+	ast_verbose("\n\nuloop_done\n\n\n");
+	uloop_done();
+	ast_verbose("\n\nexit\n\n\n");
+
+	
+	return 0;
+}
+
 
 void *brcm_monitor_dect(void *data) {
   
@@ -1382,6 +1429,18 @@ void *brcm_monitor_dect(void *data) {
 	fd_set rd_fdset;
 	fd_set rfds;
   
+	static struct ubus_context *ctx;
+
+	ctx = ubus_connect(NULL);
+	if (!ctx) {
+		ast_verbose("Failed to connect to ubus\n");
+		return -1;
+	}
+
+	ast_verbose("\n\n\Connected to ubus\n\n\n");	
+	ast_ubus_listen(ctx);
+
+
 	memset(&remote_addr, 0, sizeof(remote_addr));
 	remote_addr.sin_family = AF_INET;
 	remote_addr.sin_addr.s_addr = INADDR_ANY;
