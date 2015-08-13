@@ -1408,13 +1408,13 @@ void dect_api_svej(struct ubus_context *ctx, struct ubus_event_handler *ev,
 
 int ast_ubus_listen(struct ubus_context *ctx) {
 
-	static struct ubus_event_handler listener;
-	const char *event;
+	static struct ubus_event_handler listener, svej;
+	const char *event, *svej_event;
 	int ret = 0;
 
+	/* dect.api.hej */
 	memset(&listener, 0, sizeof(listener));
 	listener.cb = dect_api_hej;
-
 	event = "dect.api.hej";
 
 	ret = ubus_register_event_handler(ctx, &listener, event);
@@ -1423,6 +1423,20 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 			    event, ubus_strerror(ret));
 		return -1;
 	}
+
+	/* dect.api.svej */
+	memset(&svej, 0, sizeof(svej));
+	svej.cb = dect_api_svej;
+	svej_event = "dect.api.svej";
+
+	ret = ubus_register_event_handler(ctx, &svej, svej_event);
+	if (ret) {
+		ast_verbose("Error while registering for event '%s': %s\n",
+			    svej_event, ubus_strerror(ret));
+		return -1;
+	}
+
+	ast_verbose("ubus handlers registered\n");
 
 	uloop_init();
 	ubus_add_uloop(ctx);
