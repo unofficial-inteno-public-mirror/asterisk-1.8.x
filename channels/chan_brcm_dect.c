@@ -1385,8 +1385,11 @@ void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
 
 	if (type && str) {
 		ast_verbose("{ \"%s\": %s }\n", type, str);
-		free(str);
+
 	}
+	
+	if (str)
+		free(str);
 }
 
 
@@ -1416,7 +1419,6 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 	return 0;
 }
 
-
 void *brcm_monitor_dect(void *data) {
   
 	int len, i, res;
@@ -1429,7 +1431,7 @@ void *brcm_monitor_dect(void *data) {
 	static struct ubus_context *ctx;
 
 	/* Initialize dectshim layer */
-	dect_init();
+	//dect_init();
 
 	/* Initialize ubus connecton */
 	ctx = ubus_connect(NULL);
