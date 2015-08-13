@@ -1379,11 +1379,14 @@ int do_read(int fd, void *buf, int size) {
 void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
 {
-	/* char *str; */
-	/* str = blobmsg_format_json(msg, true); */
-	ast_verbose("Got ubus event:\n");
-	/* ast_verbose("{ \"%s\": %s }\n", type, str); */
-	/* free(str); */
+	char *str;
+	if (msg)
+		str = blobmsg_format_json(msg, true);
+
+	if (type && str) {
+		ast_verbose("{ \"%s\": %s }\n", type, str);
+		free(str);
+	}
 }
 
 
