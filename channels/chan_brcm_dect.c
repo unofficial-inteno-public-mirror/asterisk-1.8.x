@@ -1393,6 +1393,19 @@ void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
 }
 
 
+void dect_api_hej(struct ubus_context *ctx, struct ubus_event_handler *ev,
+			  const char *type, struct blob_attr *msg)
+{
+	ast_verbose("hej\n");
+}
+
+void dect_api_svej(struct ubus_context *ctx, struct ubus_event_handler *ev,
+			  const char *type, struct blob_attr *msg)
+{
+	ast_verbose("svej\n");
+}
+
+
 int ast_ubus_listen(struct ubus_context *ctx) {
 
 	static struct ubus_event_handler listener;
@@ -1400,9 +1413,9 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 	int ret = 0;
 
 	memset(&listener, 0, sizeof(listener));
-	listener.cb = ast_ubus_event;
+	listener.cb = dect_api_hej;
 
-	event = "*";
+	event = "dect.api.hej";
 
 	ret = ubus_register_event_handler(ctx, &listener, event);
 	if (ret) {
