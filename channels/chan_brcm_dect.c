@@ -1382,7 +1382,7 @@ void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 	json = blobmsg_format_json(msg, true);
 	obj = json_tokener_parse(json);
 
-	if( (json_object_object_get_ex(obj, "endpt", &val)) == true) {
+	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
 		terminal = json_object_get_int(val);
 		
 		if (bad_handsetnr(terminal))
@@ -1395,6 +1395,33 @@ void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 	}
 }
+
+
+void release_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
+			  const char *type, struct blob_attr *msg)
+{
+	struct json_object *obj, *val;
+	char *json;
+	int terminal, endpt;
+
+	ast_verbose("release_ind\n");	
+	json = blobmsg_format_json(msg, true);
+	obj = json_tokener_parse(json);
+
+	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
+		terminal = json_object_get_int(val);
+		
+		if (bad_handsetnr(terminal))
+			return;
+		
+		ast_verbose("terminal: %d\n", terminal);
+		
+		/* Signal offhook to endpoint driver */
+		endpt = terminal - 1;
+		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
+	}
+}
+
 
 void dect_api_svej(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
@@ -1434,10 +1461,10 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 	}
 
 
-	/* dect.api.svej */
+	/* dect.api.release_ind */
 	memset(&svej, 0, sizeof(svej));
-	svej.cb = dect_api_svej;
-	svej_event = "dect.api.svej";
+	svej.cb = release_ind;
+	svej_event = "dect.api.release_ind";
 
 	ret = ubus_register_event_handler(ctx, &svej, svej_event);
 	if (ret) {
