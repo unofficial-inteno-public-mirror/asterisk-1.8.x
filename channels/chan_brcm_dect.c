@@ -1171,36 +1171,14 @@ static void handle_data(unsigned char *buf) {
 		handset_present_ind((ApiFpMmHandsetPresentIndType *)buf);
 		break;
 
-	case API_FP_MM_SET_REGISTRATION_MODE_CFM:
-		ast_verbose("API_FP_MM_SET_REGISTRATION_MODE_CFM\n");
-		break;
-
-	case API_FP_MM_REGISTRATION_COMPLETE_IND:
-		ast_verbose("API_FP_MM_REGISTRATION_COMPLETE_IND\n");
-		break;
-
 	case API_FP_CC_SETUP_CFM:
 		ast_verbose("API_FP_CC_SETUP_CFM\n");
 		setup_cfm((ApiFpCcSetupCfmType *)buf);
 		break;
 
-	case API_LINUX_INIT_CFM:
-		ast_verbose("API_LINUX_INIT_CFM\n");
-		init_cfm(buf);
-		break;
-
 	case API_FP_CC_ALERT_IND:
 		ast_verbose("API_FP_CC_ALERT_IND\n");
 		alert_ind((ApiFpCcAlertIndType *)buf);
-		break;
-
-	case API_LINUX_NVS_UPDATE_IND:
-		ast_verbose("API_FP_LINUX_NVS_UPDATE_IND\n");
-		nvs_update_ind(buf);
-		break;
-
-	case API_FP_MM_GET_REGISTRATION_COUNT_CFM:
-		ast_verbose("API_FP_MM_GET_REGISTRATION_COUNT_CFM\n");
 		break;
 
 	case API_FP_MM_GET_HANDSET_IPUI_CFM:
@@ -1393,36 +1371,68 @@ void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
 }
 
 
-void dect_api_hej(struct ubus_context *ctx, struct ubus_event_handler *ev,
+void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
 {
-	ast_verbose("hej\n");
+	struct json_object *obj, *val;
+	char *json;
+	int terminal, endpt;
+
+	ast_verbose("setup_ind\n");	
+	json = blobmsg_format_json(msg, true);
+	obj = json_tokener_parse(json);
+
+	if( (json_object_object_get_ex(obj, "endpt", &val)) == true) {
+		terminal = json_object_get_int(val);
+		
+		if (bad_handsetnr(terminal))
+			return;
+		
+		ast_verbose("terminal: %d\n", terminal);
+		
+		/* Signal offhook to endpoint driver */
+		endpt = terminal - 1;
+		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
+	}
 }
 
 void dect_api_svej(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
 {
-	ast_verbose("svej\n");
+	ast_verbose("svej ponas joooo\n");
 }
 
 
 int ast_ubus_listen(struct ubus_context *ctx) {
 
-	static struct ubus_event_handler listener, svej;
-	const char *event, *svej_event;
+	static struct ubus_event_handler listener, svej, hej;
+	const char *event, *svej_event, *hej_event;
 	int ret = 0;
 
-	/* dect.api.hej */
+	/* all */
 	memset(&listener, 0, sizeof(listener));
-	listener.cb = dect_api_hej;
-	event = "dect.api.hej";
+	listener.cb = ast_ubus_event;
+	event = "*";
 
 	ret = ubus_register_event_handler(ctx, &listener, event);
 	if (ret) {
-		ast_verbose("Error while registering for event '%s': %s\n",
+		ast_verbose("\n\nError while registering for event '%s': %s\n\n\n",
 			    event, ubus_strerror(ret));
 		return -1;
 	}
+
+	/* dect.api.setup_ind */
+	memset(&hej, 0, sizeof(hej));
+	hej.cb = setup_ind;
+	hej_event = "dect.api.setup_ind";
+
+	ret = ubus_register_event_handler(ctx, &hej, hej_event);
+	if (ret) {
+		ast_verbose("\n\n\nError while registering for event '%s': %s\n\n\n",
+			    hej_event, ubus_strerror(ret));
+		return -1;
+	}
+
 
 	/* dect.api.svej */
 	memset(&svej, 0, sizeof(svej));
@@ -1436,13 +1446,21 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 		return -1;
 	}
 
-	ast_verbose("ubus handlers registered\n");
+	ast_verbose("\n\n\nubus handlers registered\n\n\n");
+	sleep(5);
 
 	uloop_init();
 	ubus_add_uloop(ctx);
+
+
+	ast_verbose("\n\n\nuloop run\n\n\n");
 	uloop_run();
+	ast_verbose("\n\n\nuloop done 1\n\n\n");
+
+
 	uloop_done();
-	
+	ast_verbose("\n\n\nuloop done 2\n\n\n");	
+
 	return 0;
 }
 
