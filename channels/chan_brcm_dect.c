@@ -1371,6 +1371,34 @@ void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
 }
 
 
+void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
+			  const char *type, struct blob_attr *msg)
+{
+	struct json_object *obj, *val;
+	char *json, *dialed_nr;
+	int terminal, endpt;
+
+	ast_verbose("info_ind\n");
+	json = blobmsg_format_json(msg, true);
+	obj = json_tokener_parse(json);
+
+	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
+		terminal = json_object_get_int(val);
+		
+		if (bad_handsetnr(terminal))
+			return;
+		
+		ast_verbose("terminal: %d\n", terminal);
+	}
+
+	if( (json_object_object_get_ex(obj, "dialed_nr", &val)) == true) {
+		dialed_nr = json_object_get_string(val);
+		ast_verbose("dialed_nr: %s\n", dialed_nr);
+	}
+}
+
+
+
 void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
 {
@@ -1432,8 +1460,8 @@ void dect_api_svej(struct ubus_context *ctx, struct ubus_event_handler *ev,
 
 int ast_ubus_listen(struct ubus_context *ctx) {
 
-	static struct ubus_event_handler listener, svej, hej;
-	const char *event, *svej_event, *hej_event;
+	static struct ubus_event_handler listener, svej, hej, info;
+	const char *event, *svej_event, *hej_event, *info_event;
 	int ret = 0;
 
 	/* all */
@@ -1473,8 +1501,21 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 		return -1;
 	}
 
+
+	/* dect.api.info_ind */
+	memset(&info, 0, sizeof(info));
+	info.cb = info_ind;
+	info_event = "dect.api.info_ind";
+
+	ret = ubus_register_event_handler(ctx, &info, info_event);
+	if (ret) {
+		ast_verbose("Error while registering for event '%s': %s\n",
+			    info_event, ubus_strerror(ret));
+		return -1;
+	}
+
+
 	ast_verbose("\n\n\nubus handlers registered\n\n\n");
-	sleep(5);
 
 	uloop_init();
 	ubus_add_uloop(ctx);
