@@ -1560,9 +1560,9 @@ void handle_dtmf_calling(struct brcm_subchannel *sub)
 		ast_debug(9, "Direct extension matching %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context_direct);
 	}
-	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23 && feature_access_code_match(p->dtmfbuf) != 1) {
+	else if (ast_exists_extension(NULL, p->context, p->dtmfbuf, 1, p->cid_num) && dtmf_last_char == 0x23 && !feature_access_code_match(p->dtmfbuf)) {
 		//We have a match in the "normal" context, and user ended the dialling sequence with a #,
-		//so have asterisk place a call immediately if sequence is not partially matching a feature access code
+		//so have asterisk place a call immediately if sequence is not matching a feature access code
 		ast_debug(9, "Pound-key pressed during dialling, extension %s found\n", p->dtmfbuf);
 		brcm_start_calling(p, sub, p->context);
 	}
@@ -4929,43 +4929,44 @@ static int feature_access_code_clear()
 	return 0;
 }
 
+/* Check if a sequence matches or partially matches a configured FAC */
 static int feature_access_code_match(const char *sequence)
 {
 	struct feature_access_code *current;
-	int retval = -1;
+
+	/* The dot character (.) works as a wildcard and
+	 * matches any character.
+	 *
+	 * Examples:
+	 * FAC *#21# would match *#21#
+	 * FAC *#21# would partially match *#
+	 * FAC *#..# would match *#21#
+	 * FAC *#.1# would match *#21# and *#31#
+	 * FAC .... would match #31#
+	 */
 
 	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
 		char *seq = sequence;
 		char *fac = current->code;
+		int res = 1;
 
-		int res = -1;
 		for (; *seq && *fac; seq++, fac++) {
 			if (*fac == '.') {
-				/* Perfect match */
-				return 0;
+				continue;
 			}
-			else if (*seq == *fac) {
-				/* Partial match */
-				res = 1;
-			}
-			else {
-				/* No match */
-				res = -1;
+
+			if (*seq != *fac) {
+				res = 0;
 				break;
 			}
 		}
 
-		if (res == 1 && *seq == *fac) {
-			/* Perfect match */
-			return 0;
-		}
-
-		if (res != -1) {
-			retval = res;
+		if (!*seq && res == 1) {
+			/* Match or partial match */
+			return 1;
 		}
 	}
-
-	return retval;
+	return 0;
 }
 
 AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
