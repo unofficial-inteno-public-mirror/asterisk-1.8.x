@@ -1376,7 +1376,9 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 {
 	struct json_object *obj, *val;
 	char *json, *dialed_nr;
-	int terminal, endpt;
+	int terminal, endpt, i, j;
+	struct brcm_pvt *p;
+	struct brcm_subchannel *sub;
 
 	ast_verbose("info_ind\n");
 	json = blobmsg_format_json(msg, true);
@@ -1389,12 +1391,152 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			return;
 		
 		ast_verbose("terminal: %d\n", terminal);
+	} else {
+		ast_verbose("no terminal id\n");
+		return;
 	}
 
 	if( (json_object_object_get_ex(obj, "dialed_nr", &val)) == true) {
 		dialed_nr = json_object_get_string(val);
-		ast_verbose("dialed_nr: %s\n", dialed_nr);
+	} else {
+		ast_verbose("no dialed nr\n");
+		return;
 	}
+	
+	ast_verbose("dialed_nr: %s\n", dialed_nr);
+	p = brcm_get_pvt_from_lineid(iflist, terminal);
+	
+	if (!p) {
+		ast_verbose("no pvt!\n");
+		return;
+	} else {
+		ast_verbose("got pvt!\n");
+	}
+
+	
+	/* Abandon all hope ye who enter here. */
+	for (i = 0; i < strlen(dialed_nr); i++) {
+
+		const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
+		int rDetected = 0;
+
+
+		while (dtmfMap->c != dialed_nr[i]) {
+			
+			dtmfMap++;
+			if (dtmfMap->event == EPEVT_LAST) {
+
+				if (R_KEY == dialed_nr[i]) {
+					rDetected = 1;
+					break;
+				}
+
+				/* DTMF not found. Should not be reached. */
+				ast_log(LOG_WARNING, "Failed to handle DTMF. Event not found.\n");
+				return;
+			}
+		}
+
+		/* Get locks in correct order */
+		ast_mutex_lock(&p->lock);
+
+		struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
+		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
+		struct ast_channel *owner = sub->owner;
+		struct ast_channel *peer_owner = sub_peer->owner;
+		
+		if (sub->owner) {
+			ast_channel_ref(owner);
+		}
+		if (sub_peer->owner) {
+			ast_channel_ref(peer_owner);
+		}
+		ast_mutex_unlock(&p->lock);
+
+		if (owner && peer_owner) {
+			if (owner < peer_owner) {
+				ast_channel_lock(owner);
+				ast_channel_lock(peer_owner);
+			}
+			else {
+				ast_channel_lock(peer_owner);
+				ast_channel_lock(owner);
+			}
+		}
+		else if (owner) {
+			ast_channel_lock(owner);
+		}
+		else if (peer_owner) {
+			ast_channel_lock(peer_owner);
+		}
+		ast_mutex_lock(&p->lock);
+		
+		
+		if (sub) {
+			if (!rDetected) {
+
+				/* DTMF */
+				for (j = 0; j < 2; j++) { // we need to send two events: press and depress
+
+					/* Interdigit timeout is scheduled for both press and depress */
+					brcm_cancel_dialing_timeouts(p);
+
+					unsigned int old_state = sub->channel_state;
+					handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
+					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+
+						/* DTMF event took channel state to DIALING. Stop dial tone. */
+						ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+						brcm_stop_dialtone(p);
+					}
+
+					if (sub->channel_state == DIALING) {
+						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
+						handle_dtmf_calling(sub);
+					}
+				}
+
+				if (brcm_should_relay_dtmf(sub)) {
+					switch (get_dtmf_relay_type(sub)) {
+					case EPDTMFRFC2833_DISABLED:
+						ast_debug(5, "Generating inband DTMF for DECT\n");
+						brcm_signal_dtmf_ingress(sub, dtmfMap->i);
+						break;
+					case EPDTMFRFC2833_ENABLED:
+					case EPDTMFRFC2833_SUBTRACT: {
+						struct ast_frame f = { 0, };
+						f.subclass.integer = dtmfMap->c;
+						f.src = "BRCM";
+						f.frametype = AST_FRAME_DTMF_END;
+						if (owner) {
+							ast_queue_frame(owner, &f);
+						}
+						break;
+					}
+					default:
+						ast_log(LOG_WARNING, "DTMF mode unknown\n");
+						break;
+					}
+				}
+			}
+			else {
+				/* Hookflash */
+				p->hf_detected = 1;
+				handle_hookflash(sub, sub_peer, owner, peer_owner);
+			}
+		}
+		ast_mutex_unlock(&p->lock);
+
+		if (owner) {
+			ast_channel_unlock(owner);
+			ast_channel_unref(owner);
+		}
+		if (peer_owner) {
+			ast_channel_unlock(peer_owner);
+			ast_channel_unref(peer_owner);
+		}
+	}
+
 }
 
 
