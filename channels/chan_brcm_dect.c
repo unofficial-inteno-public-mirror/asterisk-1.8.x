@@ -589,7 +589,7 @@ static void dectDumpHsetCodecList( ApiInfoElementType* IePtr)
 
 void dect_conf_init(void)
 {
-	ast_verbose("\n\n\n fuck DECT conf init\n\n\n");
+	ast_verbose("DECT conf init\n");
 	NarrowBandCodecIe->Ie = API_IE_CODEC_LIST;
 	NarrowBandCodecIe->IeLength = 6;
 	NarrowBandCodecIe->IeData[0] = 0x01; // NegotiationIndicator , Negotiation possible                              
@@ -838,72 +838,75 @@ process_keypad_info(unsigned char handset,
 		else if (peer_owner) {
 			ast_channel_lock(peer_owner);
 		}
+
 		ast_mutex_lock(&p->lock);
-
 		if (sub) {
-			if (!rDetected) {
-				/* DTMF */
-				for (j = 0; j < 2; j++) { // we need to send two events: press and depress
+			/* if (!rDetected) { */
+			/* DTMF */
+			for (j = 0; j < 2; j++) { // we need to send two events: press and depress
 
-					/* Interdigit timeout is scheduled for both press and depress */
-					brcm_cancel_dialing_timeouts(p);
+				/* Interdigit timeout is scheduled for both press and depress */
+				brcm_cancel_dialing_timeouts(p);
 
-					unsigned int old_state = sub->channel_state;
-					handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
-					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
+				unsigned int old_state = sub->channel_state;
+				handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
+				if (sub->channel_state == DIALING && old_state != sub->channel_state) {
 
-						/* DTMF event took channel state to DIALING. Stop dial tone. */
-						ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-						brcm_stop_dialtone(p);
-					}
-
-					if (sub->channel_state == DIALING) {
-						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
-						handle_dtmf_calling(sub);
-					}
+					/* DTMF event took channel state to DIALING. Stop dial tone. */
+					ast_debug(2, "Dialing. Stop dialtone.\n");
+					brcm_stop_dialtone(p);
 				}
 
-				if (brcm_should_relay_dtmf(sub)) {
-					switch (get_dtmf_relay_type(sub)) {
-					case EPDTMFRFC2833_DISABLED:
-						ast_debug(5, "Generating inband DTMF for DECT\n");
-						brcm_signal_dtmf_ingress(sub, dtmfMap->i);
-						break;
-					case EPDTMFRFC2833_ENABLED:
-					case EPDTMFRFC2833_SUBTRACT: {
-						struct ast_frame f = { 0, };
-						f.subclass.integer = dtmfMap->c;
-						f.src = "BRCM";
-						f.frametype = AST_FRAME_DTMF_END;
-						if (owner) {
-							ast_queue_frame(owner, &f);
-						}
-						break;
-					}
-					default:
-						ast_log(LOG_WARNING, "DTMF mode unknown\n");
-						break;
-					}
+				if (sub->channel_state == DIALING) {
+					ast_debug(2, "Handle DTMF calling\n");
+					handle_dtmf_calling(sub);
 				}
 			}
-			else {
-				/* Hookflash */
-				p->hf_detected = 1;
-				handle_hookflash(sub, sub_peer, owner, peer_owner);
-			}
-		}
-		ast_mutex_unlock(&p->lock);
 
-		if (owner) {
-			ast_channel_unlock(owner);
-			ast_channel_unref(owner);
+			/* if (brcm_should_relay_dtmf(sub)) { */
+			/* 	switch (get_dtmf_relay_type(sub)) { */
+			/* 	case EPDTMFRFC2833_DISABLED: */
+			/* 		ast_debug(5, "Generating inband DTMF for DECT\n"); */
+			/* 		brcm_signal_dtmf_ingress(sub, dtmfMap->i); */
+			/* 		break; */
+			/* 	case EPDTMFRFC2833_ENABLED: */
+			/* 	case EPDTMFRFC2833_SUBTRACT: { */
+			/* 		struct ast_frame f = { 0, }; */
+			/* 		f.subclass.integer = dtmfMap->c; */
+			/* 		f.src = "BRCM"; */
+			/* 		f.frametype = AST_FRAME_DTMF_END; */
+			/* 		if (owner) { */
+			/* 			ast_queue_frame(owner, &f); */
+			/* 		} */
+			/* 		break; */
+			/* 	} */
+			/* 	default: */
+			/* 		ast_log(LOG_WARNING, "DTMF mode unknown\n"); */
+			/* 		break; */
+			/* 	} */
+			/* } */
+		/* } */
+		/* else { */
+		/* 	/\* Hookflash *\/ */
+		/* 	p->hf_detected = 1; */
+		/* 	handle_hookflash(sub, sub_peer, owner, peer_owner); */
+		/* } */
 		}
-		if (peer_owner) {
-			ast_channel_unlock(peer_owner);
-			ast_channel_unref(peer_owner);
-		}
+	ast_mutex_unlock(&p->lock);
+
+	if (owner) {
+		ast_channel_unlock(owner);
+		ast_channel_unref(owner);
+	}
+	if (peer_owner) {
+		ast_channel_unlock(peer_owner);
+		ast_channel_unref(peer_owner);
+	}
+
 	}
 }
+
+
 
 static void dect_info_ind(ApiFpCcInfoIndType *m) {
 	
@@ -1404,7 +1407,8 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 	}
 	
 	ast_verbose("dialed_nr: %s\n", dialed_nr);
-	p = brcm_get_pvt_from_lineid(iflist, terminal);
+	endpt = terminal - 1;
+	p = brcm_get_pvt_from_lineid(iflist, endpt);
 	
 	if (!p) {
 		ast_verbose("no pvt!\n");
@@ -1547,6 +1551,7 @@ void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 	struct json_object *obj, *val;
 	char *json;
 	int terminal, endpt;
+	ApiFpCcConnectReqType* req;
 
 	ast_verbose("setup_ind\n");	
 	json = blobmsg_format_json(msg, true);
@@ -1686,7 +1691,7 @@ void *brcm_monitor_dect(void *data) {
 	static struct ubus_context *ctx;
 
 	/* Initialize dectshim layer */
-	//dect_init();
+	//dect_conf_init();
 
 	/* Initialize ubus connecton */
 	ctx = ubus_connect(NULL);
