@@ -1694,11 +1694,11 @@ static int load_module(void)
 {
 	int rv;
 
-	if ((rv = ubus_load())) {
-		ast_log(LOG_WARNING, "Failed to load res_ubus\n");
-	}
+	/* if ((rv = ubus_load())) { */
+	/* 	ast_log(LOG_WARNING, "Failed to load res_ubus\n"); */
+	/* } */
 
-	return rv;
+	return 0;
 }
 
 static int unload_module(void)
