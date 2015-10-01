@@ -1009,6 +1009,8 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	ENDPOINTDRV_PACKET_PARM tPacketParm_send;
 	struct brcm_subchannel *sub = ast->tech_pvt;
    	UINT8 packet_buffer[PACKET_BUFFER_SIZE] = {0};
+   	UINT8 bogus_buffer[PACKET_BUFFER_SIZE] = {0};
+	int i;
 
 	if (ast->_state != AST_STATE_UP && ast->_state != AST_STATE_RING) {
 		/* Silently ignore packets until channel is up */
@@ -1026,9 +1028,15 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 		/* send rtp packet to the endpoint */
 		epPacket_send.mediaType   = 0;
 
+		
+		for (i = 0; i < frame->datalen; i++)
+			bogus_buffer[i] = 0x0;
+
+
 		/* copy frame data to local buffer */
-		memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
-	    
+		memcpy(packet_buffer + 12, bogus_buffer, frame->datalen);
+		
+		
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
