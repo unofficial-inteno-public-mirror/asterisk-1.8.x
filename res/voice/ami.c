@@ -41,7 +41,7 @@ struct ami
 
 static int manager_hook_cb(int catergory, const char* event, char* content, void *data);
 static void send_action(struct ami *mgr, struct ami_action *action);
-static char *trim_whitespace(char *str);
+//static char *trim_whitespace(char *str);
 
 
 /********************/
@@ -356,7 +356,7 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 		*idx = i;
 		return REGISTRATIONS_COMPLETE;
 	} else if (!memcmp(buf, "BRCM", 4)) {
-		i +=8;
+		i +=8; /* SUSPICIOUS! */
 		while((buf[i] == '\n') || (buf[i] == '\r'))
 			i++;
 
@@ -409,7 +409,7 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 /*
  * Trim whitespaces from both ends of string
  */
-static char *trim_whitespace(char *str)
+/*static char *trim_whitespace(char *str)
 {
 	char *end;
 	while (isspace(*str)) {
@@ -425,7 +425,7 @@ static char *trim_whitespace(char *str)
 	*(end+1) = 0;
 	return str;
 }
-
+*/
 /*
  * Parse SIP registry events
  */
@@ -573,13 +573,31 @@ static struct ami_event *parse_brcm_event(struct ami_event *event, char* buf)
 	event->brcm_event->type = BRCM_UNKNOWN_EVENT;
 
 	char* event_type = NULL;
-	char parse_buffer[AMI_BUFLEN];
-	char delimiter = ' ';
-	char *value;
+	//char parse_buffer[AMI_BUFLEN];
+	//char delimiter = ' ';
+	//char *value;
 
 	if ((event_type = strstr(buf, "Status: "))) {
 		event->brcm_event->type = BRCM_STATUS_EVENT;
-		strncpy(parse_buffer, event_type + 8, AMI_BUFLEN);
+		char status[255] = {0}; 
+		int line_id = -1; 
+		int num = sscanf(event_type + 8, "%s %d", status, &line_id); 
+		if(num > 0){
+			if(strcmp(status, "ON") == 0){
+				event->brcm_event->status.off_hook = 0; 
+			} else if(strcmp(status, "OFF") == 0){
+				event->brcm_event->status.off_hook = 1; 
+			} else {
+				ast_log(LOG_WARNING, "Unknown status in brcm status event\n");
+			}
+		} else {
+			ast_log(LOG_WARNING, "No status in brcm status event\n");
+		}
+		event->brcm_event->status.line_id = line_id; 
+		if(line_id == -1){
+			ast_log(LOG_WARNING, "No/Unknown line id in brcm status event\n");
+		} 
+		/*strncpy(parse_buffer, event_type + 8, AMI_BUFLEN);
 		parse_buffer[AMI_BUFLEN -1] = '\0';
 		//strcpy(parse_buffer, event_type + 8);
 
@@ -601,14 +619,25 @@ static struct ami_event *parse_brcm_event(struct ami_event *event, char* buf)
 		else {
 			ast_log(LOG_WARNING, "No/Unknown line id in brcm status event\n");
 			event->brcm_event->status.line_id = 0;
-		}
+		}*/
 	}
 	else if ((event_type = strstr(buf, "State: "))) {
 		event->brcm_event->type = BRCM_STATE_EVENT;
-		strncpy(parse_buffer, event_type + 7, AMI_BUFLEN);
-		parse_buffer[AMI_BUFLEN -1] = '\0';
+		//strncpy(parse_buffer, event_type + 7, AMI_BUFLEN);
+		//parse_buffer[AMI_BUFLEN -1] = '\0';
 		//strcpy(parse_buffer, event_type + 7);
-
+		char state[255] = {0}; 
+		int line_id = -1, subchannel = -1; 
+		int num = sscanf(event_type + 7, "%s %d %d", state, &line_id, &subchannel); 
+		if(num > 0){
+			event->brcm_event->state.state = calloc(strlen(state) + 1, sizeof(char)); 
+			strcpy(event->brcm_event->state.state, state); 
+		} else {
+			event->brcm_event->state.state = NULL; 
+		}
+		event->brcm_event->state.line_id = line_id; 
+		event->brcm_event->state.subchannel_id = subchannel; 
+/*
 		value = strtok(parse_buffer, &delimiter);
 		if (value) {
 			value = trim_whitespace(value);
@@ -636,7 +665,7 @@ static struct ami_event *parse_brcm_event(struct ami_event *event, char* buf)
 		else {
 			ast_log(LOG_WARNING, "No subchannel_id in brcm state event\n");
 			event->brcm_event->state.subchannel_id = -1;
-		}
+		}*/
 	}
 	else if ((event_type = strstr(buf, "Module unload"))) {
 		event->brcm_event->type = BRCM_MODULE_EVENT;
@@ -784,6 +813,7 @@ static struct ami_event* parse_event(char* message)
 
 	switch(type) {
 		case BRCM:
+			ast_log(LOG_DEBUG, "parsing brcm event: %s\n",  &message[idx]);
 			parse_brcm_event(event, &message[idx]);
 			break;
 		case SIP:
@@ -901,6 +931,8 @@ static struct ami_message *parse_data(struct ami *mgr, const char *in_buf)
 		return NULL;
 	}
 
+	ast_log(LOG_DEBUG, "found frame: %s\n", buf);
+
 	parsed_message->type = parse_message_type(buf);
 	if (parsed_message->type == UNKNOWN_MESSAGE) {
 		free(buf);
@@ -910,6 +942,7 @@ static struct ami_message *parse_data(struct ami *mgr, const char *in_buf)
 
 	switch (parsed_message->type) {
 		case EVENT_MESSAGE:
+			ast_log(LOG_DEBUG, "parsing event: %s\n", buf + 7);
 			parsed_message->event = parse_event(buf + 7);
 			break;
 		case RESPONSE_MESSAGE:
@@ -937,6 +970,7 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 	ami_lock(mgr);
 
 	//Parse content and create message
+	ast_log(LOG_DEBUG, "manager_hook_cb received: %s\n", content);
 	struct ami_message *message = parse_data(mgr, content);
 	if (!message) {
 		//Unparsable or incomplete message
