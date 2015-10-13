@@ -391,7 +391,7 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 		*idx = i;
 		return VARSET;
 	} else {
-		ast_log(LOG_ERROR, "[%s]\n", buf);
+		ast_log(LOG_DEBUG, "got folowing event:\n[%s]\n", buf);
 
 	} // else if() handle other events
 
