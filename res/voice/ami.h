@@ -96,6 +96,7 @@ struct ami_event {
 };
 
 struct ami_response {
+	unsigned int id;
 	char *response;
 	void *userdata;
 };
