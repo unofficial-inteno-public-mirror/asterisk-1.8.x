@@ -23,8 +23,10 @@
 
 struct ami_action
 {
+	unsigned int id;
 	char message[AMI_BUFLEN];
 	void *userdata;
+	struct ami_action* prev;
 	struct ami_action* next;
 };
 
@@ -34,13 +36,15 @@ struct ami
 	ast_mutex_t lock;                 //When locked, owner has listener struct, queue and all queue items
 	struct manager_custom_hook hook;  //Manager hook data
 	struct ami_message *in_queue;     //Events or command response read from manager
-	struct ami_action *out_queue;     //Actions to be sent to manager
+	struct ami_action *pending_list;  //Pending actions which have been sent to manager
 	char *read_buffer;                //Previously read incomplete data
 	void (*refresh_cb)(void *userdata);//Action refresh callback
+	unsigned int next_action_id;       //Next value to use for ActionID in an Action
 };
 
 static int manager_hook_cb(int catergory, const char* event, char* content, void *data);
 static void send_action(struct ami *mgr, struct ami_action *action);
+static struct ami_action *get_pending_action(struct ami *mgr, unsigned int id);
 
 
 /********************/
@@ -52,9 +56,10 @@ struct ami *ami_setup(int fd, void (*refresh_cb)(void *userdata))
 	struct ami *mgr = malloc(sizeof(struct ami));
 	mgr->fd = fd;
 	mgr->refresh_cb = refresh_cb;
+	mgr->next_action_id = 1;
 	ast_mutex_init(&mgr->lock);
 	mgr->in_queue = NULL;
-	mgr->out_queue = NULL;
+	mgr->pending_list = NULL;
 	mgr->read_buffer = NULL;
 
 	//Callback
@@ -82,10 +87,10 @@ void ami_free(struct ami *mgr)
 	}
 
 	//Free any pending actions
-	while (mgr->out_queue) {
-		struct ami_action *next = mgr->out_queue->next;
-		free(mgr->out_queue);
-		mgr->out_queue = next;
+	while (mgr->pending_list) {
+		struct ami_action *next = mgr->pending_list->next;
+		free(mgr->pending_list);
+		mgr->pending_list = next;
 	}
 
 	if (mgr->read_buffer) {
@@ -192,7 +197,7 @@ void ami_action_send_sip_reload(struct ami *mgr)
 	ast_log(LOG_DEBUG, "Queueing Action: sip reload\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message,"Action: Command\r\nCommand: sip reload\r\n\r\n");
+	sprintf(action->message,"Action: Command\r\nCommand: sip reload\r\n");
 	send_action(mgr, action);
 }
 
@@ -224,7 +229,7 @@ void ami_action_send_sip_show_registry(struct ami *mgr)
 	ast_log(LOG_DEBUG, "Queueing Action: SIPshowregistry\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: SIPshowregistry\r\n\r\n");
+	sprintf(action->message, "Action: SIPshowregistry\r\n");
 	send_action(mgr, action);
 }
 
@@ -232,7 +237,7 @@ void ami_send_module_show_sip(struct ami *mgr, void *userdata) {
 	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_sip\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_sip\r\n\r\n");
+	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_sip\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -242,7 +247,7 @@ void ami_action_send_brcm_dump(struct ami *mgr, void *userdata)
 	ast_log(LOG_DEBUG, "Queueing Action: BRCMdump\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: BRCMdump\r\n\r\n");
+	sprintf(action->message, "Action: BRCMdump\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -252,7 +257,7 @@ void ami_action_send_sip_dump(struct ami *mgr, void *userdata)
 	ast_log(LOG_DEBUG, "Queueing Action: SIPdump\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: SIPdump\r\n\r\n");
+	sprintf(action->message, "Action: SIPdump\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -261,7 +266,7 @@ void ami_send_module_show_brcm(struct ami *mgr, void *userdata) {
 	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_brcm\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_brcm\r\n\r\n");
+	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_brcm\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -270,7 +275,7 @@ void ami_send_brcm_ports_show(struct ami *mgr, void *userdata) {
 	ast_log(LOG_DEBUG, "Queueing Action: BRCMPortsShow\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
-	sprintf(action->message, "Action: BRCMPortsShow\r\n\r\n");
+	sprintf(action->message, "Action: BRCMPortsShow\r\n");
 	action->userdata = userdata;
 	send_action(mgr, action);
 }
@@ -283,7 +288,7 @@ void ami_refresh(struct ami *mgr)
 	ami_lock(mgr);
 
 	if (mgr->refresh_cb) {
-		action = mgr->out_queue;
+		action = mgr->pending_list;
 		while (action) {
 			next = action->next;
 			mgr->refresh_cb(action->userdata);
@@ -303,26 +308,90 @@ void ami_refresh(struct ami *mgr)
  */
 static void send_action(struct ami *mgr, struct ami_action *action)
 {
+	char buf[32];
+
+	action->id = mgr->next_action_id++;
+	int field_len = snprintf(buf, sizeof(buf), "ActionID: %x\r\n", action->id);
+	/*
+	 * Make sure that we have enough space in the buffer to append the
+	 * ActionID field.
+	 */
+	if (sizeof(action->message) - strlen(action->message) - sizeof("\r\n") < field_len) {
+		ast_log(LOG_ERROR, "Cannot append ActionID to message\n");
+		free(action);
+		return;
+	}
+	else {
+		/* Append the ActionID field and the sequence \r\n
+		 * which marks the end of the message.
+		 */
+		strcat(action->message, buf);
+		strcat(action->message, "\r\n");
+	}
+
 	ami_lock(mgr);
 
+	/* Append to queue of pending actions */
 	action->next = NULL;
-	if (mgr->out_queue) {
-		struct ami_action* a = mgr->out_queue;
-		while(a->next) {
+	action->prev = NULL;
+	if (mgr->pending_list) {
+		struct ami_action* a = mgr->pending_list;
+		while (a->next) {
 			a = a->next;
 		}
 		a->next = action;
+		action->prev = a;
 	}
 	else {
-		mgr->out_queue = action;
-		if (ast_hook_send_action(&mgr->hook, action->message) < 0) {
-			ast_log(LOG_ERROR, "Failed to send action\n");
-			free(action);
-			mgr->out_queue = NULL;
-		}
+		mgr->pending_list = action;
+	}
+
+	if (ast_hook_send_action(&mgr->hook, action->message) < 0) {
+		ast_log(LOG_ERROR, "Failed to send action\n");
+
+		/* Remove action from pending list */
+		get_pending_action(mgr, action->id);
+
+		free(action);
 	}
 
 	ami_unlock(mgr);
+}
+
+/*
+ * Lookup action by ID and remove it from list of pending actions.
+ */
+struct ami_action *get_pending_action(struct ami *mgr, unsigned int id)
+{
+	struct ami_action *pending_action;
+	ami_lock(mgr);
+
+	pending_action = mgr->pending_list;
+	while (pending_action) {
+		if (pending_action->id == id) {
+			/* Remove action from list */
+			if (!pending_action->prev && !pending_action->next) {
+				/* List is now empty */
+				mgr->pending_list = NULL;
+			}
+			else {
+				/* Unlink action from the list */
+				if (pending_action->next) {
+					pending_action->next->prev = pending_action->prev;
+				}
+				if (pending_action->prev) {
+					pending_action->prev->next = pending_action->next;
+				}
+			}
+			ami_unlock(mgr);
+			return pending_action;
+		}
+
+		pending_action = pending_action->next;
+	}
+
+	ami_unlock(mgr);
+	return NULL;
 }
 
 /*
@@ -400,7 +469,6 @@ static enum ami_event_type get_event_type(char* buf, int* idx)
 		i++;
 	}
 	*idx = i;
-	//ast_log(LOG_DEBUG, "Unhandled event\n%s\n", buf);
 	return UNKNOWN_EVENT;
 }
 
@@ -709,6 +777,7 @@ static void parse_fully_booted_event(struct ami_event *event, char* buf)
 static struct ami_response* parse_response(char* message)
 {
 	struct ami_response *response;
+	char *tmp;
 
 	response = calloc(1, sizeof(struct ami_response));
 	if (!response) {
@@ -717,6 +786,13 @@ static struct ami_response* parse_response(char* message)
 	}
 
 	response->response = strdup(message);
+
+	/* Extract ActionID field */
+	tmp = strstr(response->response, "ActionID:");
+	if (tmp) {
+		sscanf(tmp, "ActionID: %x\r\n", &response->id);
+	}
+
 	return response;
 }
 
@@ -879,7 +955,7 @@ static struct ami_message *parse_data(struct ami *mgr, const char *in_buf)
 static int manager_hook_cb(int catergory, const char* event, char* content, void *caller_data)
 {
 	struct ami_message *message_tmp;
-	struct ami_action *completed_action;
+	struct ami_action *completed_action = NULL;
 	struct ami *mgr = (struct ami *) caller_data;
 	char c = '\0';
 
@@ -893,11 +969,21 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 		return -1;
 	}
 
-	/* Move user data */
-	if (message->type == RESPONSE_MESSAGE) {
-		if (mgr->out_queue && message->response) {
-			message->response->userdata = mgr->out_queue->userdata;
-			mgr->out_queue->userdata = NULL;
+	//Handle response
+	if (message->type == RESPONSE_MESSAGE && message->response) {
+		/* Lookup pending action */
+		completed_action = get_pending_action(mgr, message->response->id);
+
+		if (completed_action) {
+			/* Move user data */
+			message->response->userdata = completed_action->userdata;
+			completed_action->userdata = NULL;
+
+			free(completed_action);
+			completed_action = NULL;
+		}
+		else {
+			ast_log(LOG_ERROR, "No pending action stored for received manager response (id: 0x%x)\n", message->response->id);
 		}
 	}
 
@@ -911,33 +997,6 @@ static int manager_hook_cb(int catergory, const char* event, char* content, void
 	}
 	else {
 		mgr->in_queue = message;
-	}
-
-	//Handle response
-	if (message->type == RESPONSE_MESSAGE) {
-
-		completed_action = mgr->out_queue;
-		if (completed_action) {
-			mgr->out_queue = completed_action->next;
-			free(completed_action);
-		}
-		else {
-			mgr->out_queue = NULL;
-			ast_log(LOG_ERROR, "No pending action stored for received manager response\n");
-		}
-
-		//Send pending action?
-		if (mgr->out_queue) {
-			if (ast_hook_send_action(&mgr->hook, mgr->out_queue->message) < 0) {
-				ast_log(LOG_ERROR, "Failed to send action\n");
-
-				while (mgr->out_queue) {
-					struct ami_action *tmp = mgr->out_queue;
-					mgr->out_queue = tmp->next;
-					free(tmp);
-				}
-			}
-		}
 	}
 
 	//Notify client that new data is available
