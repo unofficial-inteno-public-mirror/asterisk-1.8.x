@@ -4535,9 +4535,10 @@ EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 
 	/* Check if kernel driver is opened */
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS )
-		{
-		}
+	if (ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS)
+	{
+		ast_log(LOG_ERROR, "error brcm creating endpoint");
+	}
 
 	return( tInitParm.epStatus );
 }
@@ -4740,9 +4741,9 @@ static void brcm_generate_rtp_packet(struct brcm_subchannel *sub, UINT8 *packet_
 	//CSRC count 0
 	packet_buf[1] = type;
 	packet_buf[1] |= marker?0x80:0x00;
-	packet_buf16[1] = sub->sequence_number++; //Add sequence number
+	packet_buf16[1] = htons(sub->sequence_number++); //Add sequence number
 	if (sub->sequence_number > 0xFFFF) sub->sequence_number=0;
-	packet_buf32[1] = dtmf_timestamp?sub->dtmf_timestamp:sub->time_stamp;	//Add timestamp
+	packet_buf32[1] = htonl(dtmf_timestamp?sub->dtmf_timestamp:sub->time_stamp);	//Add timestamp
 	sub->time_stamp += sub->period*8;
 	packet_buf32[2] = sub->ssrc;	//Random SSRC
 }
