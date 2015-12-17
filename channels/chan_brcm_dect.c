@@ -114,7 +114,7 @@ static void logDectDrvRead(uint8_t *data, int size);
 
 static int bad_handsetnr(int handset) {
 
-	if ((handset <= 0) || (handset > MAX_NR_HANDSETS)) {
+	if ((handset < 0) || (handset >= MAX_NR_HANDSETS)) {
 		ast_verbose("Bad handset nr: %d\n", handset);
 		return 1;
 	}
@@ -1407,7 +1407,7 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 	}
 	
 	ast_verbose("dialed_nr: %s\n", dialed_nr);
-	endpt = terminal - 1;
+	endpt = terminal;
 	p = brcm_get_pvt_from_lineid(iflist, endpt);
 	
 	if (!p) {
@@ -1566,7 +1566,7 @@ void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 		ast_verbose("terminal: %d\n", terminal);
 		
 		/* Signal offhook to endpoint driver */
-		endpt = terminal - 1;
+		endpt = terminal;
 		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
 	}
 }
@@ -1592,7 +1592,7 @@ void release_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 		ast_verbose("terminal: %d\n", terminal);
 		
 		/* Signal offhook to endpoint driver */
-		endpt = terminal - 1;
+		endpt = terminal;
 		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 	}
 }
