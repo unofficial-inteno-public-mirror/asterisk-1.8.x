@@ -1876,12 +1876,14 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 					if (bridged_chan) {
 						ast_verbose("Performing R4 transfer to %s, replacing call on %s\n", sub->parent->ext, bridged_chan->name);
 
+						brcm_subchannel_set_state(sub, ONHOLD);
+						brcm_subchannel_set_state(sub_peer, TRANSFERING);
+
 						struct ast_transfer_remote_data data;
 						strcpy(data.exten, sub->parent->ext);
 						strcpy(data.replaces, bridged_chan->name);
 
 						ast_queue_control_data(peer_owner, AST_CONTROL_TRANSFER_REMOTE, &data, sizeof(data));
-						brcm_subchannel_set_state(sub, TRANSFERING);
 					}
 					else {
 						ast_log(LOG_ERROR, "Failed to fetch bridged channel\n");
