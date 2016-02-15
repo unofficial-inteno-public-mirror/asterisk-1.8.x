@@ -21,7 +21,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 350679 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "include/sip.h"
 #include "include/config_parser.h"

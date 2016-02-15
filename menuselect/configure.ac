@@ -15,7 +15,7 @@ AC_CONFIG_SRCDIR([menuselect.c])
 AC_CONFIG_HEADER(autoconfig.h)
 
 AC_COPYRIGHT("Menuselect")
-AC_REVISION($Revision: 40837 $)
+AC_REVISION($Revision$)
 
 AC_CANONICAL_BUILD
 AC_CANONICAL_HOST

@@ -57,7 +57,7 @@
  ***/
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 344965 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <pthread.h>
 #include <sys/socket.h>

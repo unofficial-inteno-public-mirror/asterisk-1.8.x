@@ -38,7 +38,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 352955 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/mman.h>
 #include <dirent.h>

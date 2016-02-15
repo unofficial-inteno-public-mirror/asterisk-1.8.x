@@ -22,7 +22,7 @@
 # Description:		the Asterisk Open Source PBX
 ### END INIT INFO
 
-# $Id: rc.mandriva.asterisk 239270 2010-01-11 23:53:32Z tilghman $
+# $Id$
 
 TTY=9			# TTY (if you want one) for Asterisk to run on
 CONSOLE=yes		# Whether or not you want a console

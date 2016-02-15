@@ -54,7 +54,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 335064 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sys/signal.h>  /* SIGURG */
 

@@ -77,7 +77,7 @@
  ***/
 
 #include "asterisk.h"
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 343375 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <sqlite.h>
 

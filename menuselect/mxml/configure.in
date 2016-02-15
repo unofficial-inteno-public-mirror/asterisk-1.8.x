@@ -1,5 +1,5 @@
 dnl
-dnl "$Id: configure.in 260 2010-04-27 19:11:06Z qwell $"
+dnl "$Id$"
 dnl
 dnl Configuration script for Mini-XML, a small XML-like file parsing library.
 dnl
@@ -339,5 +339,5 @@ dnl Output the makefile, etc...
 AC_OUTPUT(Makefile mxml.list mxml.pc)
 
 dnl
-dnl End of "$Id: configure.in 260 2010-04-27 19:11:06Z qwell $".
+dnl End of "$Id$".
 dnl

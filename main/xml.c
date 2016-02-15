@@ -25,7 +25,7 @@
 #include "asterisk/xml.h"
 #include "asterisk/logger.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 258517 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #if defined(HAVE_LIBXML2)
 #include <libxml/parser.h>

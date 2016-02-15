@@ -1,7 +1,7 @@
 /*
  * GUI for console video.
  * The routines here are in charge of loading the keypad and handling events.
- * $Revision: 196072 $
+ * $Revision$
  */
 
 /*

@@ -1,5 +1,5 @@
 #
-# "$Id: Makefile.in 23382 2006-04-29 15:44:02Z russell $"
+# "$Id$"
 #
 # Makefile for Mini-XML, a small XML-like file parsing library.
 #
@@ -338,5 +338,5 @@ $(OBJS):	Makefile config.h
 
 
 #
-# End of "$Id: Makefile.in 23382 2006-04-29 15:44:02Z russell $".
+# End of "$Id$".
 #

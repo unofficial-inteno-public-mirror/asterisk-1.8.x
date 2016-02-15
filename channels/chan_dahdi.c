@@ -49,7 +49,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 349558 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #if defined(__NetBSD__) || defined(__FreeBSD__)
 #include <pthread.h>

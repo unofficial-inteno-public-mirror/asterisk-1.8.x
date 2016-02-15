@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# $Id: install_prereq 350788 2012-01-14 15:22:33Z kpfleming $
+# $Id$
 #
 
 # install_prereq: a script to install distribution-specific
@@ -10,7 +10,7 @@ set -e
 
 usage() {
   echo "$0: a script to install distribution-specific prerequirement"
-  echo 'Revision: $Id: install_prereq 350788 2012-01-14 15:22:33Z kpfleming $'
+  echo 'Revision: $Id$'
   echo ""
   echo "Usage: $0:                    Shows this message."
   echo "Usage: $0 test                Prints commands it is about to run."

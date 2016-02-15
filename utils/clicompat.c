@@ -1,6 +1,6 @@
 /*
  * Stubs for some cli functions used by the test routines.
- * $Revision: 92103 $
+ * $Revision$
  */
 void ast_cli(int fd, const char *fmt, ...);
 void ast_cli(int fd, const char *fmt, ...)

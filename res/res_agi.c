@@ -31,7 +31,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 345431 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <math.h>
 #include <signal.h>

@@ -39,7 +39,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 328446 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <dahdi/user.h>
 

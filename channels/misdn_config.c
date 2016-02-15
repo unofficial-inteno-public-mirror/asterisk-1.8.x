@@ -28,7 +28,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 317478 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include "chan_misdn_config.h"
 

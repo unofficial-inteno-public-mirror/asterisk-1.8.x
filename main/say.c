@@ -33,7 +33,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 339352 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <netinet/in.h>
 #include <time.h>

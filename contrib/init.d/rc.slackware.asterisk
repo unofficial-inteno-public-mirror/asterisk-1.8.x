@@ -6,7 +6,7 @@
 #
 # 03.29.2005 - Initial Version
 #
-# $Id: rc.slackware.asterisk 239270 2010-01-11 23:53:32Z tilghman $
+# $Id$
 
 ### BEGIN INIT INFO
 # Provides:		asterisk

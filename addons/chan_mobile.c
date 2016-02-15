@@ -33,7 +33,7 @@
 
 #include "asterisk.h"
 
-ASTERISK_FILE_VERSION(__FILE__, "$Revision: 350789 $")
+ASTERISK_FILE_VERSION(__FILE__, "$Revision$")
 
 #include <pthread.h>
 #include <signal.h>
