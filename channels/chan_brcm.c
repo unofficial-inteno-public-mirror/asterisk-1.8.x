@@ -455,7 +455,7 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 		}
 
 	} else {
-		ast_log(LOG_WARNING, "AST_CONTROL_TRANSFER received in unexpected state\n");
+		ast_log(LOG_WARNING, "Received AST_CONTROL_TRANSFER while peer in state %s\n", state2str(peer_sub->channel_state));
 		return -1;
 	}
 
