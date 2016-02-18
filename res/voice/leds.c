@@ -17,6 +17,7 @@
 
 #include <asterisk.h>
 #include <asterisk/logger.h>
+#include <asterisk/utils.h>
 #include <string.h>
 
 struct leds {
@@ -185,7 +186,7 @@ void leds_configure(struct leds *leds)
 		/*
 		 * Single LED - all ports govern status
 		 */
-		ast_log(LOG_DEBUG, "Single LED configuration\n");
+		ast_debug(5, "Single LED configuration\n");
 
 		BRCM_PORT_MAP** all_ports = calloc(leds->dect_line_count + leds->fxs_line_count, sizeof(BRCM_PORT_MAP*));
 		for (i = 0; i < (leds->dect_line_count + leds->fxs_line_count); i++) {
@@ -206,7 +207,7 @@ void leds_configure(struct leds *leds)
 			 * LED1  = FXS, LED2 = DECT
 			 * dects are lower numbered, fxs higher
 			 */
-			ast_log(LOG_DEBUG, "Dual LED configuration, FXS and DECT\n");
+			ast_debug(5, "Dual LED configuration, FXS and DECT\n");
 			BRCM_PORT_MAP** dect_ports = calloc(leds->dect_line_count, sizeof(BRCM_PORT_MAP*));
 			for (i = 0; i < leds->dect_line_count; i++) {
 				dect_ports[i] = &leds->brcm_ports[i];
@@ -229,7 +230,7 @@ void leds_configure(struct leds *leds)
 			/*
 			 * LED1 = FXS1, LED2 = FXS2
 			 */
-			ast_log(LOG_DEBUG, "Dual LED configuration, FXS1 and FXS2\n");
+			ast_debug(5, "Dual LED configuration, FXS1 and FXS2\n");
 			BRCM_PORT_MAP** fxs1 = calloc(1, sizeof(BRCM_PORT_MAP*));
 			fxs1[0] = &leds->brcm_ports[0];
 			leds->led_config[0].state = LS_UNKNOWN;
@@ -278,7 +279,7 @@ void leds_configure(struct leds *leds)
 					for (j = 0; j < led->num_ports; j++) {
 						if (led->ports[j]->port == line_id) {
 
-							//ast_log(LOG_DEBUG, "LED %d governed by PEER %s\n", led->name, peers->account.name);
+							//ast_debug(5, "LED %d governed by PEER %s\n", led->name, peers->account.name);
 							//This is a matching peer
 							led->peers[led->num_peers] = peers;
 							led->num_peers++;
@@ -404,7 +405,7 @@ void manage_led(struct leds *leds, LED_NAME led, LED_STATE state)
 	blobmsg_add_string(&leds->b_led, "state", states->str);
 
 	//Invoke state change
-	ast_log(LOG_DEBUG, "Setting LED %s state to %s\n", names->str, states->str);
+	ast_debug(5, "Setting LED %s state to %s\n", names->str, states->str);
 	ubus_invoke(leds->ctx, id, "set", leds->b_led.head, NULL, 0, 1000);
 }
 
@@ -417,7 +418,7 @@ LED_STATE get_led_state(Led* led)
 	int i;
 	for(i = 0; i < led->num_ports; i++) {
 		if (brcm_subchannel_active(led->ports[i])) {
-			ast_log(LOG_DEBUG, "LED %d, PORT %s is active => LS_NOTICE\n", led->name, led->ports[i]->name);
+			ast_debug(5, "LED %d, PORT %s is active => LS_NOTICE\n", led->name, led->ports[i]->name);
 			return LS_NOTICE;
 		}
 	}
@@ -427,11 +428,11 @@ LED_STATE get_led_state(Led* led)
 	for(i = 0; i < led->num_peers; i++) {
 		SIP_PEER* peer = led->peers[i];
 		if (!peer->sip_registry_registered) {
-			ast_log(LOG_DEBUG, "LED %d: PEER (%s) is not registered => LS_ERROR\n", led->name, peer->account.name);
+			ast_debug(5, "LED %d: PEER (%s) is not registered => LS_ERROR\n", led->name, peer->account.name);
 			return LS_ERROR;
 		}
 		else {
-			ast_log(LOG_DEBUG, "LED %d: PEER (%s) is registered => LS_OK\n", led->name, peer->account.name);
+			ast_debug(5, "LED %d: PEER (%s) is registered => LS_OK\n", led->name, peer->account.name);
 			tmp = LS_OK;
 		}
 	}

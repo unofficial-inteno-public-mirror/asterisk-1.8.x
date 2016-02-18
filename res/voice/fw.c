@@ -19,6 +19,7 @@
 
 #include <asterisk.h>
 #include <asterisk/logger.h>
+#include <asterisk/utils.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -131,7 +132,7 @@ void write_firewall(struct fw *fw, SIP_PEER *peer, int family)
 
 	if (sip_peer_ip_set_compare(fw->ip_list, fw->ip_list_length, ip_list, ip_list_length) == 0 &&
 			fw->rtpstart == rtpstart &&	fw->rtpend == rtpend) {
-		ast_log(LOG_DEBUG, "No changes in IP or RTP port range\n");
+		ast_debug(5, "No changes in IP or RTP port range\n");
 		free(ip_list);
 		return;
 	}
@@ -157,7 +158,7 @@ void write_firewall(struct fw *fw, SIP_PEER *peer, int family)
 		__FILE__,
 		timebuf,
 		tables_file);
-	ast_log(LOG_DEBUG, "%s\n", buf);
+	ast_debug(5, "%s\n", buf);
 	system(buf);
 
 	/* Create an iptables rule for each IP in set */
@@ -169,7 +170,7 @@ void write_firewall(struct fw *fw, SIP_PEER *peer, int family)
 			IPTABLES_CHAIN,
 			ip_list[i].addr,
 			tables_file);
-		ast_log(LOG_DEBUG, "%s\n", buf);
+		ast_debug(5, "%s\n", buf);
 		system(buf);
 	}
 	if (fw->ip_list) {
@@ -186,13 +187,13 @@ void write_firewall(struct fw *fw, SIP_PEER *peer, int family)
 		rtpstart,
 		rtpend,
 		tables_file);
-	ast_log(LOG_DEBUG, "%s\n", buf);
+	ast_debug(5, "%s\n", buf);
 	system(buf);
 	fw->rtpstart = rtpstart;
 	fw->rtpend = rtpend;
 
 	snprintf((char *)&buf, BUFLEN, "/etc/init.d/firewall reload");
-	ast_log(LOG_DEBUG, "%s\n", buf);
+	ast_debug(5, "%s\n", buf);
 	system(buf);
 }
 

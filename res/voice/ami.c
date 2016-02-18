@@ -194,7 +194,7 @@ void ami_message_free(struct ami_message *message)
  */
 void ami_action_send_sip_reload(struct ami *mgr)
 {
-	ast_log(LOG_DEBUG, "Queueing Action: sip reload\n");
+	ast_debug(5, "Queueing Action: sip reload\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message,"Action: Command\r\nCommand: sip reload\r\n");
@@ -226,7 +226,7 @@ void ami_action_send_sip_reload(struct ami *mgr)
  */
 void ami_action_send_sip_show_registry(struct ami *mgr)
 {
-	ast_log(LOG_DEBUG, "Queueing Action: SIPshowregistry\n");
+	ast_debug(5, "Queueing Action: SIPshowregistry\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: SIPshowregistry\r\n");
@@ -234,7 +234,7 @@ void ami_action_send_sip_show_registry(struct ami *mgr)
 }
 
 void ami_send_module_show_sip(struct ami *mgr, void *userdata) {
-	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_sip\n");
+	ast_debug(5, "Queueing Action: module show like chan_sip\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_sip\r\n");
@@ -244,7 +244,7 @@ void ami_send_module_show_sip(struct ami *mgr, void *userdata) {
 
 void ami_action_send_brcm_dump(struct ami *mgr, void *userdata)
 {
-	ast_log(LOG_DEBUG, "Queueing Action: BRCMdump\n");
+	ast_debug(5, "Queueing Action: BRCMdump\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: BRCMdump\r\n");
@@ -254,7 +254,7 @@ void ami_action_send_brcm_dump(struct ami *mgr, void *userdata)
 
 void ami_action_send_sip_dump(struct ami *mgr, void *userdata)
 {
-	ast_log(LOG_DEBUG, "Queueing Action: SIPdump\n");
+	ast_debug(5, "Queueing Action: SIPdump\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: SIPdump\r\n");
@@ -263,7 +263,7 @@ void ami_action_send_sip_dump(struct ami *mgr, void *userdata)
 }
 
 void ami_send_module_show_brcm(struct ami *mgr, void *userdata) {
-	ast_log(LOG_DEBUG, "Queueing Action: module show like chan_brcm\n");
+	ast_debug(5, "Queueing Action: module show like chan_brcm\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: Command\r\nCommand: module show like chan_brcm\r\n");
@@ -272,7 +272,7 @@ void ami_send_module_show_brcm(struct ami *mgr, void *userdata) {
 }
 
 void ami_send_brcm_ports_show(struct ami *mgr, void *userdata) {
-	ast_log(LOG_DEBUG, "Queueing Action: BRCMPortsShow\n");
+	ast_debug(5, "Queueing Action: BRCMPortsShow\n");
 	struct ami_action* action = malloc(sizeof(struct ami_action));
 	memset(action, 0, sizeof(struct ami_action));
 	sprintf(action->message, "Action: BRCMPortsShow\r\n");
@@ -492,7 +492,7 @@ static void parse_registry_event(struct ami_event *event, char* buf)
 		char* account_name = calloc(len + 1, sizeof(char));
 		strncpy(account_name, domain, len);
 		event->registry_event->account_name = account_name;
-		ast_log(LOG_DEBUG, "Found domain: %s of length %d\n", account_name, len);
+		ast_debug(5, "Found domain: %s of length %d\n", account_name, len);
 	}
 	else {
 		ast_log(LOG_WARNING, "No domain found in Registry event\n");
