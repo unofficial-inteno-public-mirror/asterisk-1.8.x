@@ -887,6 +887,10 @@ static int brcm_classify_rtp_packet(int id) {
 		case G722: return BRCM_AUDIO;
 		case DTMF_PAYLOAD: return BRCM_DTMF;
 		case RTCP: return BRCM_RTCP;
+		case 201: // @todo@ What is this?
+		case 229: // @todo@ What is this?
+			ast_verbose("Unknown rtp packet id %d\n", id);
+			return BRCM_UNKNOWN;
 		default:
 			ast_verbose("Unknown rtp packet id %d\n", id);
 			return BRCM_UNKNOWN;

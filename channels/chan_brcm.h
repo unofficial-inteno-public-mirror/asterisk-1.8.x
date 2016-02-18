@@ -31,6 +31,8 @@
 #define DTMF_PAYLOAD 101
 #define DTMF 128
 #define RTCP 200
+// @todo@ What is 201
+// @todo@ What is 229
 
 #define NOT_INITIALIZED -1
 #define EPSTATUS_DRIVER_ERROR -1
