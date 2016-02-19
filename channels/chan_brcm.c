@@ -1870,8 +1870,9 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 		/* Connect waiting call to existing call to create 3-way */
 		case '3':
+			ast_debug(2, "DTMF3 after HF\n");
 			if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
-				ast_debug(2, "DTMF3 after HF\n");
+				ast_verbose("Performing R3 3-way call with %s\n", sub->parent->ext);
 
 				sub->conference_initiator = 1;
 
@@ -1897,6 +1898,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 					ast_jb_destroy(owner);
 					ast_jb_disable(owner);
 				}
+			} else {
+				ast_log(LOG_WARNING, "Received R3 when in state %s with a peer in state %s\n",
+					state2str(sub->channel_state),
+					state2str(sub_peer->channel_state)
+				);
 			}
 			break;
 
