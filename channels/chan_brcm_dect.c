@@ -12,7 +12,11 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <string.h>
+#include <errno.h>
+#include <sys/select.h>
 
+
+#define __AST_SELECT_H											// Prevent Asterisk from replacing libc FD_ZERO() with ugliness
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
 #include "asterisk/cli.h"
@@ -36,17 +40,61 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 
 #define R_KEY 0x15
 
-extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
-extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
-extern struct brcm_pvt *iflist;
+
+enum {
+	CALL_TERM,																	// Terminal ID
+	CALL_ADD,																	// Add call using PCMx
+	CALL_REL,																	// Release call using PCMx
+	CALL_CID,																	// Caller ID
+};
+
 
 struct dect_handset {
 	enum channel_state state;
 	char cid[CID_MAX_LEN];
 };
 
-struct dect_handset handsets[MAX_NR_HANDSETS];
 
+
+static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg);
+static int dectmngr_call(int terminal, int add, int release, const char *cid);
+
+
+//-------------------------------------------------------------
+static const char ubusSenderId[] = "asterisk.dect.api";							// The Ubus type we transmitt
+static const char ubusIdDectmngr[] = "dect";									// The Ubus type for Dectmngr
+
+static const struct blobmsg_policy ubusCallKeys[] = {							// ubus RPC "call" arguments (keys and values)
+	[CALL_TERM] = { .name = "terminal", .type = BLOBMSG_TYPE_INT32 },
+	[CALL_ADD] = { .name = "add", .type = BLOBMSG_TYPE_INT32 },
+	[CALL_REL] = { .name = "release", .type = BLOBMSG_TYPE_INT32 },
+	[CALL_CID] = { .name = "cid", .type = BLOBMSG_TYPE_STRING },
+};
+
+
+static const struct ubus_method ubusMethods[] = {								// ubus RPC methods
+	UBUS_METHOD("call", ubus_request_call, ubusCallKeys),
+};
+
+
+static struct ubus_object_type rpcType[] = {
+	UBUS_OBJECT_TYPE(ubusSenderId, ubusMethods)
+};
+
+
+static struct ubus_object rpcObj = {
+	.name = ubusSenderId,
+	.type = rpcType,
+	.methods = ubusMethods,
+	.n_methods = ARRAY_SIZE(ubusMethods)
+};
+
+
+extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
+extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
+extern struct brcm_pvt *iflist;
+static struct dect_handset handsets[MAX_NR_HANDSETS];
 
 const struct brcm_channel_tech dect_tech = {
 	.signal_ringing = dect_signal_ringing,
@@ -72,6 +120,7 @@ static int bad_handsetnr(int handset) {
 
 //-------------------------------------------------------------
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
+	ast_verbose("dect_signal_ringing_callerid_pending()\n");
 	dect_signal_ringing(p);
 	return 0;
 }
@@ -82,14 +131,15 @@ int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
 	
 	int handset = s->parent->line_id + 1;
-	ast_verbose("Caller id: %s\n", chan->connected.id.number.str);
+	ast_verbose("dect_signal_callerid(): %s\n", chan->connected.id.number.str);
 	
 	if (bad_handsetnr(handset))
 		return 1;
 	
 	strncpy(handsets[handset].cid, chan->connected.id.number.str, CID_MAX_LEN);
 
-	return 0;
+	return dectmngr_call(handset, s->parent->line_id,
+		-1, chan->connected.id.number.str);
 }
 
 
@@ -97,24 +147,12 @@ int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 //-------------------------------------------------------------
 int dect_signal_ringing(struct brcm_pvt *p)
 {
-	ast_verbose("dect_signal_ringing\n");
+	ast_verbose("dect_signal_ringing()\n");
 	ast_verbose("line_id: %d\n", p->line_id); 
 
-	dect_ring_handset(p->line_id + 1);
-	return 0;
+	return dectmngr_call(p->line_id + 1, p->line_id, -1, NULL);
 }
 
-
-
-//-------------------------------------------------------------
-void dect_ring_handset(int handset) {
-
-	if (bad_handsetnr(handset))
-		return;
-
-
-	ast_verbose("dect_ring_handset: %d\n", handset);
-}
 
 
 
@@ -125,7 +163,7 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 				   CAS_CTL_EVENT event)
 {
 	ENDPOINTDRV_SENDCASEVT_CMD_PARM tCasCtlEvtParm;
-	int fd;
+	int fd, res;
 
 	tCasCtlEvtParm.epStatus      = EPSTATUS_DRIVER_ERROR;
 	tCasCtlEvtParm.casCtlEvtType = eventType;
@@ -133,13 +171,23 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 	tCasCtlEvtParm.lineId        = endptState->lineId;
 	tCasCtlEvtParm.size          = sizeof(ENDPOINTDRV_SENDCASEVT_CMD_PARM);
 
+	res = 0;
 	fd = open("/dev/bcmendpoint0", O_RDWR);
-
-	if ( ioctl( fd, ENDPOINTIOCTL_SEND_CAS_EVT, &tCasCtlEvtParm ) != IOCTL_STATUS_SUCCESS )
+	if(fd == -1) {
+		res = -1;
+	}
+	else if(ioctl(fd, ENDPOINTIOCTL_SEND_CAS_EVT, &tCasCtlEvtParm ) != IOCTL_STATUS_SUCCESS) {
 		ast_verbose("%s: error during ioctl", __FUNCTION__);
+		res = -1;
+	}
 
-	close(fd);
-	return( tCasCtlEvtParm.epStatus );
+	if(fd > 0) close(fd);
+
+	if(!tCasCtlEvtParm.epStatus && res) {
+		tCasCtlEvtParm.epStatus = EPSTATUS_DRIVER_ERROR;
+	}
+
+	return tCasCtlEvtParm.epStatus;
 }
 
 
@@ -148,13 +196,13 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 int dect_release(struct brcm_pvt * p) {
 	int handset = p->line_id + 1;
 
-	ast_verbose("dect_releaseQ: %d\n", handset);
+	ast_verbose("dect_release: %d\n", handset);
 
 	if (bad_handsetnr(handset)) {
 		return 1;
 	}
 	
-	return 0;
+	return dectmngr_call(-1, -1, p->line_id, NULL);
 }
 
 
@@ -350,6 +398,7 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 
 
 
+#if 0
 //-------------------------------------------------------------
 void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 			  const char *type, struct blob_attr *msg)
@@ -403,6 +452,37 @@ void release_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
 	}
 }
+#endif
+
+
+//-------------------------------------------------------------
+// Block and wait for incomming ubus events. uloop
+// doesn't work with threads.
+static int ubus_poll(struct ubus_context *ctx, int oneShot) {
+	fd_set readFds;
+	int ret;
+
+	do {
+		FD_ZERO(&readFds);
+		FD_SET(ctx->sock.fd, &readFds);
+
+		ret = select(ctx->sock.fd + 1, &readFds, NULL, NULL, NULL);
+
+		if(ret == -1 && errno != EINTR) {
+			perror("Error waiting for ubus events");
+			break;
+		}
+		else if(ret > 0) {
+			ret = 0;
+
+			if(FD_ISSET(ctx->sock.fd, &readFds)) {
+				ubus_handle_event(ctx);
+			}
+		}
+	} while(!oneShot);
+
+	return ret;
+}
 
 
 
@@ -426,30 +506,27 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 	}
 
 	/* dect.api.setup_ind */
-	memset(&hej, 0, sizeof(hej));
-	hej.cb = setup_ind;
-	hej_event = "dect.api.setup_ind";
-
-	ret = ubus_register_event_handler(ctx, &hej, hej_event);
-	if (ret) {
-		ast_verbose("\n\n\nError while registering for event '%s': %s\n\n\n",
-			    hej_event, ubus_strerror(ret));
-		return -1;
-	}
+	//memset(&hej, 0, sizeof(hej));
+	//hej.cb = setup_ind;
+	//hej_event = "dect.api.setup_ind";
+	//ret = ubus_register_event_handler(ctx, &hej, hej_event);
+	//if (ret) {
+	//	ast_verbose("\n\n\nError while registering for event '%s': %s\n\n\n",
+	//		    hej_event, ubus_strerror(ret));
+	//	return -1;
+	//}
 
 
 	/* dect.api.release_ind */
-	memset(&svej, 0, sizeof(svej));
-	svej.cb = release_ind;
-	svej_event = "dect.api.release_ind";
-
-	ret = ubus_register_event_handler(ctx, &svej, svej_event);
-	if (ret) {
-		ast_verbose("Error while registering for event '%s': %s\n",
-			    svej_event, ubus_strerror(ret));
-		return -1;
-	}
-
+	//memset(&svej, 0, sizeof(svej));
+	//svej.cb = release_ind;
+	//svej_event = "dect.api.release_ind";
+	//ret = ubus_register_event_handler(ctx, &svej, svej_event);
+	//if (ret) {
+	//	ast_verbose("Error while registering for event '%s': %s\n",
+	//		    svej_event, ubus_strerror(ret));
+	//	return -1;
+	//}
 
 	/* dect.api.info_ind */
 	memset(&info, 0, sizeof(info));
@@ -463,29 +540,248 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 		return -1;
 	}
 
-
-	ast_verbose("\n\n\nubus handlers registered\n\n\n");
-
-	uloop_init();
-	ubus_add_uloop(ctx);
-
-
-	ast_verbose("\n\n\nuloop run\n\n\n");
-	uloop_run();
-	ast_verbose("\n\n\nuloop done 1\n\n\n");
+	// Invoke our RPC handler when ubus calls (not events) arrive
+	if(ubus_add_object(ctx, &rpcObj) != UBUS_STATUS_OK) {
+		ast_verbose("Error registering ubus object");
+		return -1;
+	}
 
 
-	uloop_done();
-	ast_verbose("\n\n\nuloop done 2\n\n\n");	
+	// main loop, listen for ubus events
+	ret = ubus_poll(ctx, 0);
 
-	return 0;
+	ubus_remove_object(ctx, &rpcObj);
+	ubus_unregister_event_handler(ctx, &info);
+	ubus_unregister_event_handler(ctx, &svej);
+	ubus_unregister_event_handler(ctx, &hej);
+	ubus_unregister_event_handler(ctx, &listener);
+	ubus_free(ctx);
+
+	ret = 0;
+	pthread_exit(&ret);
 }
+
+
+
+//-------------------------------------------------------------
+// Send a reply for a when someone has called
+// us with a request.
+static int ubus_reply(struct ubus_context *ubus_ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg,
+		uint32_t err, int terminal, int pcmId) {
+	struct blob_buf blob;
+
+	memset(&blob, 0, sizeof(blob));
+	if(blobmsg_buf_init(&blob)) return -1;
+
+	blobmsg_add_u32(&blob, ubusCallKeys[CALL_TERM].name, terminal);
+	blobmsg_add_u32(&blob, "pcm", pcmId);
+	blobmsg_add_u32(&blob, "errno", err);
+	blobmsg_add_string(&blob, "errstr", strerror(err));
+	blobmsg_add_string(&blob, "method", methodName);
+
+	ubus_send_reply(ubus_ctx, req, blob.head);
+	blob_buf_free(&blob);
+
+	return UBUS_STATUS_OK;
+}
+
+
+//-------------------------------------------------------------
+// Callback for: a ubus call (invocation) has replied with some data
+static void call_answer(struct ubus_request *req, int type, struct blob_attr *msg)
+{
+	ast_verbose("ubus call_answer()\n");
+}
+
+
+//-------------------------------------------------------------
+// Callback for: a ubus call (invocation) has finished
+static void call_complete(struct ubus_request *req, int ret)
+{
+	ast_verbose("ubus call_complete()\n");
+	free(req);
+}
+
+
+
+//-------------------------------------------------------------
+// Tokenize RPC message key/value paris into an array
+static int keyTokenize(struct ubus_object *obj, const char *methodName,
+		struct blob_attr *msg, struct blob_attr ***keys)
+{
+	const struct ubus_method *search;
+
+	// Find the ubus policy for the called method
+	for(search = obj->methods; strcmp(search->name, methodName); search++);
+	*keys = malloc(search->n_policy * sizeof(struct blob_attr*));
+	if(!*keys) return UBUS_STATUS_INVALID_ARGUMENT;
+
+	// Tokenize message into an array
+	if(blobmsg_parse(search->policy, search->n_policy, *keys, 
+			blob_data(msg), blob_len(msg))) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	return UBUS_STATUS_OK;
+}
+
+
+
+//-------------------------------------------------------------
+// RPC handler for
+// ubus call asterisk.dect.api call '{....}'
+static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *obj,
+		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg)
+{
+	int res, termId, pcmId, add, release;
+	struct blob_attr **keys;
+	const char *strVal;
+
+	res = 0;
+	termId = -1;
+	pcmId = -1;
+	add = 0;
+	release = 0;
+
+	// Tokenize message key/value paris into an array
+	res = keyTokenize(obj, methodName, msg, &keys);
+	if(res != UBUS_STATUS_OK) goto out;
+
+	// Handle RPC:
+	// ubus call asterisk.dect.api call '{ "terminal": 1 }'
+	if(keys[CALL_TERM]) {
+		termId = blobmsg_get_u32(keys[CALL_TERM]);
+		ast_verbose("call terminal %d\n", termId);
+	}
+
+	// Handle RPC:
+	// ubus call asterisk.dect.api call '{ "add": 1 }'
+	if(keys[CALL_ADD]) {
+		add = 1;
+		pcmId = blobmsg_get_u32(keys[CALL_ADD]);
+		ast_verbose("call add pcm %d\n", pcmId);
+	}
+
+	if(keys[CALL_REL]) {
+		release = 1;
+		pcmId = blobmsg_get_u32(keys[CALL_REL]);
+		ast_verbose("call release pcm %d\n", pcmId);
+	}
+
+	// Did we get all arguments we need?
+	if(bad_handsetnr(termId) || pcmId < 0) {
+		res = EINVAL;
+	}
+	else if(release) {
+		if(vrgEndptSendCasEvtToEndpt(
+				(ENDPT_STATE*) &(endptObjState[termId - 1]),					/* Signal onhook to endpoint driver */
+				CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK)) {
+			res = EIO;
+		}
+	}
+	else if(add) {
+		if(vrgEndptSendCasEvtToEndpt(
+				(ENDPT_STATE*) &(endptObjState[termId - 1]),					/* Signal offhook to endpoint driver */
+				CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK)) {
+			res = EIO;
+		}
+	}
+	else {
+		res = EINVAL;
+	}
+
+	ubus_reply(ubus_ctx, obj, req, methodName, msg, res, termId, pcmId);
+
+out:
+	free(keys);
+	return res;
+}
+
+
+
+//-------------------------------------------------------------
+// Send a ubus request to Dectmngr. This function is
+// executed by another thread than brcm_monitor_dect().
+static int dectmngr_call(int terminal, int add, int release, const char *cid) {
+	struct ubus_request *req;
+	struct ubus_context *ctx;
+	struct blob_buf blob;
+	uint32_t id;
+	int res;
+
+	// Create a binary ubus message
+	res = 0;
+	memset(&blob, 0, sizeof(blob));
+	if(blob_buf_init(&blob, 0)) {
+		res = -1;
+		goto err1;
+	}
+	if(terminal >= 0) blobmsg_add_u32(&blob, ubusCallKeys[CALL_TERM].name, terminal);
+	if(add >= 0) blobmsg_add_u32(&blob, ubusCallKeys[CALL_ADD].name, add);
+	if(release >= 0) blobmsg_add_u32(&blob, ubusCallKeys[CALL_REL].name, release);
+	if(cid) blobmsg_add_string(&blob, ubusCallKeys[CALL_CID].name, cid);
+ast_verbose("Sending ubus request %d %d %d\n", terminal, add, release);
+
+	/* In the event we are called from a thread which
+	 * commuicate with ubus for the first time we need
+	 * to init ubus first. */
+	ctx = ubus_connect(NULL);
+	if (!ctx) {
+		ast_verbose("Failed to connect to ubus\n");
+		res = -1;
+		goto err2;
+	}
+
+	// Find id number for ubus "path"
+	res = ubus_lookup_id(ctx, ubusIdDectmngr, &id);
+	if(res != UBUS_STATUS_OK) {
+		ast_verbose("Error searching for usbus path %s\n", ubusIdDectmngr);
+		res = -1;
+		goto out;
+	}
+
+	// Call remote method
+	req = calloc(1, sizeof(struct ubus_request));
+	if(!req) return -1;
+	res = ubus_invoke_async(ctx, id, ubusMethods[0].name, blob.head, req);
+	if(res != UBUS_STATUS_OK) {
+		ast_verbose("Error invoking method: %s %d\n", ubusMethods[0].name, res);
+		res = -1;
+		goto out;
+	}
+
+	/* Mark the call as non blocking. When
+	 * it completes we get "called back". */
+	req->data_cb = call_answer;
+	req->complete_cb = call_complete;
+	req->priv = NULL;
+	ubus_complete_request_async(ctx, req);
+	res = ubus_poll(ctx, 1);
+
+out:
+	ubus_free(ctx);
+err2:
+	blob_buf_free(&blob);
+err1:
+	// In case of suspicious error above, terminate call
+	if(res && !bad_handsetnr(terminal)) {
+		vrgEndptSendCasEvtToEndpt((ENDPT_STATE*) &(endptObjState[terminal]),
+			CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK);
+	}
+	
+	return res;
+}
+
 
 
 //-------------------------------------------------------------
 // Thread main
 void *brcm_monitor_dect(void *data) { 
-	static struct ubus_context *ctx;
+	struct ubus_context *ctx;
+
+	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
 	/* Initialize ubus connecton */
 	ctx = ubus_connect(NULL);
@@ -496,6 +792,7 @@ void *brcm_monitor_dect(void *data) {
 
 	ast_ubus_listen(ctx);
 	ubus_free(ctx);
+	ctx = 0;
 
 	return 0;
 }
