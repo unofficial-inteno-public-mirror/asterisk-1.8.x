@@ -5,6 +5,8 @@
 #define CID_MAX_LEN 40
 #define MAX_NR_HANDSETS 10
 
+extern const struct brcm_channel_tech dect_tech;
+
 void *brcm_monitor_dect(void *data);
 
 EPSTATUS vrgEndptSendCasEvtToEndpt( ENDPT_STATE *endptState, CAS_CTL_EVENT_TYPE eventType, CAS_CTL_EVENT event );

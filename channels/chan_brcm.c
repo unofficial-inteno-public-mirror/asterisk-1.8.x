@@ -235,8 +235,6 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
 
-extern struct brcm_channel_tech dect_tech;
-
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
 
