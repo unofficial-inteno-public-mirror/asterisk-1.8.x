@@ -2988,8 +2988,17 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		ast_cli(a->fd, "Brcm JitterBuf min  : %lu\n", jbmin);
 		ast_cli(a->fd, "Brcm JitterBuf max  : %lu\n", jbmax);
 		ast_cli(a->fd, "Brcm JitterBuf trg  : %lu\n", jbtarget);
-		ast_cli(a->fd, "Ast JitterBuf impl  : %s\n", global_jbconf.impl);
-		ast_cli(a->fd, "Ast JitterBuf max   : %ld\n", global_jbconf.max_size);
+		ast_cli(a->fd, "Jitterbuffer enabled:   %s\n", AST_CLI_YESNO(ast_test_flag(&global_jbconf, AST_JB_ENABLED)));
+		if (ast_test_flag(&global_jbconf, AST_JB_ENABLED)) {
+			ast_cli(a->fd, "Jitterbuffer forced:    %s\n", AST_CLI_YESNO(ast_test_flag(&global_jbconf, AST_JB_FORCED)));
+			ast_cli(a->fd, "Jitterbuffer max size:  %ld\n", global_jbconf.max_size);
+			ast_cli(a->fd, "Jitterbuffer resync:    %ld\n", global_jbconf.resync_threshold);
+			ast_cli(a->fd, "Jitterbuffer impl:      %s\n", global_jbconf.impl);
+			if (!strcasecmp(global_jbconf.impl, "adaptive")) {
+				ast_cli(a->fd, "Jitterbuffer tgt extra: %ld\n", global_jbconf.target_extra);
+			}
+			ast_cli(a->fd, "Jitterbuffer log:       %s\n", AST_CLI_YESNO(ast_test_flag(&global_jbconf, AST_JB_LOG)));
+		}
 		ast_cli(a->fd, "Call waiting        : %s\n", s->callwaiting ? "on" : "off");
 		ast_cli(a->fd, "CLIR                : %s\n", s->clir ? "on" : "off");
 
