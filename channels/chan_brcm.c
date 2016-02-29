@@ -1899,6 +1899,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 				else {
 					ast_log(LOG_ERROR, "Sub and/or peer sub had no owner\n");
 				}
+			} else {
+				ast_log(LOG_WARNING, "Received R4 when in state %s with a peer in state %s\n",
+					state2str(sub->channel_state),
+					state2str(sub_peer->channel_state)
+				);
 			}
 			break;
 
