@@ -2591,7 +2591,9 @@ static void *brcm_monitor_events(void *data)
 					p->last_early_onhook_ts = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 #endif
 					break;
-				case EPEVT_MEDIA: ast_debug(1, "EPEVT_MEDIA\n"); break;
+				case EPEVT_MEDIA:
+					ast_debug(1, "EPEVT_MEDIA\n");
+					break;
 				case EPEVT_VBD_START:
 					ast_debug(1, "EPEVT_VBD_START\n");
 					if (owner) {
