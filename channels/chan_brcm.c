@@ -444,7 +444,7 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 		if (result == AST_TRANSFER_SUCCESS) {
 			ast_log(LOG_NOTICE, "Remote transfer completed successfully, wait for remote hangup\n");
 			p->r4_hangup_timer_id = ast_sched_thread_add(sched, r4hanguptimeout, r4hanguptimeout_cb, p);
-		} else {
+		} else if (1) {
 			//Do nothing. Let calls be up as they were before R4 was attempted (first call on hold, second call active)
 			ast_log(LOG_NOTICE, "Remote transfer failed\n");
 
@@ -459,6 +459,33 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 
 			ast_queue_control(owner, AST_CONTROL_UNHOLD);
 			brcm_subchannel_set_state(p, INCALL);
+		} else {
+			//Transform to 3-way call
+			ast_log(LOG_NOTICE, "Remote transfer failed, transforming to 3-way call\n");
+
+			struct ast_channel* peer_owner;
+			peer_owner = peer_sub->owner;
+
+			p->conference_initiator = 1;
+
+			/* Unhold inactive subchannel */
+			brcm_unmute_connection(peer_sub);
+
+			//Asterisk jitter buffer causes one way audio when going from unhold.
+			//This is a workaround until jitter buffer is handled by DSP.
+			ast_jb_destroy(peer_owner);
+			ast_jb_disable(peer_owner);
+
+			ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
+			brcm_subchannel_set_state(peer_sub, INCALL);
+
+			/* Switch all connections to conferencing mode */
+			brcm_create_conference(p->parent);
+
+			//Asterisk jitter buffer causes one way audio when going from unhold.
+			//This is a workaround until jitter buffer is handled by DSP.
+			ast_jb_destroy(owner);
+			ast_jb_disable(owner);
 		}
 
 	} else {
@@ -1876,7 +1903,32 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 		/* Remote transfer held call to active call */
 		case '4':
 			ast_debug(2, "R4 Transfer\n");
-			if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
+			if (sub->channel_state == INCALL && (
+				sub_peer->channel_state == ONHOLD ||
+				(0 && sub_peer->channel_state == CALLWAITING)
+			)) {
+				if (sub_peer->channel_state == CALLWAITING) {
+					/* Stop call waiting tone on current call */
+					brcm_stop_callwaiting(p);
+
+					/* Cancel timer */
+					if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
+						ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+					}
+					sub_peer->cw_timer_id = -1;
+
+					/* Pick up call waiting */
+					if (!sub_peer->connection_init) {
+						ast_debug(9, "create_connection()\n");
+						brcm_create_connection(sub_peer);
+					}
+					if (peer_owner) {
+						ast_queue_control(peer_owner, AST_CONTROL_ANSWER);
+#if 0
+						brcm_subchannel_set_state(sub_peer, INCALL);
+#endif
+					}
+				}
 
 				if (owner && peer_owner) {
 					struct ast_channel *bridged_chan = ast_bridged_channel(owner);
