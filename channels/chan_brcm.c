@@ -1808,6 +1808,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 				ast_queue_control(peer_owner, AST_CONTROL_UNHOLD);
 				brcm_subchannel_set_state(sub_peer, INCALL);
 			}
+		} else {
+			ast_log(LOG_WARNING, "Received R when in state %s with a peer in state %s\n",
+				state2str(sub->channel_state),
+				state2str(sub_peer->channel_state)
+			);
 		}
 
 		return;
@@ -1837,6 +1842,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 				brcm_close_connection(sub_peer);
 				ast_queue_control(peer_owner, AST_CONTROL_HANGUP);
 				brcm_subchannel_set_state(sub_peer, CALLENDED);
+			} else {
+				ast_log(LOG_WARNING, "Received R0 when in state %s with a peer in state %s\n",
+					state2str(sub->channel_state),
+					state2str(sub_peer->channel_state)
+				);
 			}
 			break;
 
@@ -1885,6 +1895,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 						brcm_subchannel_set_state(sub_peer, INCALL);
 					}
 				}
+			} else {
+				ast_log(LOG_WARNING, "Received R1 when in state %s with a peer in state %s\n",
+					state2str(sub->channel_state),
+					state2str(sub_peer->channel_state)
+				);
 			}
 			break;
 
@@ -1955,6 +1970,11 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 				if (secondary_sub->owner) {
 					ast_queue_control(secondary_sub->owner, AST_CONTROL_HOLD);
 				}
+			} else {
+				ast_log(LOG_WARNING, "Received R2 when in state %s with a peer in state %s\n",
+					state2str(sub->channel_state),
+					state2str(sub_peer->channel_state)
+				);
 			}
 
 			break;
