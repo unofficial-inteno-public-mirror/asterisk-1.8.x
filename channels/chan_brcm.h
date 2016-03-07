@@ -265,7 +265,7 @@ static struct ast_jb_conf default_jbconf =
 #if BCM_SDK_VERSION < 416021
 #define DEFAULT_MAX_HOOKFLASH_DELAY 500	// Max delay between early onhook and early offhook (in ms)
 #endif
-
+#define DEFAULT_REMOTE_FLASH 0 // Boolean
 
 /* function declaration */
 

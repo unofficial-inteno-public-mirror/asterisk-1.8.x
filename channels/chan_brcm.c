@@ -138,6 +138,8 @@ static int hfmaxdelay = DEFAULT_MAX_HOOKFLASH_DELAY;
 /* Automatic call on hold hangup */
 static int onholdhanguptimeout = DEFAULT_ONHOLD_HANGUP_TIMEOUT;
 
+static int remoteflash = DEFAULT_REMOTE_FLASH;
+
 /* Global jitterbuffer configuration */
 static struct ast_jb_conf global_jbconf;
 
@@ -1999,11 +2001,42 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 			break;
 
 		default:
-			ast_log(LOG_NOTICE, "Unhandled DTMF %c\n", p->dtmfbuf[0]);
+			ast_log(LOG_NOTICE, "Unhandled DTMF %c\n", p->dtmf_first);
 			break;
 	}
 
 	brcm_reset_dtmf_buffer(p);
+}
+
+/*
+ * Send hook flash.
+ * Preconditions: One subchannel should be in CALLWAITING or ONHOLD,
+ * 		  One subchannel should be in INCALL.
+ * 		  channel locks are held
+ *		  brcm_pvt->lock is held
+ */
+void send_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer,
+		struct ast_channel *owner, struct ast_channel *peer_owner)
+{
+	if (remoteflash) {
+		// @todo@ Translation to "DTMF" should probably be done in the code that dectects features. Not here.
+		#if 0
+			struct ast_frame f = { AST_FRAME_CONTROL, { AST_CONTROL_FLASH, } };
+			ast_queue_frame(owner, &f);
+		#else
+			struct ast_frame fb = { AST_FRAME_DTMF_BEGIN, };
+			fb.subclass.integer = 'F';
+			fb.src = "BRCM";
+			ast_queue_frame(owner, &fb);
+
+			struct ast_frame fe = { AST_FRAME_DTMF_END, };
+			fe.subclass.integer = 'F';
+			fe.src = "BRCM";
+			ast_queue_frame(owner, &fe);
+		#endif
+	} else {
+		handle_hookflash(sub, sub_peer, owner, peer_owner);
+	}
 }
 
 int get_dtmf_relay_type(struct brcm_subchannel *sub)
@@ -2041,13 +2074,13 @@ void handle_dtmf(EPEVT event,
 	}
 	else if (p->dtmf_first == dtmf_button) {
 		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);
-		if (p->hf_detected) {
+		if (!remoteflash && p->hf_detected) {
 			ast_debug(2, "DTMF after HF\n");
 			p->hf_detected = 0;
 			/* HF while not in a call doesn't make sense */
 			if (sub->channel_state == INCALL &&
 				(brcm_in_callwaiting(p) || brcm_in_onhold(p) || brcm_in_conference(p))) {
-				handle_hookflash(sub, sub_peer, owner, peer_owner);
+				send_hookflash(sub, sub_peer, owner, peer_owner);
 			} else {
 				ast_debug(2, "DTMF after HF while not in call. \
 						state: %d, \
@@ -2067,7 +2100,7 @@ void handle_dtmf(EPEVT event,
 			if (sub->channel_state == OFFHOOK) {
 				brcm_subchannel_set_state(sub, DIALING);
 			}
-			else if (sub->channel_state != INCALL) {
+			else if (remoteflash || sub->channel_state != INCALL) {
 				struct ast_frame f = { 0, };
 				f.subclass.integer = dtmf_button;
 				f.src = "BRCM";
@@ -2191,7 +2224,7 @@ static void *brcm_monitor_packets(void *data)
 			/* Handle DTMF if we're in state calling. If not in call we'll send DTMF to Asterisk
 			 * using handle_dtmf(). This way pre-call DTMF (ex CBBS) will be handled the same way
 			 * for both FXS and DECT. */
-			} else if (rtp_packet_type == BRCM_DTMF && brcm_should_relay_dtmf(sub)) {
+			} else if (rtp_packet_type == BRCM_DTMF && (!remoteflash || brcm_should_relay_dtmf(sub))) {
 				
 				unsigned int duration = (pdata[14] << 8 | pdata[15]);
 				unsigned int dtmf_end = pdata[13] & 128;
@@ -2552,14 +2585,19 @@ static void *brcm_monitor_events(void *data)
 				case EPEVT_FLASH:
 #if BCM_SDK_VERSION >= 416021
 					ast_debug(1, "EPEVT_FLASH\n");
-					p->hf_detected = 1;
 
-					/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
-					 * dtmf will be relayed to asterisk. */
-					int timeoutmsec = line_config[p->line_id].timeoutmsec;
-					p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+					if (!remoteflash) {
+						p->hf_detected = 1;
 
-					handle_hookflash(sub, sub_peer, owner, peer_owner);
+						/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
+						 * dtmf will be relayed to asterisk. */
+						int timeoutmsec = line_config[p->line_id].timeoutmsec;
+						p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
+
+						send_hookflash(sub, sub_peer, owner, peer_owner);
+					} else {
+						send_hookflash(sub, sub_peer, owner, peer_owner);
+					}
 #endif
 					break;
 				case EPEVT_EARLY_OFFHOOK:
@@ -2569,9 +2607,10 @@ static void *brcm_monitor_events(void *data)
 					unsigned int now = tim.tv_sec*TIMEMSEC + tim.tv_usec/TIMEMSEC;
 					if (now - p->last_early_onhook_ts < hfmaxdelay) {
 						p->last_early_onhook_ts = 0;
-						if (p->hf_detected == 1) {
+
+						if (!remoteflash && p->hf_detected == 1) {
 							p->hf_detected = 0;
-						} else {
+						} else if (!remoteflash) {
 							p->hf_detected = 1;
 
 							/* Schedule hook flash timeout. Until hook flash is handled or timeout expires, no
@@ -2579,7 +2618,9 @@ static void *brcm_monitor_events(void *data)
 							int timeoutmsec = line_config[p->line_id].timeoutmsec;
 							p->interdigit_timer_id = ast_sched_thread_add(sched, timeoutmsec, handle_hookflash_timeout, p);
 
-							handle_hookflash(sub, sub_peer, owner, peer_owner);
+							send_hookflash(sub, sub_peer, owner, peer_owner);
+						} else {
+							send_hookflash(sub, sub_peer, owner, peer_owner);
 						}
 					}
 #endif
@@ -3164,6 +3205,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
 	ast_cli(a->fd, "FAC list      : %s\n", feature_access_code_string(buffer, AST_MAX_EXTENSION));
+	ast_cli(a->fd, "Remote flash  : %s\n", remoteflash ? "Yes": "No");
 
 	/* print status for individual pvts */
 	brcm_show_pvts(a);
@@ -3965,6 +4007,8 @@ static int load_settings(struct ast_config **cfg)
 					tok = strtok(NULL, ",");
 				}
 			}
+		} else if (!strcasecmp(v->name, "remoteflash")) {
+			remoteflash = ast_true(v->value)?1:0;
 		}
 
 		v = v->next;
