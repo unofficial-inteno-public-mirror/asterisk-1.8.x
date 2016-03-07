@@ -1626,6 +1626,95 @@ void handle_dtmf_calling(struct brcm_subchannel *sub)
 	}
 }
 
+/*! \brief Hook flash application */
+static int brcm_flash(struct ast_channel *chan, const char *data)
+{
+	AST_DECLARE_APP_ARGS(args,
+		AST_APP_ARG(peer);
+		AST_APP_ARG(dtmf);
+	);
+	int res = 0;
+	int dtmf, old_dtmf_first;
+	struct ast_channel *owner, *peer_owner;
+	struct brcm_pvt *p;
+	struct brcm_subchannel *sub, *sub_peer;
+
+	ast_debug(1, "Hook flash application (%s)\n", data);
+	AST_STANDARD_APP_ARGS(args, (char *) data);
+
+	ast_strip(args.peer);
+	ast_strip(args.dtmf);
+
+
+	if (!ast_strlen_zero(args.dtmf)) {
+		dtmf = '0' + atoi(args.dtmf);
+	} else {
+		dtmf = -1;
+	}
+
+	ast_debug(1, "Hook flash application (%s, %d)\n", args.peer, dtmf);
+
+	ast_channel_lock(chan);
+
+	if (strcasecmp(chan->tech->type, "BRCM")) {
+		ast_log(LOG_WARNING, "%s is not a BRCM channel\n", chan->name);
+		res = -1;
+		goto done;
+	}
+
+#if 0
+	struct ast_channel *peer = ast_channel_get_by_name(args.peer);
+	if (!peer) {
+		ast_log(LOG_ERROR, "Failed to fetch peer channel %s\n", args.peer);
+		res = -1;
+		goto done;
+	}
+#endif
+
+	sub = chan->tech_pvt;
+	p = sub->parent;
+
+#if 0
+	sub = brcm_get_active_subchannel(p); // @todo@ Redundant?
+#endif
+
+	sub_peer = brcm_subchannel_get_peer(sub);
+	if (!sub_peer) {
+		ast_log(LOG_ERROR, "Failed to get peer subchannel of id %d\n", sub->id);
+		res = -1;
+		goto done;
+	}
+
+#if 1
+	if (!sub->owner) {
+		ast_log(LOG_ERROR, "Failed to get sub owner\n");
+		res = -1;
+		goto done;
+	}
+	// ast_channel_ref(sub->owner);
+#endif
+	owner = sub->owner;
+
+#if 0
+	if (!sub_peer->owner) {
+		ast_log(LOG_ERROR, "Failed to get sub peer owner\n");
+		res = -1;
+		goto done;
+	}
+	// ast_channel_ref(sub_peer->owner);
+#endif
+	peer_owner = sub_peer->owner;
+
+	old_dtmf_first = p->dtmf_first;
+	p->dtmf_first = dtmf;
+	handle_hookflash(sub, sub_peer, owner, peer_owner);
+	p->dtmf_first = old_dtmf_first;
+
+done:
+	ast_channel_unlock(chan);
+	return res;
+}
+
 /* 
  * Perform actions for hook flash.
  * Preconditions: One subchannel should be in CALLWAITING or ONHOLD,
@@ -3642,6 +3731,11 @@ static int unload_module(void)
 		return -1;
 	}
 
+	/* Unregister dialplan applications */
+	ast_unregister_application("BRCMFlash");
+
+	/* Unregister dialplan functions */
+
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
@@ -4097,6 +4191,11 @@ static int load_module(void)
 	/* Register all CLI functions for BRCM */
 	ast_cli_register_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 	ast_config_destroy(cfg);
+
+	/* Register dialplan applications */
+	ast_register_application_xml("BRCMFlash", brcm_flash);
+
+	/* Register dialplan functions */
 
 	/* Register manager commands */
 	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
