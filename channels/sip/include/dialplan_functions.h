@@ -30,6 +30,11 @@
 int sip_acf_channel_read(struct ast_channel *chan, const char *funcname, char *preparse, char *buf, size_t buflen);
 
 /*!
+ * \brief Channel write dialplan function for SIP
+ */
+int sip_acf_channel_write(struct ast_channel *chan, const char *function, char *data, const char *value);
+
+/*!
  * \brief register dialplan function tests
  */
 void sip_dialplan_function_register_tests(void);

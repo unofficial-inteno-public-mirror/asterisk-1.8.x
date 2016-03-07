@@ -1638,6 +1638,7 @@ const struct ast_channel_tech sip_tech = {
 	.early_bridge = ast_rtp_instance_early_bridge,
 	.send_text = sip_sendtext,		/* called with chan locked */
 	.func_channel_read = sip_acf_channel_read,
+	.func_channel_write = sip_acf_channel_write,
 	.setoption = sip_setoption,
 	.queryoption = sip_queryoption,
 	.get_pvt_uniqueid = sip_get_callid,

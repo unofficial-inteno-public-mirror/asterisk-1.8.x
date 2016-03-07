@@ -239,6 +239,30 @@ int sip_acf_channel_read(struct ast_channel *chan, const char *funcname, char *p
 	return res;
 }
 
+int sip_acf_channel_write(struct ast_channel *chan, const char *function, char *data, const char *value)
+{
+	struct sip_pvt *p = chan->tech_pvt;
+	int res = 0;
+
+	/* Sanity check */
+	if (!IS_SIP_TECH(chan->tech)) {
+		ast_log(LOG_ERROR, "Cannot call %s on a non-SIP channel\n", function);
+		return 0;
+	}
+
+	if (p == NULL) {
+		return -1;
+	}
+
+	if (0) {
+		// No variables currently writable
+	} else {
+		res = -1;
+	}
+
+	return res;
+}
+
 #ifdef TEST_FRAMEWORK
 static int test_sip_rtpqos_1_new(struct ast_rtp_instance *instance, struct sched_context *sched, struct ast_sockaddr *addr, void *data)
 {
