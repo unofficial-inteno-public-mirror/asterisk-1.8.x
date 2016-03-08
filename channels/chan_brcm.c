@@ -1828,8 +1828,42 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 
 		/* Connect waiting call to existing call to create 3-way */
 		case '3':
-			if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
-				ast_debug(2, "DTMF3 after HF\n");
+			ast_debug(2, "DTMF3 after HF\n");
+			if (sub->channel_state == INCALL && sub_peer->channel_state == CALLWAITING) {
+				ast_verbose("Performing R3 merge waiting call with current call\n");
+
+				/* Stop call waiting tone on current call */
+				brcm_stop_callwaiting(p);
+
+				/* Cancel timer */
+				if (ast_sched_thread_del(sched, sub_peer->cw_timer_id)) {
+					ast_log(LOG_WARNING, "Failed to remove scheduled call waiting timer\n");
+				}
+				sub_peer->cw_timer_id = -1;
+
+				/* Pick up call waiting */
+				if (!sub_peer->connection_init) {
+					ast_debug(9, "create_connection()\n");
+					brcm_create_connection(sub_peer);
+				}
+				if (peer_owner) {
+					ast_queue_control(peer_owner, AST_CONTROL_ANSWER);
+					brcm_subchannel_set_state(sub_peer, INCALL);
+				}
+
+				sub->conference_initiator = 1;
+
+				/* Switch all connections to conferencing mode */
+				brcm_create_conference(p);
+
+				if (owner) {
+					//Asterisk jitter buffer causes one way audio when going from unhold.
+					//This is a workaround until jitter buffer is handled by DSP.
+					ast_jb_destroy(owner);
+					ast_jb_disable(owner);
+				}
+			} else if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
+				ast_verbose("Performing R3 3-way call with %s\n", sub->parent->ext);
 
 				sub->conference_initiator = 1;
 
