@@ -2129,10 +2129,12 @@ void send_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_pee
 {
 	if (remoteflash) {
 		// @todo@ Translation to "DTMF" should probably be done in the code that dectects features. Not here.
-		#if 0
+		if (!owner) {
+			// Nothing
+		} else if (0) {
 			struct ast_frame f = { AST_FRAME_CONTROL, { AST_CONTROL_FLASH, } };
 			ast_queue_frame(owner, &f);
-		#else
+		} else {
 			struct ast_frame fb = { AST_FRAME_DTMF_BEGIN, };
 			fb.subclass.integer = 'F';
 			fb.src = "BRCM";
@@ -2142,7 +2144,7 @@ void send_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_pee
 			fe.subclass.integer = 'F';
 			fe.src = "BRCM";
 			ast_queue_frame(owner, &fe);
-		#endif
+		}
 	} else {
 		handle_hookflash(sub, sub_peer, owner, peer_owner);
 	}
