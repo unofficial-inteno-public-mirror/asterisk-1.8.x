@@ -266,6 +266,8 @@ static const struct ast_channel_tech brcm_tech = {
 	.send_digit_continue = brcm_senddigit_continue,	//Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
+	.func_channel_read = brcm_func_channel_read,
+	.func_channel_write = brcm_func_channel_write,
 };
 
 static struct brcm_channel_tech fxs_tech = {
@@ -399,6 +401,46 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		break;
 	}
 	pvt_unlock(sub->parent);
+	return res;
+}
+
+static int brcm_func_channel_read(struct ast_channel *chan, const char *function, char *data, char *buf, size_t len)
+{
+	struct brcm_pvt *p = chan->tech_pvt;
+	int res = 0;
+
+	if (!p) {
+		/* No private structure! */
+		*buf = '\0';
+		return -1;
+	}
+
+	if (0) {
+		/* No variables currently readable */
+	} else {
+		*buf = '\0';
+		res = -1;
+	}
+
+	return res;
+}
+
+static int brcm_func_channel_write(struct ast_channel *chan, const char *function, char *data, const char *value)
+{
+	struct brcm_pvt *p = chan->tech_pvt;
+	int res = 0;
+
+	if (!p) {
+		/* No private structure! */
+		return -1;
+	}
+
+	if (0) {
+		/* No variables currently writable */
+	} else {
+		res = -1;
+	}
+
 	return res;
 }
 

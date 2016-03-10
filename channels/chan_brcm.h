@@ -309,6 +309,8 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 static int brcm_senddigit_begin(struct ast_channel *ast, char digit);
 static int brcm_senddigit_continue(struct ast_channel *ast, char digit, unsigned int duration);
 static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int duration);
+static int brcm_func_channel_read(struct ast_channel *chan, const char *function, char *data, char *buf, size_t len);
+static int brcm_func_channel_write(struct ast_channel *chan, const char *function, char *data, const char *value);
 static int brcm_get_endpoints_count(void);
 static void brcm_provision_endpoints(void);
 static void brcm_create_endpoints(void);
