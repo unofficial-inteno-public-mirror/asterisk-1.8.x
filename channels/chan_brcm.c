@@ -1976,6 +1976,8 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 						ast_queue_control(peer_owner, AST_CONTROL_ANSWER);
 						brcm_subchannel_set_state(sub_peer, INCALL);
 					}
+
+					ast_verb(3, "%s answered waiting call on %s\n", owner ? owner->name : "?", peer_owner ? peer_owner->name : "?");
 				} else if (sub_peer->channel_state == ONHOLD) {
 					ast_log(LOG_WARNING, "R2 on hold\n");
 
@@ -2057,6 +2059,8 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 					ast_jb_destroy(owner);
 					ast_jb_disable(owner);
 				}
+
+				ast_verb(3, "%s merged with waiting call on %s\n", owner ? owner->name : "?", peer_owner ? peer_owner->name : "?");
 			} else if (sub->channel_state == INCALL && sub_peer->channel_state == ONHOLD) {
 				ast_verbose("Performing R3 3-way call with %s\n", sub->parent->ext);
 
@@ -2084,6 +2088,7 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 					ast_jb_destroy(owner);
 					ast_jb_disable(owner);
 				}
+				ast_verb(3, "%s merged with held call on %s\n", owner ? owner->name : "?", peer_owner ? peer_owner->name : "?");
 			} else {
 				ast_log(LOG_WARNING, "Received R3 when in state %s with a peer in state %s\n",
 					state2str(sub->channel_state),
