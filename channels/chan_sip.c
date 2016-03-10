@@ -7149,6 +7149,9 @@ static int sip_indicate(struct ast_channel *ast, int condition, const void *data
 			res = transmit_refer(p, parameters->exten, replaces);
 		}
 		break;
+	case AST_CONTROL_FLASH: /* We don't currently handle AST_CONTROL_FLASH here, but it is expected, so we don't need to warn either. */
+		res = -1;
+		break;
 	case -1:
 		res = -1;
 		break;
