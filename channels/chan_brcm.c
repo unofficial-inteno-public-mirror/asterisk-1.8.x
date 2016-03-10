@@ -395,6 +395,10 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		/* What do we do with that? */
 		res = -1;
 		break;
+	case AST_CONTROL_FLASH:
+		res = -1;
+		ast_debug(4, "Got FLASH on %s\n", ast->name);
+		break;
 	default:
 		res = -1;
 		ast_debug(1, "Don't know how to indicate condition %d\n", condition);
