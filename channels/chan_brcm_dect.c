@@ -564,8 +564,7 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 
 
 //-------------------------------------------------------------
-// Send a reply for a when someone has called
-// us with a request.
+// Send a reply for when someone has called us with a request.
 static int ubus_reply(struct ubus_context *ubus_ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg,
 		uint32_t err, int terminal, int pcmId) {
@@ -727,11 +726,15 @@ ast_verbose("Sending ubus request %d %d %d\n", terminal, add, release);
 	 * commuicate with ubus for the first time we need
 	 * to init ubus first. */
 	ctx = ubus_connect(NULL);
-	if (!ctx) {
+	if (!ctx || !ctx->sock.fd) {
 		ast_verbose("Failed to connect to ubus\n");
 		res = -1;
 		goto err2;
 	}
+
+// TODO
+//ctx->connection_lost = my_custom_cb_to_replace_the_default;
+
 
 	// Find id number for ubus "path"
 	res = ubus_lookup_id(ctx, ubusIdDectmngr, &id);
