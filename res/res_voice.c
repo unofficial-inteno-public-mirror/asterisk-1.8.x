@@ -8,6 +8,7 @@
  *
  */
 
+#define __AST_SELECT_H											// Prevent Asterisk from replacing libc FD_ZERO() with ugliness
 #include "asterisk.h"
 #include "asterisk/module.h"
 #include "asterisk/manager.h"
