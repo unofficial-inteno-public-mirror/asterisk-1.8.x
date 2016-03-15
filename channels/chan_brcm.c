@@ -262,6 +262,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.answer = brcm_answer,				//Channel is locked
 	.read = brcm_read,				//Channel is locked
 	.write = brcm_write,				//Channel is locked
+	.bridge = brcm_bridge,
 	.send_digit_begin = brcm_senddigit_begin,	//Channel is NOT locked
 	.send_digit_continue = brcm_senddigit_continue,	//Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
@@ -1150,6 +1151,52 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 	}
 
 	return 0;
+}
+
+static enum ast_bridge_result brcm_bridge(struct ast_channel *c0, struct ast_channel *c1, int flags, struct ast_frame **fo, struct ast_channel **rc, int timeoutms)
+{
+	enum ast_bridge_result res;
+	int priority = 0;
+
+	ast_verb(3, "Native bridging %s and %s\n", c0->name, c1->name);
+
+	for (;;) {
+		struct ast_channel *who;
+		struct ast_frame *f;
+		struct ast_channel *c0_priority[2] = {c0, c1};
+		struct ast_channel *c1_priority[2] = {c1, c0};
+
+		if (!timeoutms) {
+			res = AST_BRIDGE_RETRY;
+			goto return_from_bridge;
+		}
+
+		who = ast_waitfor_n(priority ? c0_priority : c1_priority, 2, &timeoutms);
+		if (!who) {
+			ast_debug(1, "Ooh, empty read...\n");
+			continue;
+		}
+		f = ast_read(who);
+		if (!f || (f->frametype == AST_FRAME_CONTROL)) {
+			*fo = f;
+			*rc = who;
+			res = AST_BRIDGE_COMPLETE;
+			goto return_from_bridge;
+		}
+		if (f->frametype == AST_FRAME_DTMF) {
+			*fo = f;
+			*rc = who;
+			res = AST_BRIDGE_COMPLETE;
+			goto return_from_bridge;
+		}
+		ast_frfree(f);
+
+		/* Swap who gets priority */
+		priority = !priority;
+	}
+
+return_from_bridge:
+	return res;
 }
 
 static void brcm_reset_dtmf_buffer(struct brcm_pvt *p)

@@ -302,6 +302,7 @@ static int brcm_hangup(struct ast_channel *ast);
 static int brcm_answer(struct ast_channel *ast);
 static struct ast_frame *brcm_read(struct ast_channel *ast);
 static int brcm_write(struct ast_channel *ast, struct ast_frame *frame);
+static enum ast_bridge_result brcm_bridge(struct ast_channel *c0, struct ast_channel *c1, int flags, struct ast_frame **fo, struct ast_channel **rc, int timeoutms);
 #if 0
 static int brcm_send_text(struct ast_channel *ast, const char *text);
 #endif
