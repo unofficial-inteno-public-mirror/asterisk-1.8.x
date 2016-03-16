@@ -16,7 +16,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include <sys/select.h>
 
 
-#define __AST_SELECT_H											// Prevent Asterisk from replacing libc FD_ZERO() with ugliness
+#define __AST_SELECT_H															// Prevent Asterisk from replacing libc FD_ZERO() with ugliness
 #include "asterisk/lock.h"
 #include "asterisk/channel.h"
 #include "asterisk/cli.h"
@@ -398,63 +398,6 @@ void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
 
 
 
-#if 0
-//-------------------------------------------------------------
-void setup_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
-			  const char *type, struct blob_attr *msg)
-{
-	struct json_object *obj, *val;
-	char *json;
-	int terminal, endpt;
-
-	ast_verbose("setup_ind\n");	
-	json = blobmsg_format_json(msg, true);
-	obj = json_tokener_parse(json);
-
-	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
-		terminal = json_object_get_int(val);
-		
-		if (bad_handsetnr(terminal))
-			return;
-		
-		ast_verbose("terminal: %d\n", terminal);
-		
-		/* Signal offhook to endpoint driver */
-		endpt = terminal;
-		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK );
-	}
-}
-
-
-
-//-------------------------------------------------------------
-void release_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
-			  const char *type, struct blob_attr *msg)
-{
-	struct json_object *obj, *val;
-	char *json;
-	int terminal, endpt;
-
-	ast_verbose("release_ind\n");	
-	json = blobmsg_format_json(msg, true);
-	obj = json_tokener_parse(json);
-
-	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
-		terminal = json_object_get_int(val);
-		
-		if (bad_handsetnr(terminal))
-			return;
-		
-		ast_verbose("terminal: %d\n", terminal);
-		
-		/* Signal onhook to endpoint driver */
-		endpt = terminal;
-		vrgEndptSendCasEvtToEndpt( (ENDPT_STATE *)&(endptObjState[endpt]), CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK );
-	}
-}
-#endif
-
-
 //-------------------------------------------------------------
 // Block and wait for incomming ubus events. uloop
 // doesn't work with threads.
@@ -504,29 +447,6 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 			    event, ubus_strerror(ret));
 		return -1;
 	}
-
-	/* dect.api.setup_ind */
-	//memset(&hej, 0, sizeof(hej));
-	//hej.cb = setup_ind;
-	//hej_event = "dect.api.setup_ind";
-	//ret = ubus_register_event_handler(ctx, &hej, hej_event);
-	//if (ret) {
-	//	ast_verbose("\n\n\nError while registering for event '%s': %s\n\n\n",
-	//		    hej_event, ubus_strerror(ret));
-	//	return -1;
-	//}
-
-
-	/* dect.api.release_ind */
-	//memset(&svej, 0, sizeof(svej));
-	//svej.cb = release_ind;
-	//svej_event = "dect.api.release_ind";
-	//ret = ubus_register_event_handler(ctx, &svej, svej_event);
-	//if (ret) {
-	//	ast_verbose("Error while registering for event '%s': %s\n",
-	//		    svej_event, ubus_strerror(ret));
-	//	return -1;
-	//}
 
 	/* dect.api.info_ind */
 	memset(&info, 0, sizeof(info));
