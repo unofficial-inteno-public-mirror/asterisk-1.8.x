@@ -2324,7 +2324,7 @@ static void *brcm_monitor_events(void *data)
 						brcm_signal_dialtone(p);
 						line_settings *s = &line_config[p->line_id];
 
-						if (ast_str_size(s->autodial_ext)) {
+						if (strlen(s->autodial_ext)) {
 							/* Schedule autodial timeout if autodial extension is set */
 							p->autodial_timer_id = ast_sched_thread_add(sched, s->autodial_timeoutmsec, handle_autodial_timeout, p);
 						}
