@@ -701,7 +701,7 @@ static void dect_release_ind(ApiFpCcReleaseIndType *m) {
 	r->CallReference = m->CallReference;
 	r->Status = RSS_SUCCESS;
 	r->InfoElementLength = 0;
-	r->InfoElement[1] = NULL;
+	r->InfoElement[1] = 0;
 
 	handsets[handset].CallReference.Instance.Fp = 0;
 
@@ -1043,7 +1043,7 @@ static void connect_ind(ApiFpCcConnectIndType *m) {
 	r->CallReference = CallReference;
 	r->Status = RSS_SUCCESS;
 	r->InfoElementLength = 0;
-	r->InfoElement[1] = NULL;
+	r->InfoElement[1] = 0;
 
 					     
 	ast_verbose("API_FP_CC_CONNECT_RES\n");
