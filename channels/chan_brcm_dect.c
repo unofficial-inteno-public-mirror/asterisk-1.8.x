@@ -35,10 +35,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
-#include <libubox/blobmsg_json.h>
 #include <libubus.h>
 
-#define R_KEY 0x15
+#define PAUSE_KEY	0x05
+#define R_KEY		0x15
 
 
 enum {
@@ -49,6 +49,13 @@ enum {
 };
 
 
+enum {
+	DIAL_TERM,																	// Terminal ID
+	DIAL_NUMB,																	// Dialed number
+	DIAL_PCM,																	// Dial number via PCMx
+};
+
+
 struct dect_handset {
 	enum channel_state state;
 	char cid[CID_MAX_LEN];
@@ -56,6 +63,10 @@ struct dect_handset {
 
 
 
+static int dect_release(struct brcm_pvt *p);
+static int dect_signal_ringing(struct brcm_pvt *p);
+static int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
+static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
 static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg);
 static int dectmngr_call(int terminal, int add, int release, const char *cid);
@@ -64,6 +75,7 @@ static int dectmngr_call(int terminal, int add, int release, const char *cid);
 //-------------------------------------------------------------
 static const char ubusSenderId[] = "asterisk.dect.api";							// The Ubus type we transmitt
 static const char ubusIdDectmngr[] = "dect";									// The Ubus type for Dectmngr
+
 
 static const struct blobmsg_policy ubusCallKeys[] = {							// ubus RPC "call" arguments (keys and values)
 	[CALL_TERM] = { .name = "terminal", .type = BLOBMSG_TYPE_INT32 },
@@ -119,7 +131,7 @@ static int bad_handsetnr(int handset) {
 
 
 //-------------------------------------------------------------
-int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
+static int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 	ast_verbose("dect_signal_ringing_callerid_pending()\n");
 	dect_signal_ringing(p);
 	return 0;
@@ -128,7 +140,7 @@ int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
 
 
 //-------------------------------------------------------------
-int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
+static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
 	
 	int handset = s->parent->line_id + 1;
 	ast_verbose("dect_signal_callerid(): %s\n", chan->connected.id.number.str);
@@ -145,7 +157,7 @@ int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 
 
 //-------------------------------------------------------------
-int dect_signal_ringing(struct brcm_pvt *p)
+static int dect_signal_ringing(struct brcm_pvt *p)
 {
 	ast_verbose("dect_signal_ringing()\n");
 	ast_verbose("line_id: %d\n", p->line_id); 
@@ -157,7 +169,7 @@ int dect_signal_ringing(struct brcm_pvt *p)
 
 
 //-------------------------------------------------------------
-EPSTATUS
+static EPSTATUS
 vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, 
 				   CAS_CTL_EVENT_TYPE eventType, 
 				   CAS_CTL_EVENT event)
@@ -193,7 +205,7 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 
 
 //-------------------------------------------------------------
-int dect_release(struct brcm_pvt * p) {
+static int dect_release(struct brcm_pvt * p) {
 	int handset = p->line_id + 1;
 
 	ast_verbose("dect_release: %d\n", handset);
@@ -208,194 +220,138 @@ int dect_release(struct brcm_pvt * p) {
 
 
 //-------------------------------------------------------------
-void ast_ubus_event(struct ubus_context *ctx, struct ubus_event_handler *ev,
-			  const char *type, struct blob_attr *msg)
+// Got a ubus call from dectmngr that user
+// has pressed keys and dialed a number. (The
+// audio should already be setup.)
+static int userDials(int termId, const char *number, int pcm)
 {
-	char *str = NULL;
-	if (msg)
-		str = blobmsg_format_json(msg, true);
+	struct ast_channel *savedOwner, *savedPeerOwner;
+	struct brcm_subchannel *sub, *sub_peer;
+	struct brcm_pvt *pvt;
+	int i;
 
-	if (type && str) {
-		ast_verbose("{ \"%s\": %s }\n", type, str);
-
-	}
-	
-	if (str)
-		free(str);
-}
-
-
-
-//-------------------------------------------------------------
-void info_ind(struct ubus_context *ctx, struct ubus_event_handler *ev,
-			  const char *type, struct blob_attr *msg)
-{
-	struct json_object *obj, *val;
-	char *json, *dialed_nr;
-	int terminal, endpt, i, j;
-	struct brcm_pvt *p;
-	struct brcm_subchannel *sub;
-
-	ast_verbose("info_ind\n");
-	json = blobmsg_format_json(msg, true);
-	obj = json_tokener_parse(json);
-
-	if( (json_object_object_get_ex(obj, "terminal", &val)) == true) {
-		terminal = json_object_get_int(val);
-		
-		if (bad_handsetnr(terminal))
-			return;
-		
-		ast_verbose("terminal: %d\n", terminal);
-	} else {
-		ast_verbose("no terminal id\n");
-		return;
-	}
-
-	if( (json_object_object_get_ex(obj, "dialed_nr", &val)) == true) {
-		dialed_nr = json_object_get_string(val);
-	} else {
-		ast_verbose("no dialed nr\n");
-		return;
-	}
-	
-	ast_verbose("dialed_nr: %s\n", dialed_nr);
-	endpt = terminal;
-	p = brcm_get_pvt_from_lineid(iflist, endpt);
-	
-	if (!p) {
+	pvt = brcm_get_pvt_from_lineid(iflist, pcm);
+	if (!pvt) {
 		ast_verbose("no pvt!\n");
-		return;
-	} else {
-		ast_verbose("got pvt!\n");
+		return -1;
 	}
-
 	
 	/* Abandon all hope ye who enter here. */
-	for (i = 0; i < strlen(dialed_nr); i++) {
+	for (i = 0; i < strlen(number); i++) {
 
+		// Verify user digits and map to events
 		const DTMF_CHARNAME_MAP *dtmfMap = dtmf_to_charname;
-		int rDetected = 0;
-
-
-		while (dtmfMap->c != dialed_nr[i]) {
-			
+		if(!number[i]) continue;
+		while(dtmfMap->event != EPEVT_LAST && number[i] != dtmfMap->c &&
+				number[i] != R_KEY && number[i] != PAUSE_KEY) {
 			dtmfMap++;
-			if (dtmfMap->event == EPEVT_LAST) {
-
-				if (R_KEY == dialed_nr[i]) {
-					rDetected = 1;
-					break;
-				}
-
-				/* DTMF not found. Should not be reached. */
-				ast_log(LOG_WARNING, "Failed to handle DTMF. Event not found.\n");
-				return;
-			}
+		}
+		if(dtmfMap->event == EPEVT_LAST) {
+				ast_log(LOG_WARNING, "Invalid DTMF %x\n", number[i]);
+				continue;
 		}
 
 		/* Get locks in correct order */
-		ast_mutex_lock(&p->lock);
+		ast_mutex_lock(&pvt->lock);
 
-		struct brcm_subchannel *sub = brcm_get_active_subchannel(p);
-		struct brcm_subchannel *sub_peer = brcm_subchannel_get_peer(sub);
-		struct ast_channel *owner = sub->owner;
-		struct ast_channel *peer_owner = sub_peer->owner;
+		sub = brcm_get_active_subchannel(pvt);
+		sub_peer = brcm_subchannel_get_peer(sub);
+		savedOwner = sub->owner;
+		savedPeerOwner = sub_peer->owner;
 		
 		if (sub->owner) {
-			ast_channel_ref(owner);
+			ast_channel_ref(sub->owner);
 		}
 		if (sub_peer->owner) {
-			ast_channel_ref(peer_owner);
+			ast_channel_ref(sub_peer->owner);
 		}
-		ast_mutex_unlock(&p->lock);
+		ast_mutex_unlock(&pvt->lock);
 
-		if (owner && peer_owner) {
-			if (owner < peer_owner) {
-				ast_channel_lock(owner);
-				ast_channel_lock(peer_owner);
+		if (sub->owner && sub_peer->owner) {
+			if (sub->owner < sub_peer->owner) {
+				ast_channel_lock(sub->owner);
+				ast_channel_lock(sub_peer->owner);
 			}
 			else {
-				ast_channel_lock(peer_owner);
-				ast_channel_lock(owner);
+				ast_channel_lock(sub_peer->owner);
+				ast_channel_lock(sub->owner);
 			}
 		}
-		else if (owner) {
-			ast_channel_lock(owner);
+		else if (sub->owner) {
+			ast_channel_lock(sub->owner);
 		}
-		else if (peer_owner) {
-			ast_channel_lock(peer_owner);
+		else if (sub_peer->owner) {
+			ast_channel_lock(sub_peer->owner);
 		}
-		ast_mutex_lock(&p->lock);
+		ast_mutex_lock(&pvt->lock);
 		
-		
-		if (sub) {
-			if (!rDetected) {
+		// Pressed "R"?
+		if (number[i] == R_KEY) {
+			/* Hookflash */
+			pvt->hf_detected = 1;
+			handle_hookflash(sub, sub_peer, sub->owner, sub_peer->owner);
+		}
+		else if (number[i] == PAUSE_KEY) {
+			/* How to forward a pause digit to the
+			 * SIP channel, as in RFC4967? */
+			usleep(500000);
+		}
+		else {
+			/* Send DTMF digit event to Asterisk core */
+			unsigned int old_state = sub->channel_state;
 
-				/* DTMF */
-				for (j = 0; j < 2; j++) { // we need to send two events: press and depress
+			// Send two events: press and depress.
+			handle_dtmf(dtmfMap->event, sub, sub_peer, sub->owner, sub_peer->owner);
+			handle_dtmf(dtmfMap->event, sub, sub_peer, sub->owner, sub_peer->owner);
 
-					/* Interdigit timeout is scheduled for both press and depress */
-					brcm_cancel_dialing_timeouts(p);
-
-					unsigned int old_state = sub->channel_state;
-					handle_dtmf(dtmfMap->event, sub, sub_peer, owner, peer_owner);
-					if (sub->channel_state == DIALING && old_state != sub->channel_state) {
-
-						/* DTMF event took channel state to DIALING. Stop dial tone. */
-						ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
-						brcm_stop_dialtone(p);
-					}
-
-					if (sub->channel_state == DIALING) {
-						ast_log(LOG_DEBUG, "Handle DTMF calling\n");
-						handle_dtmf_calling(sub);
-					}
+			if (sub->channel_state == DIALING) {
+				if(old_state != sub->channel_state) {
+					/* DTMF event took channel state to
+					 * DIALING. Stop dial tone. */
+					ast_log(LOG_DEBUG, "Dialing. Stop dialtone.\n");
+					brcm_stop_dialtone(pvt);
 				}
+				handle_dtmf_calling(sub);
+			}
 
-				if (brcm_should_relay_dtmf(sub)) {
-					switch (get_dtmf_relay_type(sub)) {
+			if (brcm_should_relay_dtmf(sub)) {
+				switch (get_dtmf_relay_type(sub)) {
 					case EPDTMFRFC2833_DISABLED:
 						ast_debug(5, "Generating inband DTMF for DECT\n");
 						brcm_signal_dtmf_ingress(sub, dtmfMap->i);
 						break;
 					case EPDTMFRFC2833_ENABLED:
 					case EPDTMFRFC2833_SUBTRACT: {
-						struct ast_frame f = { 0, };
+						struct ast_frame f;
+						memset(&f, 0, sizeof(f));
 						f.subclass.integer = dtmfMap->c;
 						f.src = "BRCM";
 						f.frametype = AST_FRAME_DTMF_END;
-						if (owner) {
-							ast_queue_frame(owner, &f);
-						}
+						if (sub->owner) ast_queue_frame(sub->owner, &f);
 						break;
 					}
 					default:
 						ast_log(LOG_WARNING, "DTMF mode unknown\n");
 						break;
-					}
 				}
 			}
-			else {
-				/* Hookflash */
-				p->hf_detected = 1;
-				handle_hookflash(sub, sub_peer, owner, peer_owner);
-			}
 		}
-		ast_mutex_unlock(&p->lock);
 
-		if (owner) {
-			ast_channel_unlock(owner);
-			ast_channel_unref(owner);
+		// Release locks
+		ast_mutex_unlock(&pvt->lock);
+
+		if (savedOwner) {
+			ast_channel_unlock(savedOwner);
+			ast_channel_unref(savedOwner);
 		}
-		if (peer_owner) {
-			ast_channel_unlock(peer_owner);
-			ast_channel_unref(peer_owner);
+		if (savedPeerOwner) {
+			ast_channel_unlock(savedPeerOwner);
+			ast_channel_unref(savedPeerOwner);
 		}
 	}
 
+	return 0;
 }
-
 
 
 //-------------------------------------------------------------
@@ -430,35 +386,8 @@ static int ubus_poll(struct ubus_context *ctx, int oneShot) {
 
 
 //-------------------------------------------------------------
-int ast_ubus_listen(struct ubus_context *ctx) {
-
-	static struct ubus_event_handler listener, svej, hej, info;
-	const char *event, *svej_event, *hej_event, *info_event;
+static int ast_ubus_listen(struct ubus_context *ctx) {
 	int ret = 0;
-
-	/* all */
-	memset(&listener, 0, sizeof(listener));
-	listener.cb = ast_ubus_event;
-	event = "*";
-
-	ret = ubus_register_event_handler(ctx, &listener, event);
-	if (ret) {
-		ast_verbose("\n\nError while registering for event '%s': %s\n\n\n",
-			    event, ubus_strerror(ret));
-		return -1;
-	}
-
-	/* dect.api.info_ind */
-	memset(&info, 0, sizeof(info));
-	info.cb = info_ind;
-	info_event = "dect.api.info_ind";
-
-	ret = ubus_register_event_handler(ctx, &info, info_event);
-	if (ret) {
-		ast_verbose("Error while registering for event '%s': %s\n",
-			    info_event, ubus_strerror(ret));
-		return -1;
-	}
 
 	// Invoke our RPC handler when ubus calls (not events) arrive
 	if(ubus_add_object(ctx, &rpcObj) != UBUS_STATUS_OK) {
@@ -466,15 +395,10 @@ int ast_ubus_listen(struct ubus_context *ctx) {
 		return -1;
 	}
 
-
 	// main loop, listen for ubus events
 	ret = ubus_poll(ctx, 0);
 
 	ubus_remove_object(ctx, &rpcObj);
-	ubus_unregister_event_handler(ctx, &info);
-	ubus_unregister_event_handler(ctx, &svej);
-	ubus_unregister_event_handler(ctx, &hej);
-	ubus_unregister_event_handler(ctx, &listener);
 	ubus_free(ctx);
 
 	ret = 0;
@@ -555,13 +479,14 @@ static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *
 {
 	int res, termId, pcmId, add, release;
 	struct blob_attr **keys;
-	const char *strVal;
+	const char *cid;
 
 	res = 0;
 	termId = -1;
 	pcmId = -1;
 	add = 0;
 	release = 0;
+	cid = NULL;
 
 	// Tokenize message key/value paris into an array
 	res = keyTokenize(obj, methodName, msg, &keys);
@@ -588,8 +513,13 @@ static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *
 		ast_verbose("call release pcm %d\n", pcmId);
 	}
 
+	if(keys[CALL_CID]) {
+		cid = blobmsg_get_string(keys[CALL_CID]);
+		ast_verbose("call cid %s\n", cid);
+	}
+
 	// Did we get all arguments we need?
-	if(bad_handsetnr(termId) || pcmId < 0) {
+	if(bad_handsetnr(termId) || pcmId < 0 || (cid && cid[strnlen(cid, 64)])) {
 		res = EINVAL;
 	}
 	else if(release) {
@@ -600,7 +530,10 @@ static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *
 		}
 	}
 	else if(add) {
-		if(vrgEndptSendCasEvtToEndpt(
+		if(cid) {
+			res = userDials(termId, cid, pcmId);								// User dials digits
+		}
+		else if(vrgEndptSendCasEvtToEndpt(
 				(ENDPT_STATE*) &(endptObjState[termId - 1]),					/* Signal offhook to endpoint driver */
 				CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK)) {
 			res = EIO;
