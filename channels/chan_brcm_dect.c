@@ -1390,12 +1390,12 @@ void *brcm_monitor_dect(void *data) {
 
 	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket");
-		return -1;
+		return NULL;
 	}
 
 	if (connect(s, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr)) < 0) {
 		perror("connect");
-		return -1;
+		return NULL;
 	}
 
 
