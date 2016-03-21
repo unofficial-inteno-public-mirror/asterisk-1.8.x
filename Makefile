@@ -214,6 +214,16 @@ ifeq ($(AST_DEVMODE),yes)
   _ASTCFLAGS+=-Wundef 
   _ASTCFLAGS+=-Wmissing-format-attribute
   _ASTCFLAGS+=-Wformat=2
+  _ASTCFLAGS+=-Wno-error=array-bounds # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=declaration-after-statement # @todo@ Make dependent on $(AST_DECLARATION_AFTER_STATEMENT). Remove later
+  _ASTCFLAGS+=-Wno-error=format # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=missing-prototypes # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=return-type # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=strict-prototypes # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=undef # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=uninitialized # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=unused-function # @todo@ Remove later
+  _ASTCFLAGS+=-Wno-error=unused-variable # @todo@ Remove later
 endif
 
 ifneq ($(findstring BSD,$(OSARCH)),)
