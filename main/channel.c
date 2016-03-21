@@ -7135,6 +7135,11 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 			int bridge_exit = 0;
 
 			switch (f->subclass.integer) {
+#if 0
+			case AST_CONTROL_FLASH:
+				ast_indicate(other, f->subclass.integer);
+				break;
+#endif
 			case AST_CONTROL_AOC:
 				ast_indicate_data(other, f->subclass.integer, f->data.ptr, f->datalen);
 				break;
@@ -7161,6 +7166,15 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 					ast_jb_empty_and_reset(c0, c1);
 				}
 				break;
+#if 0
+			case AST_CONTROL_UPDATE_RTP_PEER:
+				ast_indicate_data(other, f->subclass.integer, f->data.ptr, f->datalen);
+				if (jb_in_use) {
+					ast_jb_empty_and_reset(c0, c1);
+				}
+				// @todo@ Do update_peer?
+				break;
+#endif
 			default:
 				*fo = f;
 				*rc = who;
