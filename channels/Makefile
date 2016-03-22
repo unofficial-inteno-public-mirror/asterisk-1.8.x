@@ -105,6 +105,8 @@ chan_brcm_dect.o chan_brcm.o: _ASTCFLAGS+= \
 	-I$(STAGING_DIR)/usr/include/bcm963xx/xChange/dslx_common/xchg_drivers/inc \
 	-DBOS_OS_LINUXUSER -DBOS_CFG_TIME -DNTR_SUPPORT \
 
+chan_brcm_dect.o: _ASTCFLAGS+= \
+	-DBRCM_DECT
 
 chan_misdn.o: _ASTCFLAGS+=-Imisdn
 

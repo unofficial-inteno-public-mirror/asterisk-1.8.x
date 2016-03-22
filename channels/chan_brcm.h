@@ -273,20 +273,25 @@ EPSTATUS ovrgEndptSignal(ENDPT_STATE *endptState, int cnxId, EPSIG signal, unsig
 EPSTATUS vrgEndptProvGet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int provItemLength );
 
+#ifndef BRCM_DECT
 static int cwtimeout_cb(const void *data);
 static int r4hanguptimeout_cb(const void *data);
 static void brcm_generate_rtp_packet(struct brcm_subchannel *p, UINT8 *packet_buf, int type, int marker, int dtmf_timestamp);
+#endif /* !defined(BRCM_DECT) */
 int brcm_create_connection(struct brcm_subchannel *p);
+#ifndef BRCM_DECT
 static int brcm_mute_connection(struct brcm_subchannel *p);
 static int brcm_unmute_connection(struct brcm_subchannel *p);
 static int brcm_close_connection(struct brcm_subchannel *p);
 static int brcm_create_conference(struct brcm_pvt *p);
 static int brcm_stop_conference(struct brcm_subchannel *p);
 static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchannel *p, int result);
+#endif /* !defined(BRCM_DECT) */
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
 static int restart_monitor(void);
+#ifndef BRCM_DECT
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
 static int brcm_hangup(struct ast_channel *ast);
@@ -302,6 +307,7 @@ static int brcm_get_endpoints_count(void);
 static void brcm_provision_endpoints(void);
 static void brcm_create_endpoints(void);
 static void brcm_destroy_endpoints(void);
+#endif /* !defined(BRCM_DECT) */
 int brcm_signal_dialtone(struct brcm_pvt *p);
 int brcm_signal_congestion(struct brcm_pvt *p);
 int brcm_stop_dialtone(struct brcm_pvt *p);
@@ -315,13 +321,17 @@ int brcm_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel 
 int brcm_signal_dtmf(struct brcm_subchannel *sub, char digit);
 int brcm_signal_dtmf_ingress(struct brcm_subchannel *sub, int digit);
 int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit);
+#ifndef BRCM_DECT
 static int brcm_in_call(const struct brcm_pvt *p);
 static int brcm_in_callwaiting(const struct brcm_pvt *p);
 static int brcm_in_onhold(const struct brcm_pvt *p);
+#endif /* !defined(BRCM_DECT) */
 struct brcm_subchannel *brcm_get_idle_subchannel(const struct brcm_pvt *p);
 struct brcm_subchannel* brcm_get_active_subchannel(const struct brcm_pvt *p);
+#ifndef BRCM_DECT
 static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_state state);
 static int brcm_subchannel_is_idle(const struct brcm_subchannel const * const sub);
+#endif /* !defined(BRCM_DECT) */
 struct brcm_subchannel *brcm_subchannel_get_peer(const struct brcm_subchannel const * const sub);
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id);
 void handle_dtmf(EPEVT event, struct brcm_subchannel *sub, struct brcm_subchannel *sub_peer, struct ast_channel *owner, struct ast_channel *peer_owner);
