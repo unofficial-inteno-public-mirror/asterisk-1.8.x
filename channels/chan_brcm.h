@@ -306,7 +306,9 @@ static int brcm_senddigit_end(struct ast_channel *ast, char digit, unsigned int 
 static int brcm_get_endpoints_count(void);
 static void brcm_provision_endpoints(void);
 static void brcm_create_endpoints(void);
+#if 0
 static void brcm_destroy_endpoints(void);
+#endif
 #endif /* !defined(BRCM_DECT) */
 int brcm_signal_dialtone(struct brcm_pvt *p);
 int brcm_signal_congestion(struct brcm_pvt *p);

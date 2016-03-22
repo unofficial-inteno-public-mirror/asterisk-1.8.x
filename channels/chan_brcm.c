@@ -4069,7 +4069,7 @@ static void brcm_create_endpoints(void)
 	}
 }
 
-
+#if 0
 static void brcm_destroy_endpoints(void)
 {
 	int i;
@@ -4079,6 +4079,7 @@ static void brcm_destroy_endpoints(void)
 		vrgEndptDestroy((VRG_ENDPT_STATE *)&endptObjState[i]);
 	}
 }
+#endif
 
 int endpt_init(void)
 {
