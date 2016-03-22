@@ -276,6 +276,7 @@ static struct brcm_channel_tech fxs_tech = {
 };
 
 /* Tries to lock 10 timees, then gives up */
+#if 0
 static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 {
 	int i = 10;
@@ -288,6 +289,7 @@ static int pvt_trylock(struct brcm_pvt *pvt, const char *reason)
 	ast_debug(9, "----> Failed to lock port %d - %s\n", pvt->line_id, reason);
 	return 0;
 }
+#endif
 
 #ifdef BRCM_LOCK_DEBUG
 static int pvt_lock(struct brcm_pvt *pvt, const char *reason)
