@@ -582,6 +582,8 @@
 		</member>
 		<member name="INTEGER_CALLERID" displayname="Use the (less accurate) integer-based method for decoding FSK tones (for embedded systems)">
 		</member>
+		<member name="BRCM_LOCK_DEBUG" displayname="Enable BRCM lock debugging">
+		</member>
 	</category>
 <category name="MENUSELECT_OPTS_app_voicemail" displayname="Voicemail Build Options" positive_output="yes" remove_on_change="apps/app_voicemail.o apps/app_directory.o">
 	<member name="ODBC_STORAGE" displayname="Storage of Voicemail using ODBC">
