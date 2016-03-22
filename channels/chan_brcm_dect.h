@@ -46,7 +46,6 @@ int dect_signal_ringing(struct brcm_pvt *p);
 int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
 int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
 
-static void nvs_update_ind(unsigned char *mail);
 void dect_ring_handset(int handset);
 
 #endif /* CHAN_BRCM_DECT_H */

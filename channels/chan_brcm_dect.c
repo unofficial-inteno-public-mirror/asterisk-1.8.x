@@ -107,6 +107,7 @@ const struct brcm_channel_tech dect_tech = {
 static void logMessage(int read, uint8_t *data, int len);
 static void logDectDrvWrite(uint8_t *data, int size);
 static void logDectDrvRead(uint8_t *data, int size);
+static void nvs_update_ind(unsigned char *mail);
 
 static int bad_handsetnr(int handset) {
 
