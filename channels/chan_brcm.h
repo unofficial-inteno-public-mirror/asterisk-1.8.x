@@ -290,7 +290,9 @@ static int brcm_finish_transfer(struct ast_channel *owner, struct brcm_subchanne
 int endpt_init(void);
 int endpt_deinit(void);
 void event_loop(void);
+#if 0
 static int restart_monitor(void);
+#endif
 #ifndef BRCM_DECT
 static struct ast_channel *brcm_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause);
 static int brcm_call(struct ast_channel *ast, char *dest, int timeout);
