@@ -859,6 +859,7 @@ static char* brcm_get_codec_string(int id) {
 /*
 * Map rtp packet header value to corresponding asterisk codec
 */
+#if 0
 static int map_rtp_to_ast_codec_id(int id) {
 	switch (id) {
 		case PCMU: return AST_FORMAT_ULAW;
@@ -874,6 +875,7 @@ static int map_rtp_to_ast_codec_id(int id) {
 		}
 	}
 }
+#endif
 
 static int brcm_classify_rtp_packet(int id) {
 	switch (id) {
