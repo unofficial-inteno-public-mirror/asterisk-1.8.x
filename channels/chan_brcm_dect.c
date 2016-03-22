@@ -530,10 +530,11 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 }
 
 
-
+#if 0
 static void dect_signal_dialtone(int i) {
 	ovrgEndptSignal( (ENDPT_STATE*)&endptObjState[i], -1, EPSIG_DIAL, 1, -1, -1 , -1);
 }
+#endif
 
 
 
