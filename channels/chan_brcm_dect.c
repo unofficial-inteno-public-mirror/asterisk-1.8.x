@@ -56,16 +56,9 @@ enum {
 };
 
 
-struct dect_handset {
-	enum channel_state state;
-	char cid[CID_MAX_LEN];
-};
-
-
-
 static int dect_release(struct brcm_pvt *p);
 static int dect_signal_ringing(struct brcm_pvt *p);
-static int dect_signal_ringing_callerid_pending(struct brcm_pvt *p);
+static int dect_dummy(struct brcm_pvt *p);
 static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
 static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg);
@@ -106,11 +99,10 @@ static struct ubus_object rpcObj = {
 extern VRG_ENDPT_STATE endptObjState[MAX_NUM_LINEID];
 extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
-static struct dect_handset handsets[MAX_NR_HANDSETS];
 
 const struct brcm_channel_tech dect_tech = {
 	.signal_ringing = dect_signal_ringing,
-	.signal_ringing_callerid_pending = dect_signal_ringing_callerid_pending,
+	.signal_ringing_callerid_pending = dect_dummy,
 	.signal_callerid = dect_signal_callerid,
 	.stop_ringing = dect_release,
 	.stop_ringing_callerid_pending = dect_release,
@@ -129,29 +121,26 @@ static int bad_handsetnr(int handset) {
 }
 
 
-
 //-------------------------------------------------------------
-static int dect_signal_ringing_callerid_pending(struct brcm_pvt *p) {
-	ast_verbose("dect_signal_ringing_callerid_pending()\n");
-	dect_signal_ringing(p);
-	return 0;
-}
-
+static int dect_dummy(struct brcm_pvt *p) { return 0; }
 
 
 //-------------------------------------------------------------
 static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
-	
-	int handset = s->parent->line_id + 1;
-	ast_verbose("dect_signal_callerid(): %s\n", chan->connected.id.number.str);
-	
-	if (bad_handsetnr(handset))
-		return 1;
-	
-	strncpy(handsets[handset].cid, chan->connected.id.number.str, CID_MAX_LEN);
+	const char *cid;
+	int handset;
 
-	return dectmngr_call(handset, s->parent->line_id,
-		-1, chan->connected.id.number.str);
+	handset = s->parent->line_id + 1;
+	cid = NULL;
+
+	if(bad_handsetnr(handset)) return 1;
+
+	if(chan->connected.id.number.valid) {
+		ast_verbose("dect_signal_callerid(): %s\n", chan->connected.id.number.str);	
+		cid = chan->connected.id.number.str;
+	}
+
+	return dectmngr_call(s->parent->line_id + 1, s->parent->line_id, -1, cid);
 }
 
 
@@ -164,7 +153,6 @@ static int dect_signal_ringing(struct brcm_pvt *p)
 
 	return dectmngr_call(p->line_id + 1, p->line_id, -1, NULL);
 }
-
 
 
 
@@ -352,6 +340,7 @@ static int userDials(int termId, const char *number, int pcm)
 
 	return 0;
 }
+
 
 
 //-------------------------------------------------------------
@@ -587,7 +576,6 @@ ast_verbose("Sending ubus request %d %d %d\n", terminal, add, release);
 
 // TODO
 //ctx->connection_lost = my_custom_cb_to_replace_the_default;
-
 
 	// Find id number for ubus "path"
 	res = ubus_lookup_id(ctx, ubusIdDectmngr, &id);
