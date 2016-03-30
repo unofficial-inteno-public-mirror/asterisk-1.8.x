@@ -3394,7 +3394,7 @@ static struct ast_cli_entry cli_brcm[] = {
 	AST_CLI_DEFINE(brcm_reload, "Reload chan_brcm configuration"),
 };
 
-
+/*! \brief Function called to unload the module */
 static int unload_module(void)
 {
 	struct brcm_pvt *p, *pl;
@@ -3878,6 +3878,7 @@ static void load_endpoint_settings(struct ast_config *cfg)
 	brcm_provision_endpoints();
 }
 
+/*! \brief Function called to load the module */
 static int load_module(void)
 {
 	struct ast_config *cfg;
@@ -4974,4 +4975,8 @@ static int feature_access_code_match(const char *sequence)
 	return retval;
 }
 
-AST_MODULE_INFO_STANDARD(ASTERISK_GPL_KEY, "Brcm SLIC channel");
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Brcm SLIC channel",
+		.load = load_module,
+		.unload = unload_module,
+		.load_pri = AST_MODPRI_DEFAULT,
+		);
