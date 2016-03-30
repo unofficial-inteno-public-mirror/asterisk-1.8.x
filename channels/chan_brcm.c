@@ -3086,6 +3086,19 @@ static char *brcm_show_dialtone_status(struct ast_cli_entry *e, int cmd, struct 
 	return CLI_SUCCESS;
 }
 
+/*! \brief Function called to load or reload the configuration file */
+static void load_config(int reload)
+{
+	return;
+}
+
+/*! \brief Function called to reload the module */
+static int reload_module(void)
+{
+	load_config(1);
+	return 0;
+}
+
 /*! \brief CLI for reloading brcm config.
  * Note that the contry setting will not be reloaded. In order to do that the following
  * sequence must be carried out: vrgEndptDeinit(), vrgEndptDriverClose(), vrgEndptDriverOpen()
@@ -3883,6 +3896,8 @@ static int load_module(void)
 {
 	struct ast_config *cfg;
 	int result;
+
+	load_config(0);
 
 	/* Setup scheduler thread */
 	if (!(sched = ast_sched_thread_create())) {
@@ -4978,5 +4993,6 @@ static int feature_access_code_match(const char *sequence)
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_LOAD_ORDER, "Brcm SLIC channel",
 		.load = load_module,
 		.unload = unload_module,
+		.reload = reload_module,
 		.load_pri = AST_MODPRI_DEFAULT,
 		);
