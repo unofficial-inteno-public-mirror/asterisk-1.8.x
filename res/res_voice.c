@@ -8,6 +8,11 @@
  *
  */
 
+/*** MODULEINFO
+	<depend>ubus</depend>
+	<support_level>extended</support_level>
+ ***/
+
 #include "asterisk.h"
 #include "asterisk/module.h"
 #include "asterisk/manager.h"
