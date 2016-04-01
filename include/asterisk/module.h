@@ -329,16 +329,16 @@ static const __attribute__((unused)) struct ast_module_info *ast_module_info;
 #define make_var_sub(mod, type) __ ## mod ## _ ## type
 #define make_var(mod, type) make_var_sub(mod, type)
 
-extern void make_var(EMBEDDED_MODULE, bss_start);
-extern void make_var(EMBEDDED_MODULE, bss_end);
-extern void make_var(EMBEDDED_MODULE, data_start);
-extern void make_var(EMBEDDED_MODULE, data_end);
+extern char make_var(EMBEDDED_MODULE, bss_start)[0];
+extern char make_var(EMBEDDED_MODULE, bss_end)[0];
+extern char make_var(EMBEDDED_MODULE, data_start)[0];
+extern char make_var(EMBEDDED_MODULE, data_end)[0];
 
 static void * __attribute__((section(".embed_module"))) __global_backup;
 
-static int __backup_globals(void)
+static int __attribute__((unused)) __backup_globals(void)
 {
-	size_t data_size = & make_var(EMBEDDED_MODULE, data_end) - & make_var(EMBEDDED_MODULE, data_start);
+	size_t data_size = & make_var(EMBEDDED_MODULE, data_end)[0] - & make_var(EMBEDDED_MODULE, data_start)[0];
 
 	if (__global_backup)
 		return 0;
@@ -354,10 +354,10 @@ static int __backup_globals(void)
 	return 0;
 }
 
-static void __restore_globals(void)
+static __attribute__((unused)) void __restore_globals(void)
 {
-	size_t data_size = & make_var(EMBEDDED_MODULE, data_end) - & make_var(EMBEDDED_MODULE, data_start);
-	size_t bss_size = & make_var(EMBEDDED_MODULE, bss_end) - & make_var(EMBEDDED_MODULE, bss_start);
+	size_t data_size = & make_var(EMBEDDED_MODULE, data_end)[0] - & make_var(EMBEDDED_MODULE, data_start)[0];
+	size_t bss_size = & make_var(EMBEDDED_MODULE, bss_end)[0] - & make_var(EMBEDDED_MODULE, bss_start)[0];
 
 	if (bss_size)
 		memset(& make_var(EMBEDDED_MODULE, bss_start), 0, bss_size);
