@@ -43,7 +43,7 @@ voice/fw.o: voice/fw.c voice/fw.h voice/ip.h
 voice/sip.o: _ASTCFLAGS+=$(call MOD_ASTCFLAGS,res_voice) -fPIC -Wall -Werror
 voice/sip.o: voice/sip.c voice/sip.h voice/ip.h
 res_voice.so: LIBS+=-lubus -lubox -ljson-c -luci
-$(if $(filter res_voice,$(EMBEDDED_MODS)),modules.link,res_voice.so): voice/ami.o voice/brcm.o voice/leds.o voice/codec.o voice/ucix.o voice/uci.o voice/fw.o voice/sip.o voice/ip.h
+$(if $(filter res_voice,$(EMBEDDED_MODS)),modules.link,res_voice.so): voice/ami.o voice/brcm.o voice/leds.o voice/codec.o voice/ucix.o voice/uci.o voice/fw.o voice/sip.o
 
 res_config_ldap.o: _ASTCFLAGS+=-DLDAP_DEPRECATED
 
