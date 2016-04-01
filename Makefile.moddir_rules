@@ -47,9 +47,9 @@ C_MODS:=$(filter-out $(MENUSELECT_$(MENUSELECT_CATEGORY)),$(ALL_C_MODS))
 CC_MODS:=$(filter-out $(MENUSELECT_$(MENUSELECT_CATEGORY)),$(ALL_CC_MODS))
 
 ifneq ($(findstring EMBED_$(MENUSELECT_CATEGORY),$(MENUSELECT_EMBED)),)
-    EMBEDDED_MODS:=$(C_MODS) $(CC_MODS)
+    EMBEDDED_MODS:=$(strip $(C_MODS) $(CC_MODS))
 else
-    LOADABLE_MODS:=$(C_MODS) $(CC_MODS)
+    LOADABLE_MODS:=$(strip $(C_MODS) $(CC_MODS))
 endif
 
 # Both C++ and C++ sources need their module name in AST_MODULE
