@@ -34,7 +34,11 @@
  * Enable V18 support
  */
 
-
+/*** MODULEINFO
+	<use>res_crypto</use>
+	<depend>chan_local</depend>
+	<support_level>extended</support_level>
+ ***/
 
 #include "asterisk.h"
 
