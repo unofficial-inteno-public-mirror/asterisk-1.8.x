@@ -15,7 +15,7 @@
 			<depend>gnu_ld</depend>
 			<support_level>extended</support_level>
 		</member>
-		<member name="EMBED_CHANNELS" displayname="Channels" remove_on_change="channels/*.o channels/*/*.o channels/*.oo channels/*/*.oo">
+		<member name="EMBED_CHANNELS" displayname="Channels" remove_on_change="channels/modules.link channels/*.i channels/*/*.i channels/*.ii channels/*/*.iichannels/*.o channels/*/*.o channels/*.oo channels/*/*.oo">
 			<depend>gnu_ld</depend>
 			<support_level>extended</support_level>
 		</member>
