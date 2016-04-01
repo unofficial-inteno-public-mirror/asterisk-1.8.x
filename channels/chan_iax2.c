@@ -33,6 +33,7 @@
 
 /*** MODULEINFO
 	<use>crypto</use>
+	<depend>res_crypto</depend>
 	<support_level>core</support_level>
  ***/
 
