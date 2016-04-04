@@ -112,6 +112,7 @@ misdn_config.o: _ASTCFLAGS+=-Imisdn
 
 misdn/isdn_lib.o: _ASTCFLAGS+=-Wno-strict-aliasing
 
+chan_brcm.so: LIBS+=-lubus -lubox
 $(if $(filter chan_brcm,$(EMBEDDED_MODS)),modules.link,chan_brcm.so): chan_brcm.o chan_brcm_dect.o
 
 $(if $(filter chan_misdn,$(EMBEDDED_MODS)),modules.link,chan_misdn.so): misdn_config.o misdn/isdn_lib.o misdn/isdn_msg_parser.o

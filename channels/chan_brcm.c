@@ -235,8 +235,6 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
 
-extern struct brcm_channel_tech dect_tech;
-
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
 
@@ -2516,6 +2514,8 @@ static void *brcm_monitor_events(void *data)
 
 static int start_threads(void)
 {
+	sigset_t blockSig;
+
 	/* If we're supposed to be stopped -- stay stopped */
 	if (monitor_thread == AST_PTHREADT_STOP)
 		return 0;
@@ -2543,6 +2543,16 @@ static int start_threads(void)
 			sched_yield();
 		pthread_join(monitor_thread, NULL);
 		ast_mutex_unlock(&iflock);
+	}
+
+	/* Block signals which will disturb us. New threads
+	 * inherits a copy of its creator's signal mask. */
+	sigemptyset(&blockSig);
+	sigaddset(&blockSig, SIGPIPE);
+	sigaddset(&blockSig, SIGCHLD);
+	if(pthread_sigmask(SIG_BLOCK, &blockSig, NULL)) {
+		perror("Error chan_brcm pthread_sigmask()");
+		return -1;
 	}
 
 	monitor = 1;
@@ -3039,6 +3049,7 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 #endif
 	ast_cli(a->fd, "Monitor thread: 0x%x[%d]\n", (unsigned int) monitor_thread, monitor);
 	ast_cli(a->fd, "Packet thread : 0x%x[%d]\n", (unsigned int) packet_thread, packets);
+	ast_cli(a->fd, "Dect thread : 0x%x[%d] %d\n", (unsigned int) dect_thread, dect, pthread_kill(dect_thread, 0));
 	ast_cli(a->fd, "FAC list      : %s\n", feature_access_code_string(buffer, AST_MAX_EXTENSION));
 
 	/* print status for individual pvts */
