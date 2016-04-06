@@ -16,6 +16,8 @@ defaults.h
 *.moduleinfo
 .configured_
 .dep_files
+aclocal.m4
+autom4te.cache
 build_tools/menuselect-deps
 channels/h323/Makefile
 doc/core-en_US.xml
