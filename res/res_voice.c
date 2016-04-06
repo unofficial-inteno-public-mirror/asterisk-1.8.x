@@ -126,10 +126,10 @@ struct ami_context
 static int ubus_connected = 0;
 static int running = 0;
 static pthread_t res_voice_thread_handle;
-struct ubus_context* ctx; //ubus context
-struct ami* mgr; //manager listener context
-struct fw* fw; //Managed firewall struct
-struct leds* leds; //Managed leds struct
+struct ubus_context* ctx = NULL; //ubus context
+struct ami* mgr = NULL; //manager listener context
+struct fw* fw = NULL; //Managed firewall struct
+struct leds* leds = NULL; //Managed leds struct
 int mgr_fd[2];
 static SIP_PEER sip_peers[SIP_ACCOUNT_UNKNOWN + 1];
 static BRCM_PORT_MAP brcm_ports[BRCM_PORT_UNKNOWN + 1];
