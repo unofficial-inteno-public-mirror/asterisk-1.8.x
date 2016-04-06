@@ -9,7 +9,6 @@
  */
 
 /*** MODULEINFO
-	<depend>ubus</depend>
 	<support_level>extended</support_level>
  ***/
 
