@@ -8,14 +8,11 @@
  *
  */
 
-/*
-	# @todo@ Add "<depend>ubus</depend>" to MODULEINFO later?
-	# @todo@ Add "<depend>ubox</depend>" to MODULEINFO later?
-	# @todo@ Add "<depend>uci</depend>" to MODULEINFO later?
-	# @todo@ Add "<depend>json-c</depend>" to MODULEINFO later?
-*/
-
 /*** MODULEINFO
+	<depend>ubus</depend>
+	<depend>ubox</depend>
+	<depend>uci</depend>
+	<depend>jsonc</depend>
 	<support_level>extended</support_level>
  ***/
 
