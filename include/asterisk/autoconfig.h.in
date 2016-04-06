@@ -358,6 +358,9 @@
 /* Define to 1 if you have the Jack Audio Connection Kit library. */
 #undef HAVE_JACK
 
+/* Define to 1 if you have the json-c lib library. */
+#undef HAVE_JSONC
+
 /* Define to 1 if you have the `kevent64' function. */
 #undef HAVE_KEVENT64
 
@@ -969,6 +972,15 @@
 /* Define to 1 if you have the `truncl' function. */
 #undef HAVE_TRUNCL
 
+/* Define to 1 if you have the ubox lib library. */
+#undef HAVE_UBOX
+
+/* Define to 1 if you have the ubus lib library. */
+#undef HAVE_UBUS
+
+/* Define to 1 if you have the uci lib library. */
+#undef HAVE_UCI
+
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
@@ -1196,6 +1208,11 @@
 
 /* Define to 1 if running on Darwin. */
 #undef _DARWIN_UNLIMITED_SELECT
+
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+# define _DARWIN_USE_64_BIT_INODE 1
+#endif
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
