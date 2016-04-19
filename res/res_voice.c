@@ -30,7 +30,7 @@
 #include <libubus.h>
 #include <pthread.h>
 #include <signal.h>
-#include <json/json.h>
+#include <json-c/json.h>
 
 #define BUFLEN 512
 #define MODULE_SHOW_INTERVAL_S 5
