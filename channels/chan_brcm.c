@@ -239,7 +239,7 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 #endif
 
 /* Linked list of pvt:s */
-struct brcm_pvt *iflist;
+struct brcm_pvt *iflist = NULL;
 
 #ifdef BRCM_DECT
 extern struct brcm_channel_tech dect_tech;
