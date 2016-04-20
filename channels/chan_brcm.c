@@ -120,7 +120,9 @@ static line_settings line_config[MAX_NUM_LINEID];
 static int current_connection_id = 0;
 static int num_fxs_endpoints = -1;
 static int num_fxo_endpoints = -1;
+#ifdef BRCM_DECT
 static int num_dect_endpoints = -1;
+#endif
 static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int clip = 1; // Caller ID presentation
@@ -239,7 +241,9 @@ static int endpoint_country = VRG_COUNTRY_NORTH_AMERICA;
 /* Linked list of pvt:s */
 struct brcm_pvt *iflist;
 
+#ifdef BRCM_DECT
 extern struct brcm_channel_tech dect_tech;
+#endif
 
 /* Protect the interface list (of brcm_pvt's) */
 AST_MUTEX_DEFINE_STATIC(iflock);
@@ -2563,7 +2567,7 @@ static int start_threads(void)
 		return -1;
 	}
 
-
+#ifdef BRCM_DECT
 	/* Start a dect event polling thread */
 	/* This thread blocks on ioctl and wakes up when an event is avaliable from the endpoint  */
 	dect = 1;
@@ -2572,6 +2576,7 @@ static int start_threads(void)
 		ast_log(LOG_ERROR, "Unable to start dect thread.\n");
 		return -1;
 	}
+#endif
 
 	/* Start a new sound polling thread */
 	/* This thread blocks on ioctl and wakes up when an rpt packet is avaliable from the endpoint  */
@@ -2657,8 +2662,12 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		/* Low level signaling */
 		if (endpoint_type == FXS) {
 			tmp->tech = &fxs_tech;
+#ifdef BRCM_DECT
 		} else if (endpoint_type == DECT) {
 			tmp->tech = &dect_tech;
+#endif
+		} else {
+			tmp->tech = NULL;
 		}
 	}
 	return tmp;
@@ -2670,6 +2679,7 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 	struct brcm_pvt *tmp = iflist;
 	struct brcm_pvt *tmp_next;
 
+#ifdef BRCM_DECT
 	for (i=0 ; i<num_dect_endpoints ; i++) {
 		tmp_next = brcm_allocate_pvt("", DECT);
 		if (tmp == NULL) {
@@ -2682,6 +2692,7 @@ static void brcm_create_pvts(struct brcm_pvt *p, int mode) {
 			tmp = tmp_next;
 		}
 	}
+#endif
 
 	for (i=0; i<num_fxs_endpoints ; i++) {
 		tmp_next = brcm_allocate_pvt("", FXS);
@@ -3038,7 +3049,9 @@ static char *brcm_show_status(struct ast_cli_entry *e, int cmd, struct ast_cli_a
 	ast_cli(a->fd, "Channel version: %s\n\n", CHANNEL_VERSION);
 	ast_cli(a->fd, "FXS  endpoints: %d\n", num_fxs_endpoints);
 	ast_cli(a->fd, "FXO  endpoints: %d\n", num_fxo_endpoints);
+#ifdef BRCM_DECT
 	ast_cli(a->fd, "DECT endpoints: %d\n", num_dect_endpoints);
+#endif
 	ast_cli(a->fd, "Endpoint fd   : 0x%x\n", endpoint_fd);
 #if BCM_SDK_VERSION >= 416021
 	ast_cli(a->fd, "Country       : %s\n", endpoint_country.isoCode);
@@ -3157,9 +3170,14 @@ static char *brcm_reload(struct ast_cli_entry *e, int cmd, struct ast_cli_args *
 static int manager_brcm_ports_show(struct mansession *s, const struct message *m)
 {
 	char response[64];
+#ifdef BRCM_DECT
 	snprintf(response, 64, "\r\nFXS %d\r\nDECT %d\r\n",
 		num_fxs_endpoints,
 		num_dect_endpoints);
+#else
+	snprintf(response, 64, "\r\nFXS %d\r\n",
+		num_fxs_endpoints);
+#endif
 
 	astman_send_ack(s, m, response);
 	return 0;
@@ -4011,6 +4029,7 @@ static int brcm_get_endpoints_count(void)
 		ast_debug(3, "num_fxo_endpoints = %d\n", num_fxo_endpoints);
 	}
 
+#ifdef BRCM_DECT
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_debug(3, "ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
 		return -1;
@@ -4018,8 +4037,13 @@ static int brcm_get_endpoints_count(void)
 		num_dect_endpoints = endpointCount.endpointNum;
 		ast_debug(3, "num_dect_endpoints = %d\n", num_dect_endpoints);
 	}
+#endif
 
+#ifdef BRCM_DECT
 	num_endpoints = num_fxs_endpoints + num_fxo_endpoints + num_dect_endpoints;
+#else
+	num_endpoints = num_fxs_endpoints + num_fxo_endpoints;
+#endif
 
 	return 0;
 }
