@@ -51,6 +51,10 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #include "chan_brcm.h"
 #include "chan_brcm_dect.h"
 
+#ifndef AST_MODULE
+#define AST_MODULE "chan_brcm"
+#endif
+
 void dectSendClip(char* cid, int handset);
 
 #define DECT_NVS_SIZE 4096
