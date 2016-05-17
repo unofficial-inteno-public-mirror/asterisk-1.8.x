@@ -91,13 +91,28 @@
 #define AST_LOCK_TRACK_INIT_VALUE { { NULL }, { 0 }, 0, { NULL }, { 0 }, PTHREAD_MUTEX_INIT_VALUE }
 #endif
 
+#ifdef _MIPS_ARCH
+#define AST_MUTEX_INIT_VALUE { { { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }, 0, 0, 0 }, NULL, 1 }
+#define AST_MUTEX_INIT_VALUE_NOTRACKING { { { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }, 0, 0, 0 }, NULL, 0 }
+#define AST_RWLOCK_INIT_VALUE { { { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }, 0, 0, 0 }, NULL, 1 }
+#define AST_RWLOCK_INIT_VALUE_NOTRACKING { { { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }, 0, 0, 0 }, NULL, 0 }
+#else
 #define AST_MUTEX_INIT_VALUE { PTHREAD_MUTEX_INIT_VALUE, NULL, 1 }
 #define AST_MUTEX_INIT_VALUE_NOTRACKING { PTHREAD_MUTEX_INIT_VALUE, NULL, 0 }
 
 #define AST_RWLOCK_INIT_VALUE { __AST_RWLOCK_INIT_VALUE, NULL, 1 }
 #define AST_RWLOCK_INIT_VALUE_NOTRACKING { __AST_RWLOCK_INIT_VALUE, NULL, 0 }
+#endif
 
 #define AST_MAX_REENTRANCY 10
+
+struct ronny_mutex_t {
+	char protector1[16];
+	volatile int lock;
+    volatile unsigned int count;
+    volatile int owner;
+	volatile int doubleLock;
+};
 
 struct ast_channel;
 
@@ -119,7 +134,12 @@ struct ast_lock_track {
  * The information will just be ignored in the core if a module does not request it..
  */
 struct ast_mutex_info {
-	pthread_mutex_t mutex;
+// ronny
+#ifdef _MIPS_ARCH
+	struct ronny_mutex_t mutex;
+#else
+	volatile pthread_mutex_t mutex;
+#endif
 	/*! Track which thread holds this mutex */
 	struct ast_lock_track *track;
 	unsigned int tracking:1;
@@ -131,7 +151,12 @@ struct ast_mutex_info {
  * The information will just be ignored in the core if a module does not request it..
  */
 struct ast_rwlock_info {
+// ronny
+#ifdef _MIPS_ARCH
+	struct ronny_mutex_t mutex;
+#else
 	pthread_rwlock_t lock;
+#endif
 	/*! Track which thread holds this lock */
 	struct ast_lock_track *track;
 	unsigned int tracking:1;
@@ -141,7 +166,14 @@ typedef struct ast_mutex_info ast_mutex_t;
 
 typedef struct ast_rwlock_info ast_rwlock_t;
 
+#ifdef _MIPS_ARCH
+struct ronny_cond_t {
+	volatile int wake;
+};
+typedef struct ronny_cond_t ast_cond_t;
+#else
 typedef pthread_cond_t ast_cond_t;
+#endif
 
 int __ast_pthread_mutex_init(int tracking, const char *filename, int lineno, const char *func, const char *mutex_name, ast_mutex_t *t);
 int __ast_pthread_mutex_destroy(const char *filename, int lineno, const char *func, const char *mutex_name, ast_mutex_t *t);
