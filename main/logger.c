@@ -1266,7 +1266,12 @@ void ast_log(int level, const char *file, int line, const char *function, const 
 	logmsg->process_id = (long) GETTID();
 
 	/* If the logger thread is active, append it to the tail end of the list - otherwise skip that step */
-	if (logthread != AST_PTHREADT_NULL) {
+	if (logthread != AST_PTHREADT_NULL
+/* For some reason we get a significant speedup
+ * of Asterisk if we disable the logthred here.
+ * Need to investigate this further! */
+&& 0
+) {
 		AST_LIST_LOCK(&logmsgs);
 		AST_LIST_INSERT_TAIL(&logmsgs, logmsg, list);
 		ast_cond_signal(&logcond);
