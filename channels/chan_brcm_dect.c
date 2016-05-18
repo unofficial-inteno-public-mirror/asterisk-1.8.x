@@ -57,9 +57,9 @@ enum {
 
 
 static int dect_release(struct brcm_pvt *p);
-static int dect_signal_ringing(struct brcm_pvt *p);
+static int notify_dectmngr_new_call(struct brcm_pvt *p);
 static int dect_dummy(struct brcm_pvt *p);
-static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s);
+static int notify_dectmngr_new_call_with_cid(const struct ast_channel *chan, struct brcm_subchannel *s);
 static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *methodName, struct blob_attr *msg);
 static int dectmngr_call(int terminal, int add, int release, const char *cid);
@@ -68,6 +68,7 @@ static int dectmngr_call(int terminal, int add, int release, const char *cid);
 //-------------------------------------------------------------
 static const char ubusSenderId[] = "asterisk.dect.api";							// The Ubus type we transmitt
 static const char ubusIdDectmngr[] = "dect";									// The Ubus type for Dectmngr
+static const char pathEndpoint[] = "/dev/bcmendpoint0";
 
 
 static const struct blobmsg_policy ubusCallKeys[] = {							// ubus RPC "call" arguments (keys and values)
@@ -101,13 +102,18 @@ extern const DTMF_CHARNAME_MAP dtmf_to_charname[];
 extern struct brcm_pvt *iflist;
 
 const struct brcm_channel_tech dect_tech = {
-	.signal_ringing = dect_signal_ringing,
+	.signal_ringing = notify_dectmngr_new_call,
 	.signal_ringing_callerid_pending = dect_dummy,
-	.signal_callerid = dect_signal_callerid,
+	.signal_callerid = notify_dectmngr_new_call_with_cid,
 	.stop_ringing = dect_release,
 	.stop_ringing_callerid_pending = dect_release,
 	.release = dect_release,
 };
+
+
+/* Indication of whether Broadcom kernel endpoint dect
+ * processing has been started. (Must be done only once.) */
+static int hasEpDectProcStarted;
 
 
 
@@ -122,11 +128,14 @@ static int bad_handsetnr(int handset) {
 
 
 //-------------------------------------------------------------
+// Unused but must exist
 static int dect_dummy(struct brcm_pvt *p) { return 0; }
 
 
 //-------------------------------------------------------------
-static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subchannel *s) {
+// New incomming SIP call with a caller ID. Notify
+// Dectmngr so a hanset will start ringing.
+static int notify_dectmngr_new_call_with_cid(const struct ast_channel *chan, struct brcm_subchannel *s) {
 	const char *cid;
 	int handset;
 
@@ -136,7 +145,7 @@ static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subc
 	if(bad_handsetnr(handset)) return 1;
 
 	if(chan->connected.id.number.valid) {
-		ast_verbose("dect_signal_callerid(): %s\n", chan->connected.id.number.str);	
+		ast_verbose("notify_dectmngr_new_call_with_cid(): %s\n", chan->connected.id.number.str);	
 		cid = chan->connected.id.number.str;
 	}
 
@@ -146,9 +155,11 @@ static int dect_signal_callerid(const struct ast_channel *chan, struct brcm_subc
 
 
 //-------------------------------------------------------------
-static int dect_signal_ringing(struct brcm_pvt *p)
+// New incomming SIP call (without caller ID). Notify
+// Dectmngr so a hanset will start ringing.
+static int notify_dectmngr_new_call(struct brcm_pvt *p)
 {
-	ast_verbose("dect_signal_ringing()\n");
+	ast_verbose("notify_dectmngr_new_call()\n");
 	ast_verbose("line_id: %d\n", p->line_id); 
 
 	return dectmngr_call(p->line_id + 1, p->line_id, -1, NULL);
@@ -157,11 +168,9 @@ static int dect_signal_ringing(struct brcm_pvt *p)
 
 
 //-------------------------------------------------------------
-static EPSTATUS
-vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, 
-				   CAS_CTL_EVENT_TYPE eventType, 
-				   CAS_CTL_EVENT event)
-{
+// Notify Broadcom endpoint of Dect handset on hook
+// and off hook events.
+static EPSTATUS vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, CAS_CTL_EVENT_TYPE eventType, CAS_CTL_EVENT event) {
 	ENDPOINTDRV_SENDCASEVT_CMD_PARM tCasCtlEvtParm;
 	int fd, res;
 
@@ -172,12 +181,13 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 	tCasCtlEvtParm.size          = sizeof(ENDPOINTDRV_SENDCASEVT_CMD_PARM);
 
 	res = 0;
-	fd = open("/dev/bcmendpoint0", O_RDWR);
+	fd = open(pathEndpoint, O_RDWR);
 	if(fd == -1) {
+		ast_verbose("%s: error opening %s", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 	else if(ioctl(fd, ENDPOINTIOCTL_SEND_CAS_EVT, &tCasCtlEvtParm ) != IOCTL_STATUS_SUCCESS) {
-		ast_verbose("%s: error during ioctl", __FUNCTION__);
+		ast_verbose("%s: error during ioctl %s", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 
@@ -188,6 +198,56 @@ vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState,
 	}
 
 	return tCasCtlEvtParm.epStatus;
+}
+
+
+
+//-------------------------------------------------------------
+// Start kernel internal dect procesing in endpoint driver.
+static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
+	ENDPOINTDRV_CONSOLE_CMD_PARM tConsoleParm;
+	EPCMD_PARMS consoleCmdParams;
+	ENDPT_STATE endptState;
+	int fd, res;
+	
+	if(hasEpDectProcStarted) return EPSTATUS_SUCCESS;							// Only start once
+
+	memset(&consoleCmdParams,0, sizeof(consoleCmdParams));
+	memset(&endptState, 0, sizeof(endptState));
+	memset(&tConsoleParm, 0, sizeof(tConsoleParm));
+	tConsoleParm.state = &endptState;
+	tConsoleParm.cmd = cmd;
+	tConsoleParm.lineId = endptState.lineId;
+	tConsoleParm.consoleCmdParams = &consoleCmdParams;
+	tConsoleParm.epStatus = EPSTATUS_DRIVER_ERROR;
+	tConsoleParm.size = sizeof(tConsoleParm);
+	res = 0;
+
+	fd = open(pathEndpoint, O_RDWR);
+	if(fd == -1) {
+		ast_verbose("%s: error opening %s", __FUNCTION__, pathEndpoint);
+		res = -1;
+	}
+	else if(ioctl(fd, ENDPOINTIOCTL_ENDPT_CONSOLE_CMD, &tConsoleParm) !=
+			IOCTL_STATUS_SUCCESS) {
+		ast_verbose("%s: error during ioctl %s", __FUNCTION__, pathEndpoint);
+		res = -1;
+	}
+
+	if(fd > 0) close(fd);
+
+	if(!tConsoleParm.epStatus && res) {
+		tConsoleParm.epStatus = EPSTATUS_DRIVER_ERROR;
+	}
+
+	if(tConsoleParm.epStatus) {
+		ast_verbose("Failed to start endpoint dect processing\n");
+	}
+	else {
+		hasEpDectProcStarted = 1;
+	}
+
+	return tConsoleParm.epStatus;
 }
 
 
@@ -513,19 +573,24 @@ static int ubus_request_call(struct ubus_context *ubus_ctx, struct ubus_object *
 	}
 	else if(release) {
 		if(vrgEndptSendCasEvtToEndpt(
-				(ENDPT_STATE*) &(endptObjState[termId - 1]),					/* Signal onhook to endpoint driver */
+				(ENDPT_STATE*) &(endptObjState[pcmId]),							/* Signal onhook to endpoint driver */
 				CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_ONHOOK)) {
 			res = EIO;
 		}
 	}
 	else if(add) {
-		if(cid) {
-			res = userDials(termId, cid, pcmId);								// User dials digits
-		}
-		else if(vrgEndptSendCasEvtToEndpt(
-				(ENDPT_STATE*) &(endptObjState[termId - 1]),					/* Signal offhook to endpoint driver */
-				CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK)) {
+		if(endptProcCtl(EPCMD_DECT_START_BUFF_PROC)) {
 			res = EIO;
+		}
+		else {
+			if(cid) {
+				res = userDials(termId, cid, pcmId);							// User dials digits
+			}
+			else if(vrgEndptSendCasEvtToEndpt(
+					(ENDPT_STATE*) &(endptObjState[pcmId]),						/* Signal offhook to endpoint driver */
+					CAS_CTL_DETECT_EVENT, CAS_CTL_EVENT_OFFHOOK)) {
+				res = EIO;
+			}
 		}
 	}
 	else {
@@ -626,6 +691,7 @@ void *brcm_monitor_dect(void *data) {
 
 	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	hasEpDectProcStarted = 0;
 
 	/* Initialize ubus connecton */
 	ctx = ubus_connect(NULL);
