@@ -78,6 +78,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define AST_MODULE "chan_brcm"
 #endif
 
+#define BRCM_KERNEL
+
 /*** DOCUMENTATION
 	<manager name="BRCMPortsShow" language="en_US">
 		<synopsis>
@@ -262,6 +264,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1 | AST_FORMAT_G722,
+#ifdef BRCM_KERNEL
 	.requester = brcm_request,			//No lock held (no channel yet)
 	.call = brcm_call,				//Channel is locked
 	.hangup = brcm_hangup,				//Channel is locked
@@ -272,6 +275,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.send_digit_continue = brcm_senddigit_continue,	//Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
+#endif
 };
 
 static struct brcm_channel_tech fxs_tech = {
@@ -2221,8 +2225,11 @@ static void *brcm_monitor_events(void *data)
 	struct timeval tim;
 #endif
 
+#ifdef BRCM_KERNEL
 	while (monitor) {
-
+#else
+	while (monitor && endpoint_fd != NOT_INITIALIZED) {
+#endif /* defined(BRCM_KERNEL) */
 		struct brcm_pvt *p = NULL;
 		struct brcm_subchannel *sub = NULL;
 
@@ -3445,6 +3452,7 @@ static int unload_module(void)
 	/* First, take us out of the channel loop */
 	if (cur_tech)
 		ast_channel_unregister(cur_tech);
+#ifdef BRCM_KERNEL
 	if (!ast_mutex_lock(&iflock)) {
 		/* Hangup all interfaces if they have an owner */
 		p = iflist;
@@ -3514,17 +3522,22 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
+#endif /* defined(BRCM_KERNEL) */
 
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
 
 	feature_access_code_clear();
 
+#ifdef BRCM_KERNEL
 	ast_debug(3, "Deinitializing endpoint...\n");
 	endpt_deinit();
 	ast_debug(3, "Endpoint deinited...\n");
+#endif /* defined(BRCM_KERNEL) */
 
+#ifdef BRCM_KERNEL
 	ast_sched_thread_destroy(sched);
+#endif /* defined(BRCM_KERNEL) */
 
 	return 0;
 }
@@ -3921,11 +3934,13 @@ static int load_module(void)
 
 	load_config(0);
 
+#ifdef BRCM_KERNEL
 	/* Setup scheduler thread */
 	if (!(sched = ast_sched_thread_create())) {
 		ast_log(LOG_ERROR, "Unable to create scheduler thread/context. Aborting.\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
+#endif /* defined(BRCM_KERNEL) */
 
 	if (ast_mutex_lock(&iflock)) {
 		/* It's a little silly to lock it, but we mind as well just to be sure */
@@ -3937,6 +3952,8 @@ static int load_module(void)
 	if ((result = load_settings(&cfg)) != 0) {
 		return result;
 	}
+
+#ifdef BRCM_KERNEL
 
 #if BCM_SDK_VERSION >= 416021
 	/* Set the provision data to the endpoint driver */
@@ -3950,6 +3967,8 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
+#endif /* defined(BRCM_KERNEL) */
+
 	brcm_get_endpoints_count();
 	load_endpoint_settings(cfg);
 
@@ -3960,9 +3979,14 @@ static int load_module(void)
 	cur_tech = (struct ast_channel_tech *) &brcm_tech;
 
 	/* Make sure we can register our Adtranphone channel type */
+#ifdef BRCM_KERNEL
 	if (ast_channel_register(cur_tech) || (endpoint_fd == NOT_INITIALIZED)) {
 		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
 		ast_log(LOG_ERROR, "endpoint_fd = %x\n",endpoint_fd);
+#else
+	if (ast_channel_register(cur_tech)) {
+		ast_log(LOG_ERROR, "Unable to register channel class 'Brcm'\n");
+#endif /* defined(BRCM_KERNEL) */
 		ast_config_destroy(cfg);
 		unload_module();
 		return AST_MODULE_LOAD_FAILURE;
@@ -3976,8 +4000,10 @@ static int load_module(void)
 	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
 	ast_manager_register_xml("BRCMdump", EVENT_FLAG_SYSTEM, manager_brcm_dump);
 
+#ifdef BRCM_KERNEL
 	/* Start channel threads */
 	start_threads();
+#endif /* defined(BRCM_KERNEL) */
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module load\r\n");
 
