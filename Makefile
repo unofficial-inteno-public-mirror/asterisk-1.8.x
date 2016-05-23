@@ -222,7 +222,7 @@ ifeq ($(AST_DEVMODE),yes)
   _ASTCFLAGS+=-Wno-error=strict-prototypes # @todo@ Remove later
   _ASTCFLAGS+=-Wno-error=undef # @todo@ Remove later
   _ASTCFLAGS+=-Wno-error=uninitialized # @todo@ Remove later
-  #_ASTCFLAGS+=-Wno-error=unused-function
+  _ASTCFLAGS+=-Wno-error=unused-function
   _ASTCFLAGS+=-Wno-error=unused-variable # @todo@ Remove later
 endif
 
