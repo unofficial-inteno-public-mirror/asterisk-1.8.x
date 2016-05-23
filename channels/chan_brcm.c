@@ -1246,6 +1246,10 @@ static struct brcm_pvt* brcm_get_next_pvt(struct brcm_pvt *p) {
 struct brcm_pvt* brcm_get_pvt_from_lineid(struct brcm_pvt *p, int line_id)
 {
 	struct brcm_pvt *tmp = p;
+	if (!p) {
+		return NULL;
+	}
+
 	if (p->line_id == line_id) return p;
 
 	tmp = brcm_get_next_pvt(tmp);
@@ -2803,7 +2807,8 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	/* Search for an unowned channel */
 	if (ast_mutex_lock(&iflock)) {
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
-		return NULL;
+		*cause = AST_CAUSE_FAILURE;
+		goto no_unlock;
 	}
 	
 	/* Get line id */
@@ -2814,9 +2819,14 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 	p = brcm_get_pvt_from_lineid(iflist, line_id);
 
 	/* If the id doesn't exist (p==NULL) use 0 as default */
-	if (!p) {
+	if (!p && iflist) {
 		ast_log(LOG_ERROR, "Port id %s not found using default 0 instead.\n", (char*) data);
 		p = iflist;
+	}
+
+	if (!p) {
+		*cause = AST_CAUSE_FAILURE;
+		goto unlock_iflock;
 	}
 
 	pvt_lock(p, "brcm request");
@@ -2840,8 +2850,9 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 
 	//ast_mutex_unlock(&p->lock);
 	pvt_unlock(p);
+unlock_iflock:
 	ast_mutex_unlock(&iflock);
-
+no_unlock:
 	return tmp;
 }
 
