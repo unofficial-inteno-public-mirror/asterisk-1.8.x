@@ -4661,12 +4661,16 @@ EPSTATUS vrgEndptCreate( int physId, int lineId, VRG_ENDPT_STATE *endptState )
 	tInitParm.size       = sizeof(ENDPOINTDRV_CREATE_PARM);
 
 	/* Check if kernel driver is opened */
+	if (endpoint_fd == 1) {
+		goto out;
+	}
 
 	if (ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_CREATE, &tInitParm ) != IOCTL_STATUS_SUCCESS)
 	{
 		ast_log(LOG_ERROR, "error brcm creating endpoint");
 	}
 
+out:
 	return( tInitParm.epStatus );
 }
 
