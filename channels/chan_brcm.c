@@ -4646,9 +4646,14 @@ EPSTATUS vrgEndptDestroy( VRG_ENDPT_STATE *endptState )
 	tInitParm.epStatus   = EPSTATUS_DRIVER_ERROR;
 	tInitParm.size       = sizeof(ENDPOINTDRV_DESTROY_PARM);
 
+	if (endpoint_fd == -1) {
+		goto out;
+	}
+
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ENDPT_DESTROY, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
 	}
 
+out:
 	return( tInitParm.epStatus );
 }
 
