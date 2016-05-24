@@ -79,6 +79,8 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #endif
 
 #define BRCM_KERNEL
+#define BRCM_MONITOR_THREAD
+#define BRCM_PACKET_THREAD
 
 /*** DOCUMENTATION
 	<manager name="BRCMPortsShow" language="en_US">
@@ -2568,15 +2570,20 @@ static int start_threads(void)
 		ast_mutex_unlock(&iflock);
 	}
 
-	monitor = 1;
+
 
 	/* Start an event polling thread */
 	/* This thread blocks on ioctl and wakes up when an event is avaliable from the endpoint  */
+#ifdef BRCM_MONITOR_THREAD
+	monitor = 1;
 	if (ast_pthread_create_background(&monitor_thread, NULL, brcm_monitor_events, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start monitor thread.\n");
 		return -1;
 	}
+#else
+	monitor = 0;
+#endif /* defined(BRCM_MONITOR_THREAD) */
 
 #ifdef BRCM_DECT
 	/* Start a dect event polling thread */
@@ -2592,13 +2599,16 @@ static int start_threads(void)
 	/* Start a new sound polling thread */
 	/* This thread blocks on ioctl and wakes up when an rpt packet is avaliable from the endpoint  */
 	/* It then enques the packet on the channel which owns the pvt   */
+#ifdef BRCM_PACKET_THREAD
 	packets = 1;
 	if (ast_pthread_create_background(&packet_thread, NULL, brcm_monitor_packets, NULL) < 0) {
 		ast_mutex_unlock(&monlock);
 		ast_log(LOG_ERROR, "Unable to start event thread.\n");
 		return -1;
 	}
-
+#else
+	packets = 0;
+#endif /* defined(BRCM_PACKET_THREAD) */
 
 	ast_mutex_unlock(&monlock);
 	return 0;
@@ -3495,17 +3505,21 @@ static int unload_module(void)
 		ast_debug(1, "Stopping threads...\n");
 		if (monitor) {
 			monitor = 0;
-			while (pthread_kill(monitor_thread, SIGURG) == 0)
-				sched_yield();
-			pthread_join(monitor_thread, NULL);
+			if (monitor_thread >= 0) {
+				while (pthread_kill(monitor_thread, SIGURG) == 0)
+					sched_yield();
+				pthread_join(monitor_thread, NULL);
+			}
 		}
 		monitor_thread = AST_PTHREADT_STOP;
-		
+
 		if (packets) {
 			packets = 0;
-			while (pthread_kill(packet_thread, SIGURG) == 0)
-				sched_yield();
-			pthread_join(packet_thread, NULL);
+			if (packet_thread >= 0) {
+				while (pthread_kill(packet_thread, SIGURG) == 0)
+					sched_yield();
+				pthread_join(packet_thread, NULL);
+			}
 		}
 		packet_thread = AST_PTHREADT_STOP;
 
