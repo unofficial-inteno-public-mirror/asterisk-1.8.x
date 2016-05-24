@@ -3463,7 +3463,6 @@ static int unload_module(void)
 	/* First, take us out of the channel loop */
 	if (cur_tech)
 		ast_channel_unregister(cur_tech);
-#ifdef BRCM_KERNEL
 	if (!ast_mutex_lock(&iflock)) {
 		/* Hangup all interfaces if they have an owner */
 		p = iflist;
@@ -3492,6 +3491,7 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
+#ifdef BRCM_KERNEL
 	if (!ast_mutex_lock(&monlock)) {
 		ast_debug(1, "Stopping threads...\n");
 		if (monitor) {
@@ -3516,6 +3516,7 @@ static int unload_module(void)
 		return -1;
 	}
 	ast_debug(1, "[%d, %d,]\n",monitor, packets);
+#endif /* defined(BRCM_KERNEL) */
 
 	if (!ast_mutex_lock(&iflock)) {
 		/* Destroy all the interfaces and free their memory */
@@ -3533,7 +3534,6 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
-#endif /* defined(BRCM_KERNEL) */
 
 	/* Unregister CLI commands */
 	ast_cli_unregister_multiple(cli_brcm, ARRAY_LEN(cli_brcm));
