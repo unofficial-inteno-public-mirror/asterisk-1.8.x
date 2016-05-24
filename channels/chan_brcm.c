@@ -4436,13 +4436,13 @@ EPSTATUS vrgEndptDriverOpen(void)
 
 EPSTATUS vrgEndptDriverClose()
 {
-   if ( close( endpoint_fd ) == -1 )
+   if ( endpoint_fd != -1 && close( endpoint_fd ) == -1 )
    {
       printf("%s: close error %d", __FUNCTION__, errno);
       return ( EPSTATUS_DRIVER_ERROR );
    }
 
-   if ( close( pcmShimFile ) == -1 )
+   if ( pcmShimFile != -1 && close( pcmShimFile ) == -1 )
    {
       printf("%s: close error %d", __FUNCTION__, errno);
       return ( EPSTATUS_DRIVER_ERROR );
