@@ -4661,12 +4661,18 @@ out:
 static int isEndptInitialized(void)
 {
 	ENDPOINTDRV_ISINITIALIZED_PARM tInitParm;
+	tInitParm.isInitialized = FALSE;
 	tInitParm.size = sizeof(ENDPOINTDRV_ISINITIALIZED_PARM);
+
+	if (endpoint_fd == -1) {
+		goto out;
+	}
 
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_ISINITIALIZED, &tInitParm ) != IOCTL_STATUS_SUCCESS ) {
 		ast_log(LOG_ERROR, "error during ioctl");
 	}
 
+out:
 	return( tInitParm.isInitialized );
 }
 
