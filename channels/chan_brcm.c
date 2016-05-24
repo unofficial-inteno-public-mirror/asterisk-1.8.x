@@ -4053,7 +4053,15 @@ static int brcm_get_endpoints_count(void)
 	ENDPOINTDRV_ENDPOINTCOUNT_PARM endpointCount;
 	endpointCount.size = sizeof(ENDPOINTDRV_ENDPOINTCOUNT_PARM);
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXSENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
+	if (endpoint_fd == -1) {
+#ifdef BRCM_KERNEL
+		ast_debug(3, "ENDPOINTIOCTL_FXSENDPOINTCOUNT failed");
+		return -1;
+#else
+		num_fxs_endpoints = 2;
+		ast_debug(3, "num_fxs_endpoints = %d\n", num_fxs_endpoints);
+#endif
+	} else if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXSENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_debug(3, "ENDPOINTIOCTL_FXSENDPOINTCOUNT failed");
 		return -1;
 	} else {
@@ -4061,7 +4069,15 @@ static int brcm_get_endpoints_count(void)
 		ast_debug(3, "num_fxs_endpoints = %d\n", num_fxs_endpoints);
 	}
 
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
+	if (endpoint_fd == -1) {
+#ifdef BRCM_KERNEL
+		ast_debug(3, "ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
+		return -1;
+#else
+		num_fxo_endpoints = 0;
+		ast_debug(3, "num_fxo_endpoints = %d\n", num_fxo_endpoints);
+#endif
+	} else if ( ioctl( endpoint_fd, ENDPOINTIOCTL_FXOENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_debug(3, "ENDPOINTIOCTL_FXOENDPOINTCOUNT failed");
 		return -1;
 	} else {
@@ -4070,7 +4086,15 @@ static int brcm_get_endpoints_count(void)
 	}
 
 #ifdef BRCM_DECT
-	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
+	if (endpoint_fd == -1) {
+#ifdef BRCM_KERNEL
+		ast_debug(3, "ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
+		return -1;
+#else
+		num_dect_endpoints = 0; // @todo This is not correct
+		ast_debug(3, "num_dect_endpoints = %d\n", num_dect_endpoints);
+#endif
+	} else if ( ioctl( endpoint_fd, ENDPOINTIOCTL_DECTENDPOINTCOUNT, &endpointCount ) != IOCTL_STATUS_SUCCESS ) {
 		ast_debug(3, "ENDPOINTIOCTL_DECTENDPOINTCOUNT failed");
 		return -1;
 	} else {
