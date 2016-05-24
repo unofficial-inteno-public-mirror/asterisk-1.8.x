@@ -81,6 +81,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Revision: 284597 $")
 #define BRCM_KERNEL
 #define BRCM_MONITOR_THREAD
 #define BRCM_PACKET_THREAD
+#define BRCM_SCHEDULING_THREAD
 
 /*** DOCUMENTATION
 	<manager name="BRCMPortsShow" language="en_US">
@@ -3558,9 +3559,9 @@ static int unload_module(void)
 	ast_debug(3, "Endpoint deinited...\n");
 #endif /* defined(BRCM_KERNEL) */
 
-#ifdef BRCM_KERNEL
-	ast_sched_thread_destroy(sched);
-#endif /* defined(BRCM_KERNEL) */
+	if (sched != NULL) {
+		ast_sched_thread_destroy(sched);
+	}
 
 	return 0;
 }
@@ -3957,13 +3958,15 @@ static int load_module(void)
 
 	load_config(0);
 
-#ifdef BRCM_KERNEL
+#ifdef BRCM_SCHEDULING_THREAD
 	/* Setup scheduler thread */
 	if (!(sched = ast_sched_thread_create())) {
 		ast_log(LOG_ERROR, "Unable to create scheduler thread/context. Aborting.\n");
 		return AST_MODULE_LOAD_FAILURE;
 	}
-#endif /* defined(BRCM_KERNEL) */
+#else
+	sched = NULL;
+#endif /* defined(BRCM_SCHEDULING_THREAD) */
 
 	if (ast_mutex_lock(&iflock)) {
 		/* It's a little silly to lock it, but we mind as well just to be sure */
