@@ -3973,12 +3973,12 @@ static int load_module(void)
 	ast_safe_system(config_cmd);
 #endif
 
+#endif /* defined(BRCM_KERNEL) */
+
 	/* Initialize the endpoints */
 	if (endpt_init()) {
 		return AST_MODULE_LOAD_FAILURE;
 	}
-
-#endif /* defined(BRCM_KERNEL) */
 
 	brcm_get_endpoints_count();
 	load_endpoint_settings(cfg);
@@ -4412,7 +4412,8 @@ int brcm_stop_dtmf(struct brcm_subchannel *sub, char digit)
 
 EPSTATUS vrgEndptDriverOpen(void)
 {
-   /* Open the pcmShim driver  */
+#ifdef BRCM_KERNEL
+  /* Open the pcmShim driver  */
    if( ( pcmShimFile = open("/dev/pcmshim0", O_RDWR) ) == -1 )
    {
       printf("%s: pcmshim open error %d\n", __FUNCTION__, errno );
@@ -4429,6 +4430,10 @@ EPSTATUS vrgEndptDriverOpen(void)
    {
       printf( "%s: Endpoint driver open success\n", __FUNCTION__ );
    }
+#else
+	pcmShimFile = -1;
+	endpoint_fd = -1;
+#endif /* defined(BRCM_KERNEL) */
 
    return ( EPSTATUS_SUCCESS );
 }
