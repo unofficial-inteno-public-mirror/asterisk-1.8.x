@@ -3980,7 +3980,10 @@ static int load_module(void)
 		return AST_MODULE_LOAD_FAILURE;
 	}
 
-	brcm_get_endpoints_count();
+	if (brcm_get_endpoints_count() < 0) {
+		ast_log(LOG_ERROR, "Unable to get endpoint count\n");
+		return AST_MODULE_LOAD_FAILURE;
+	}
 	load_endpoint_settings(cfg);
 
 	brcm_create_endpoints();
