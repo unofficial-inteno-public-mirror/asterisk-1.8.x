@@ -267,7 +267,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.type = "BRCM",
 	.description = tdesc,
 	.capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G723_1 | AST_FORMAT_G722,
-#ifdef BRCM_KERNEL
 	.requester = brcm_request,			//No lock held (no channel yet)
 	.call = brcm_call,				//Channel is locked
 	.hangup = brcm_hangup,				//Channel is locked
@@ -278,7 +277,6 @@ static const struct ast_channel_tech brcm_tech = {
 	.send_digit_continue = brcm_senddigit_continue,	//Channel is NOT locked
 	.send_digit_end = brcm_senddigit_end,		//Channel is NOT locked
 	.indicate = brcm_indicate,			//Channel is locked
-#endif
 };
 
 static struct brcm_channel_tech fxs_tech = {
@@ -3553,11 +3551,9 @@ static int unload_module(void)
 
 	feature_access_code_clear();
 
-#ifdef BRCM_KERNEL
 	ast_debug(3, "Deinitializing endpoint...\n");
 	endpt_deinit();
 	ast_debug(3, "Endpoint deinited...\n");
-#endif /* defined(BRCM_KERNEL) */
 
 	if (sched != NULL) {
 		ast_sched_thread_destroy(sched);
@@ -3979,16 +3975,12 @@ static int load_module(void)
 		return result;
 	}
 
-#ifdef BRCM_KERNEL
-
 #if BCM_SDK_VERSION >= 416021
 	/* Set the provision data to the endpoint driver */
 	char config_cmd[32];
 	snprintf(config_cmd, 32, "endptcfg %s", endpoint_country.isoCode);
 	ast_safe_system(config_cmd);
 #endif
-
-#endif /* defined(BRCM_KERNEL) */
 
 	/* Initialize the endpoints */
 	if (endpt_init()) {
