@@ -4117,6 +4117,10 @@ static void brcm_provision_endpoints(void)
 	int i;
 	line_settings* s;
 
+	if (endpoint_fd == -1) {
+		return;
+	}
+
 	//Provision endpoints
 	for ( i = 0; i < num_endpoints; i++ )
 	{
