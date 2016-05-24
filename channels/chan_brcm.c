@@ -131,7 +131,7 @@ static int num_endpoints = -1;
 static int endpoint_fd = NOT_INITIALIZED;
 static int clip = 1; // Caller ID presentation
 static const format_t default_capability = AST_FORMAT_ALAW | AST_FORMAT_ULAW | AST_FORMAT_G729A | AST_FORMAT_G726 | AST_FORMAT_G722; // AST_FORMAT_G723_1 breaks stuff
-struct ast_sched_thread *sched; //Scheduling thread
+static struct ast_sched_thread *sched = NULL; //Scheduling thread
 static int pcmShimFile = -1;
 
 /* Call waiting */
