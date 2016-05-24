@@ -4563,11 +4563,16 @@ EPSTATUS vrgEndptProvSet( int line, EPPROV provItemId, void* provItemValue, int 
 	provParm.line           = line;
 	provParm.epStatus       = EPSTATUS_DRIVER_ERROR;
 
+	if (endpoint_fd == -1) {
+		goto out;
+	}
+
 	if ( ioctl( endpoint_fd, ENDPOINTIOCTL_PROV_SET, &provParm ) != IOCTL_STATUS_SUCCESS )
 	{
 		ast_log(LOG_ERROR, "error during ioctl EndptProvSet\n");
 	}
 
+out:
 	return( provParm.epStatus );
 }
 
