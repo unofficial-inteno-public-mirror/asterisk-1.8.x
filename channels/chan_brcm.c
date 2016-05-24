@@ -3491,7 +3491,6 @@ static int unload_module(void)
 		ast_log(LOG_WARNING, "Unable to lock the monitor\n");
 		return -1;
 	}
-#ifdef BRCM_KERNEL
 	if (!ast_mutex_lock(&monlock)) {
 		ast_debug(1, "Stopping threads...\n");
 		if (monitor) {
@@ -3516,7 +3515,6 @@ static int unload_module(void)
 		return -1;
 	}
 	ast_debug(1, "[%d, %d,]\n",monitor, packets);
-#endif /* defined(BRCM_KERNEL) */
 
 	if (!ast_mutex_lock(&iflock)) {
 		/* Destroy all the interfaces and free their memory */
@@ -4014,10 +4012,8 @@ static int load_module(void)
 	ast_manager_register_xml("BRCMPortsShow", EVENT_FLAG_SYSTEM, manager_brcm_ports_show);
 	ast_manager_register_xml("BRCMdump", EVENT_FLAG_SYSTEM, manager_brcm_dump);
 
-#ifdef BRCM_KERNEL
 	/* Start channel threads */
 	start_threads();
-#endif /* defined(BRCM_KERNEL) */
 
 	manager_event(EVENT_FLAG_SYSTEM, "BRCM", "Module load\r\n");
 
