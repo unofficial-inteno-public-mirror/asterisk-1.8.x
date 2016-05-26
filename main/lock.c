@@ -21,7 +21,6 @@
  * \brief General Asterisk locking.
  */
 
-#ifndef _MIPS_ARCH
 #include "asterisk.h"
 
 ASTERISK_FILE_VERSION(__FILE__, "$Revision: 314358 $")
@@ -1434,4 +1433,3 @@ int __ast_rwlock_trywrlock(const char *filename, int line, const char *func, ast
 
 	return res;
 }
-#endif /* _MIPS_ARCH */
