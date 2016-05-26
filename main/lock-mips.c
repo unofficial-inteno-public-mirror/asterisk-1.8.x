@@ -46,6 +46,17 @@ static int ronny_mutex_lock(const char *filename, int lineno, const char *func,
 	pid_t tid = syscall(__NR_gettid);
 	__sync_synchronize();
 
+	/* Sanity check of the lock. This invalid
+	 * state should never occur. */
+	while((!t->mutex.lock && !t->mutex.doubleLock && (t->mutex.owner ||
+			t->mutex.count)) || (!t->mutex.doubleLock && t->mutex.owner == tid)) {
+		printf("ronny_mutex_lock() thread %lx tid %ld invalid owner lockId %p, lock %x, count %x, owner %ld\n",
+			pthread_self(), tid, &t->mutex, t->mutex.lock, t->mutex.count,
+			t->mutex.owner);
+		pthread_yield();
+		usleep(100000);
+	}
+
 	// Contend for the lock
 	if(t->mutex.owner != tid || t->mutex.owner != tid) {						// Read twice yes, it's volatile
 		if(blockWait) {
@@ -113,6 +124,15 @@ static int ronny_mutex_unlock(const char *filename, int lineno, const char *func
 			fflush(NULL);
 			while(1) usleep(0);
 		}
+	}
+
+	/* Both belt and suspenders, sanity check the locks
+	 * again. This loop should never occur. */
+	while(!t->mutex.lock && (t->mutex.owner || t->mutex.count)) {
+		printf("ronny_mutex_unlock() thread %lx tid %ld invalid unlockedId %p, lock %x, count %x, owner %ld\n",
+			pthread_self(), tid, &t->mutex, t->mutex.lock, t->mutex.count,
+			t->mutex.owner);
+		usleep(100000);
 	}
 
 	return 0;
