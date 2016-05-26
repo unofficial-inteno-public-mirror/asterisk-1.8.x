@@ -203,7 +203,10 @@ static EPSTATUS vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, CAS_CTL_EVENT
 
 
 //-------------------------------------------------------------
-// Start kernel internal dect procesing in endpoint driver.
+// Try to start kernel internal dect procesing in endpoint
+// driver. This is relevant only for targets with internal
+// Dect, but since Asterisk don't know which type of HW is
+// in use we always try and ignore errors.
 static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	ENDPOINTDRV_CONSOLE_CMD_PARM tConsoleParm;
 	EPCMD_PARMS consoleCmdParams;
@@ -243,11 +246,10 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	if(tConsoleParm.epStatus) {
 		ast_verbose("Failed to start endpoint dect processing\n");
 	}
-	else {
-		hasEpDectProcStarted = 1;
-	}
 
-	return tConsoleParm.epStatus;
+	hasEpDectProcStarted = 1;
+
+	return EPSTATUS_SUCCESS;
 }
 
 
