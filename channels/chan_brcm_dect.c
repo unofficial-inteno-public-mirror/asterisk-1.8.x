@@ -183,11 +183,11 @@ static EPSTATUS vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, CAS_CTL_EVENT
 	res = 0;
 	fd = open(pathEndpoint, O_RDWR);
 	if(fd == -1) {
-		ast_verbose("%s: error opening %s", __FUNCTION__, pathEndpoint);
+		ast_verbose("%s: error opening %s\n", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 	else if(ioctl(fd, ENDPOINTIOCTL_SEND_CAS_EVT, &tCasCtlEvtParm ) != IOCTL_STATUS_SUCCESS) {
-		ast_verbose("%s: error during ioctl %s", __FUNCTION__, pathEndpoint);
+		ast_verbose("%s: error during ioctl %s\n", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 
@@ -205,8 +205,7 @@ static EPSTATUS vrgEndptSendCasEvtToEndpt(ENDPT_STATE *endptState, CAS_CTL_EVENT
 //-------------------------------------------------------------
 // Try to start kernel internal dect procesing in endpoint
 // driver. This is relevant only for targets with internal
-// Dect, but since Asterisk don't know which type of HW is
-// in use we always try and ignore errors.
+// Dect so we need to probe for what HW is in use.
 static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	ENDPOINTDRV_CONSOLE_CMD_PARM tConsoleParm;
 	EPCMD_PARMS consoleCmdParams;
@@ -214,6 +213,14 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	int fd, res;
 	
 	if(hasEpDectProcStarted) return EPSTATUS_SUCCESS;							// Only start once
+
+	// Probe for SoC internal Dect
+	fd = open("/dev/dect", O_RDWR);
+	if(fd == -1) {
+		hasEpDectProcStarted = 1;
+		return EPSTATUS_SUCCESS;
+	}
+	if(fd > 0) close(fd);
 
 	memset(&consoleCmdParams,0, sizeof(consoleCmdParams));
 	memset(&endptState, 0, sizeof(endptState));
@@ -228,12 +235,12 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 
 	fd = open(pathEndpoint, O_RDWR);
 	if(fd == -1) {
-		ast_verbose("%s: error opening %s", __FUNCTION__, pathEndpoint);
+		 ast_log(LOG_WARNING, "%s: error opening %s\n", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 	else if(ioctl(fd, ENDPOINTIOCTL_ENDPT_CONSOLE_CMD, &tConsoleParm) !=
 			IOCTL_STATUS_SUCCESS) {
-		ast_verbose("%s: error during ioctl %s", __FUNCTION__, pathEndpoint);
+		ast_verbose("%s: error during ioctl %s\n", __FUNCTION__, pathEndpoint);
 		res = -1;
 	}
 
@@ -244,7 +251,7 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	}
 
 	if(tConsoleParm.epStatus) {
-		ast_verbose("Failed to start endpoint dect processing\n");
+		ast_log(LOG_WARNING, "Failed to start endpoint dect processing\n");
 	}
 
 	hasEpDectProcStarted = 1;
