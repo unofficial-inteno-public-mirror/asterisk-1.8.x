@@ -214,9 +214,10 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	
 	if(hasEpDectProcStarted) return EPSTATUS_SUCCESS;							// Only start once
 
-	// Probe for SoC internal Dect
+	/* Probe for SoC internal Dect. Do nothing
+	 * if it's missing. */
 	fd = open("/dev/dect", O_RDWR);
-	if(fd == -1) {
+	if(fd == -1 && (errno == ENXIO || errno == ENODEV)) {
 		hasEpDectProcStarted = 1;
 		return EPSTATUS_SUCCESS;
 	}
