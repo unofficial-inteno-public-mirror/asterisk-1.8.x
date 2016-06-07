@@ -218,6 +218,7 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 	 * if it's missing. */
 	fd = open("/dev/dect", O_RDWR);
 	if(fd == -1 && (errno == ENXIO || errno == ENODEV)) {
+		ast_verbose("External Dect detected\n");
 		hasEpDectProcStarted = 1;
 		return EPSTATUS_SUCCESS;
 	}
@@ -253,6 +254,9 @@ static EPSTATUS endptProcCtl(EPCONSOLECMD cmd) {
 
 	if(tConsoleParm.epStatus) {
 		ast_log(LOG_WARNING, "Failed to start endpoint dect processing\n");
+	}
+	else {
+		ast_verbose("Internal Dect detected\n");
 	}
 
 	hasEpDectProcStarted = 1;
