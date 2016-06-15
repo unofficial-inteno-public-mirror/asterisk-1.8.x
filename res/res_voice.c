@@ -1231,6 +1231,7 @@ static void res_voice_handle_registry_event(struct ubus_context *ctx, struct ami
 			peer->sip_registry_registered = 1;
 			peer->sip_registry_request_sent = 0;
 			time(&(peer->sip_registry_time)); //Last registration time
+			system("ubus -t 1 call led.voice1 set \"{'state':'ok'}\"");
 			if (ctx) {
 				ubus_send_sip_event(ctx, peer, "registered", peer->sip_registry_registered);
 				ubus_send_sip_event(ctx, peer, "registry_request_sent", peer->sip_registry_request_sent);
@@ -1241,6 +1242,7 @@ static void res_voice_handle_registry_event(struct ubus_context *ctx, struct ami
 			ast_log(LOG_DEBUG, "sip registry unregistered\n");
 			peer->sip_registry_registered = 0;
 			peer->sip_registry_request_sent = 0;
+			system("ubus -t 1 call led.voice1 set \"{'state':'off'}\"");
 			if (ctx) {
 				ubus_send_sip_event(ctx, peer, "registered", peer->sip_registry_registered);
 				ubus_send_sip_event(ctx, peer, "registry_request_sent", peer->sip_registry_request_sent);
@@ -1254,12 +1256,14 @@ static void res_voice_handle_registry_event(struct ubus_context *ctx, struct ami
 				fw_manage(fw, peer, 0);
 			}
 			peer->sip_registry_request_sent = 1;
+			system("ubus -t 1 call led.voice1 set \"{'state':'off'}\"");
 			if (ctx) {
 				ubus_send_sip_event(ctx, peer, "registered", peer->sip_registry_registered);
 				ubus_send_sip_event(ctx, peer, "registry_request_sent", peer->sip_registry_request_sent);
 			}
 			break;
 		default:
+			system("ubus -t 1 call led.voice1 set \"{'state':'off'}\"");
 			break;
 	}
 }
@@ -1301,6 +1305,15 @@ static void res_voice_handle_brcm_event(struct ami *mgr, struct ubus_context *ct
 	int line_id;
 	int subchannel_id;
 
+	SIP_PEER *peer = sip_peers;
+	int registered_peer = 0;
+
+	while (peer->account.id < SIP_ACCOUNT_UNKNOWN) {
+		if (peer->sip_registry_registered)
+			registered_peer++;
+		peer++;
+	}
+
 	switch (event->brcm_event->type) {
 		case BRCM_STATUS_EVENT:
 			ast_log(LOG_DEBUG, "Got BRCM_STATUS_EVENT for %d, offhook = %d\n", event->brcm_event->status.line_id, event->brcm_event->status.off_hook);
@@ -1320,6 +1333,14 @@ static void res_voice_handle_brcm_event(struct ami *mgr, struct ubus_context *ct
 			if (line_id >= 0 && line_id < BRCM_PORT_ALL) {
 				strcpy(brcm_ports[line_id].sub[subchannel_id].state, event->brcm_event->state.state);
 				char* subchannel = !subchannel_id ? "0" : "1";
+
+				if(strcmp(event->brcm_event->state.state, "ONHOOK"))
+					system("ubus -t 1 call led.voice1 set  \"{'state':'notice'}\"");
+				else if (registered_peer > 0)
+					system("ubus -t 1 call led.voice1 set  \"{'state':'ok'}\"");
+				else
+					system("ubus -t 1 call led.voice1 set  \"{'state':'off'}\"");
+
 				if (ctx) {
 					ubus_send_brcm_event(ctx, &brcm_ports[line_id], subchannel, brcm_ports[line_id].sub[subchannel_id].state);
 				}
