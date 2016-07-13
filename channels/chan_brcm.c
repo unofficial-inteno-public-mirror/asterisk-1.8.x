@@ -4947,7 +4947,7 @@ static int feature_access_code_match(const char *sequence)
 	int retval = -1;
 
 	AST_LIST_TRAVERSE(&feature_access_codes, current, list) {
-		char *seq = sequence;
+		const char *seq = sequence;
 		char *fac = current->code;
 
 		int res = -1;
