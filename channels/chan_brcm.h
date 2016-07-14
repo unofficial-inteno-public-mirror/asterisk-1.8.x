@@ -140,7 +140,7 @@ struct brcm_pvt {
 	struct brcm_subchannel *sub[NUM_SUBCHANNELS];	/* List of sub-channels, needed for callwaiting and 3-way support */
 	int hf_detected;			/* Hook flash detected */
 	dialtone_state dialtone;		/* Set by manager command */
-	struct brcm_channel_tech *tech;
+	const struct brcm_channel_tech *tech;
 	int dialtone_extension_cb_id;
 	int *dialtone_extension_cb_data;
 	char dialtone_extension_hint_context[AST_MAX_EXTENSION];

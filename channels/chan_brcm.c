@@ -264,7 +264,7 @@ static const struct ast_channel_tech brcm_tech = {
 	.indicate = brcm_indicate,			//Channel is locked
 };
 
-static struct brcm_channel_tech fxs_tech = {
+static const struct brcm_channel_tech fxs_tech = {
 	.signal_ringing = brcm_signal_ringing,
 	.signal_ringing_callerid_pending = brcm_signal_ringing_callerid_pending,
 	.signal_callerid = brcm_signal_callerid,
