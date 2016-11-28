@@ -1334,13 +1334,12 @@ static void res_voice_handle_brcm_event(struct ami *mgr, struct ubus_context *ct
 				strcpy(brcm_ports[line_id].sub[subchannel_id].state, event->brcm_event->state.state);
 				char* subchannel = !subchannel_id ? "0" : "1";
 
-				if(strcmp(event->brcm_event->state.state, "ONHOOK"))
+				if (strcmp(event->brcm_event->state.state, "ONHOOK") != 0 && strcmp(event->brcm_event->state.state, "CALLENDED") != 0)
 					system("ubus -t 1 call led.voice1 set  \"{'state':'notice'}\"");
 				else if (registered_peer > 0)
 					system("ubus -t 1 call led.voice1 set  \"{'state':'ok'}\"");
 				else
 					system("ubus -t 1 call led.voice1 set  \"{'state':'off'}\"");
-
 				if (ctx) {
 					ubus_send_brcm_event(ctx, &brcm_ports[line_id], subchannel, brcm_ports[line_id].sub[subchannel_id].state);
 				}
