@@ -22,7 +22,7 @@
  *
  * \author Benjamin Larsson <benjamin@southpole.se>
  * \author Jonas Höglund <jonash@southpole.se>
- * 
+ *
  * \ingroup channel_drivers
  */
 
@@ -369,7 +369,7 @@ static int brcm_indicate(struct ast_channel *ast, int condition, const void *dat
 		/* Update caller IDs on display - dect ? */
 		res = -1;
 		break;
-		
+
 	case AST_CONTROL_BUSY:
 		ast_debug(4, "Got BUSY on %s\n", ast->name);
 		/* The other end is busy */
@@ -501,7 +501,7 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 
 	/* copy frame data to local buffer */
 	// memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
-	
+
 	/* add buffer to outgoing packet */
 	epPacket_send.packetp = pdata;
 
@@ -515,19 +515,19 @@ static int brcm_send_dtmf(struct ast_channel *ast, char digit, unsigned int dura
 	// [3,16] |80|80|FC|52|94|2C|D1|F4|F0|B5|F8|3E|01 |8F |09|38|
 	// [3,16] |80|80|E4|54|79|60|0E|5A|1A|23|A1|EC|06 |0F |00|F0|
 	//        |80|80|03|4E|00|02|10|C0|68|42|D5|53|31 |08 |00|08|
-	
+
 	pdata[12]  = map_digit_to_rfc2833(digit);
 	pdata[13]  = 0x8; //Volume
 	pdata[13] |= (status==END)?0x80:0x00; // End of Event
-	if (status==BEGIN) 
+	if (status==BEGIN)
 		duration = 1;
 	duration = duration * 8; // based on 8kHz sample rate
 	pdata[14]  = (duration>>8)&0xFF;
 	pdata[15]  = duration&0xFF;
-	
+
 	ast_debug(5, "[%d,%d] |%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|%02X|\n", DTMF_PAYLOAD, digit, pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7], pdata[8], pdata[9], pdata[10], pdata[11], pdata[12], pdata[13], pdata[14], pdata[15]);
 
-	
+
 	/* set rtp id sent to endpoint */
 	//sub->codec = map_ast_codec_id_to_rtp(frame->subclass.codec);
 
@@ -605,7 +605,7 @@ static int brcm_senddigit_begin(struct ast_channel *ast, char digit)
 
 	/* save away timestamp */
 	sub->dtmf_timestamp = sub->time_stamp;
-	
+
 	res = 0;
 	s = &line_config[sub->parent->line_id];
 	switch (s->dtmf_relay) {
@@ -691,7 +691,7 @@ static int brcm_call(struct ast_channel *chan, char *dest, int timeout)
 
 	struct timeval UtcTime = ast_tvnow();
 	struct ast_tm tm;
-	
+
 	sub = chan->tech_pvt;
 
 	ast_debug(1, "BRCM brcm_call %d\n", sub->parent->line_id);
@@ -1026,7 +1026,7 @@ static int brcm_write(struct ast_channel *ast, struct ast_frame *frame)
 
 		/* copy frame data to local buffer */
 		memcpy(packet_buffer + 12, frame->data.ptr, frame->datalen);
-	    
+
 		/* add buffer to outgoing packet */
 		epPacket_send.packetp = packet_buffer;
 
@@ -1114,6 +1114,22 @@ static void brcm_subchannel_set_state(struct brcm_subchannel *sub, enum channel_
 			state2str(state),
 			sub->parent->line_id,
 			sub->id);
+
+	ast_log(LOG_DEBUG, "State = %d\r\n", state);
+
+	char extension[64] = "";
+	if (strlen(sub->parent->ext) > 0) {
+		snprintf(extension, sizeof extension, ", that called number %s", sub->parent->ext);
+	}
+
+	char dtmfbuf[80] = "";
+	if (strlen(sub->parent->dtmfbuf) > 0) {
+		snprintf(dtmfbuf, sizeof dtmfbuf, ", DTMF digits dialed: %s", sub->parent->dtmfbuf);
+	}
+
+	if (strcmp(state2str(state), "UNKNOWN") != 0 && state != DIALING)
+		ast_log(LOG_DTMF, "%s for phone line %d%s%s\r\n", state2str(state), sub->parent->line_id, dtmfbuf, extension);
+
 }
 
 /* Tell endpoint to play country specific dialtone. */
@@ -1580,7 +1596,7 @@ void handle_dtmf_calling(struct brcm_subchannel *sub)
 	}
 }
 
-/* 
+/*
  * Perform actions for hook flash.
  * Preconditions: One subchannel should be in CALLWAITING or ONHOLD,
  * 		  One subchannel should be in INCALL.
@@ -1591,6 +1607,8 @@ void handle_hookflash(struct brcm_subchannel *sub, struct brcm_subchannel *sub_p
 		struct ast_channel *owner, struct ast_channel *peer_owner)
 {
 	struct brcm_pvt *p = sub->parent;
+
+	ast_log(LOG_DTMF, "Hook Flash detected for phone line %d\r\n", sub->parent->line_id);
 
 	if (p->dtmf_first < 0) {
 		/* If current subchannel is in call and peer subchannel is idle, provide dialtone */
@@ -1926,6 +1944,8 @@ void handle_dtmf(EPEVT event,
 	}
 	else if (p->dtmf_first == dtmf_button) {
 		ast_debug(9,"Depressed DTMF %s\n", dtmfMap->name);
+		//ast_log(LOG_DTMF, "Detected DTMF %c, line %d\n", dtmfMap->c, sub->parent->line_id);
+
 		if (p->hf_detected) {
 			ast_debug(2, "DTMF after HF\n");
 			p->hf_detected = 0;
@@ -1996,7 +2016,7 @@ static void *brcm_monitor_packets(void *data)
 	EPPACKET epPacket;
 	ENDPOINTDRV_PACKET_PARM tPacketParm;
 	int rtp_packet_type  = BRCM_UNKNOWN;
-	
+
 	ast_debug(2, "Packets thread starting\n");
 
 	while(packets) {
@@ -2077,7 +2097,7 @@ static void *brcm_monitor_packets(void *data)
 			 * using handle_dtmf(). This way pre-call DTMF (ex CBBS) will be handled the same way
 			 * for both FXS and DECT. */
 			} else if (rtp_packet_type == BRCM_DTMF && brcm_should_relay_dtmf(sub)) {
-				
+
 				unsigned int duration = (pdata[14] << 8 | pdata[15]);
 				unsigned int dtmf_end = pdata[13] & 128;
 				unsigned int event = phone_2digit(pdata[12]);
@@ -2130,7 +2150,7 @@ static void *brcm_monitor_packets(void *data)
 						/* If the DTMF is too short, expand it to avoid DTMF emulation in the core */
 						fr.len = option_dtmfminduration;
 						adjusted = 1;
-					} 
+					}
 					ast_debug(2, "Sending DTMF [%c, Len %ld%s] (%s)\n", fr.subclass.integer, fr.len, adjusted ? " Adjusted for min dur." : "",
 						(fr.frametype==AST_FRAME_DTMF_END) ? "AST_FRAME_DTMF_END" : (fr.frametype == AST_FRAME_DTMF_BEGIN) ? "AST_FRAME_DTMF_BEGIN" : "AST_FRAME_DTMF_CONTINUE");
 				}
@@ -2608,7 +2628,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 {
 	/* Make a brcm_pvt structure for this interface */
 	struct brcm_pvt *tmp;
-	
+
 	tmp = ast_calloc(1, sizeof(*tmp));
 	if (tmp) {
 		struct brcm_subchannel *sub;
@@ -2655,7 +2675,7 @@ static struct brcm_pvt *brcm_allocate_pvt(const char *iface, int endpoint_type)
 		tmp->interdigit_timer_id = -1;
 		tmp->autodial_timer_id = -1;
 		ast_mutex_init(&tmp->lock);
-		
+
 		/* Low level signaling */
 		if (endpoint_type == FXS) {
 			tmp->tech = &fxs_tech;
@@ -2789,7 +2809,7 @@ static struct ast_channel *brcm_request(const char *type, format_t format, const
 		ast_log(LOG_ERROR, "Unable to lock interface list???\n");
 		return NULL;
 	}
-	
+
 	/* Get line id */
 	line_id = atoi((char*)data);
 	ast_debug(1, "brcm_request = %s, line_id=%d, format %x\n", (char*) data, line_id, (unsigned int) format);
@@ -2901,7 +2921,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 {
 	struct brcm_pvt *p = iflist;
 	int i = 0;
-	
+
 	while(p) {
 		pvt_lock(p, "brcm show pvts");
 		//ast_mutex_lock(&p->lock);
@@ -2924,7 +2944,7 @@ static void brcm_show_pvts(struct ast_cli_args *a)
 		line_settings* s = &line_config[p->line_id];
 
 		ast_cli(a->fd, "Echocancel          : %s\n", s->echocancel ? "on" : "off");
-		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");	
+		ast_cli(a->fd, "Ringsignal          : %s\n", s->ringsignal ? "on" : "off");
 		ast_cli(a->fd, "DTMF compatibility  : %s\n", s->dtmf_compatibility ? "on" : "off");
 		ast_cli(a->fd, "Dialout msecs       : %d\n", s->timeoutmsec);
 		ast_cli(a->fd, "Autodial extension  : %s\n", s->autodial_ext);
@@ -3194,7 +3214,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 	if (a->argc <= 4) {
 		return CLI_SHOWUSAGE; //Too few arguments
 	}
-	
+
 	int pvt_id = atoi(a->argv[4]);
 	if (pvt_id >= num_endpoints || pvt_id < 0) {
 		return CLI_SHOWUSAGE;
@@ -3211,7 +3231,7 @@ static char *brcm_set_parameters_on_off(struct ast_cli_entry *e, int cmd, struct
 		s->echocancel = on_off;
 	} else if (!strcasecmp(a->argv[2], "ringsignal")) {
 		s->ringsignal = on_off;
-	}	
+	}
 	return CLI_SUCCESS;
 }
 
@@ -3230,7 +3250,7 @@ static char *brcm_set_vad(struct ast_cli_entry *e, int cmd, struct ast_cli_args 
 	} else if (cmd == CLI_GENERATE) {
 		return NULL;
 	}
-	
+
 	if (a->argc <= 4) {
 		return CLI_SHOWUSAGE;
 	}
@@ -3373,7 +3393,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 		return CLI_SHOWUSAGE;
 
 //	ast_verbose("%d %s",(a->argv[3][0] -'0'), a->argv[4]);
-	
+
 	p = iflist;
 	while(p) {
 		if (p->line_id == (a->argv[3][0]-'0')) {
@@ -3383,7 +3403,7 @@ static char *brcm_set_autodial_extension(struct ast_cli_entry *e, int cmd, struc
 		}
 		p = brcm_get_next_pvt(p);
 	}
-	
+
 	return CLI_SUCCESS;
 }
 
@@ -3454,7 +3474,7 @@ static int unload_module(void)
 			pthread_join(monitor_thread, NULL);
 		}
 		monitor_thread = AST_PTHREADT_STOP;
-		
+
 		if (packets) {
 			packets = 0;
 			while (pthread_kill(packet_thread, SIGURG) == 0)
@@ -3504,7 +3524,7 @@ static int unload_module(void)
 /*
  * Create a EPZCNXPARAM, which is used to specify configuration
  * parameters for a media connection. The parameters are taken
- * from the configuration for the specific fxs port. This is 
+ * from the configuration for the specific fxs port. This is
  * useful when configuring a connection in preparation for an
  * outgoing call.
  */
@@ -3529,12 +3549,12 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 		format_t fmt = map_codec_brcm_to_ast(s->codec_list[0]);
 
 		epCnxParms.cnxParmList.send.codecs[0].type              = map_codec_ast_to_brcm(fmt);
-		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = map_codec_ast_to_brcm_rtp(fmt); 
+		epCnxParms.cnxParmList.send.codecs[0].rtpPayloadType    = map_codec_ast_to_brcm_rtp(fmt);
 		epCnxParms.cnxParmList.send.numCodecs					= 1;
 		epCnxParms.cnxParmList.send.period[0]					= s->period; //Use same packetization period for all codecs TODO: bad idea?
 	}
 
-	/* Add Named Telephone Events codec. Without this codec RTP events will not be sent. 
+	/* Add Named Telephone Events codec. Without this codec RTP events will not be sent.
 	 * It's not really needed now since we only use inband between DSP and Asterisk.
 	 * Keeping it since it may be needed in the future with a less buggy
 	 * DTMF-implemntation in Asterisk */
@@ -3545,7 +3565,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 
 	/* Configure endpoint receiving, should be able to receive any of our supported formats */
 	epCnxParms.cnxParmList.recv.numCodecs = s->codec_nr+1;
-	
+
 	int i;
 	for (i = 0; i < s->codec_nr; i++) {
 		epCnxParms.cnxParmList.recv.codecs[i].type = s->codec_list[i]; //Locally supported codecs
@@ -3557,7 +3577,7 @@ static EPZCNXPARAM brcm_get_epzcnxparam(struct brcm_subchannel *sub)
 	epCnxParms.cnxParmList.recv.period[i] = s->period;
 	epCnxParms.cnxParmList.recv.numPeriods = 1;
 	sub->period = s->period;
-	
+
 	epCnxParms.echocancel = s->echocancel;
 	epCnxParms.silence = s->silence; //Value 0 - 3
 	epCnxParms.comfortNoise = s->comfort_noise; //Value 0-3

@@ -99,11 +99,11 @@ unsigned long global_fin, global_fout;
 AST_THREADSTORAGE(state2str_threadbuf);
 #define STATE2STR_BUFSIZE   32
 
-/*! Default amount of time to use when emulating a digit as a begin and end 
+/*! Default amount of time to use when emulating a digit as a begin and end
  *  100ms */
 #define AST_DEFAULT_EMULATE_DTMF_DURATION 100
 
-/*! Minimum amount of time between the end of the last digit and the beginning 
+/*! Minimum amount of time between the end of the last digit and the beginning
  *  of a new one - 45ms */
 #define AST_MIN_DTMF_GAP 45
 
@@ -186,7 +186,7 @@ AST_DATA_STRUCTURE(ast_channel, DATA_EXPORT_CHANNEL);
 /*! \brief All active channels on the system */
 static struct ao2_container *channels;
 
-/*! \brief map AST_CAUSE's to readable string representations 
+/*! \brief map AST_CAUSE's to readable string representations
  *
  * \ref causes.h
 */
@@ -536,7 +536,7 @@ static char *complete_channeltypes(struct ast_cli_args *a)
 		}
 	}
 	AST_RWLIST_UNLOCK(&backends);
-	
+
 	return ret;
 }
 
@@ -559,7 +559,7 @@ static char *handle_cli_core_show_channeltype(struct ast_cli_entry *e, int cmd, 
 
 	if (a->argc != 4)
 		return CLI_SHOWUSAGE;
-	
+
 	AST_RWLIST_RDLOCK(&backends);
 
 	AST_RWLIST_TRAVERSE(&backends, cl, list) {
@@ -595,7 +595,7 @@ static char *handle_cli_core_show_channeltype(struct ast_cli_entry *e, int cmd, 
 		(cl->tech->send_html) ? "yes" : "no",
 		(cl->tech->send_image) ? "yes" : "no",
 		(cl->tech->send_text) ? "yes" : "no"
-		
+
 	);
 
 	AST_RWLIST_UNLOCK(&backends);
@@ -721,7 +721,7 @@ static int ast_channel_trace_data_update(struct ast_channel *chan, struct ast_ch
 		return 0;
 	/* If the last saved context does not match the current one
 	   OR we have not saved any context so far, then save the current context */
-	if ((!AST_LIST_EMPTY(&traced->trace) && strcasecmp(AST_LIST_FIRST(&traced->trace)->context, chan->context)) || 
+	if ((!AST_LIST_EMPTY(&traced->trace) && strcasecmp(AST_LIST_FIRST(&traced->trace)->context, chan->context)) ||
 	    (AST_LIST_EMPTY(&traced->trace))) {
 		/* Just do some debug logging */
 		if (AST_LIST_EMPTY(&traced->trace))
@@ -730,7 +730,7 @@ static int ast_channel_trace_data_update(struct ast_channel *chan, struct ast_ch
 			ast_log(LOG_DEBUG, "Changing trace context from %s to %s\n", AST_LIST_FIRST(&traced->trace)->context, chan->context);
 		/* alloc or bail out */
 		trace = ast_malloc(sizeof(*trace));
-		if (!trace) 
+		if (!trace)
 			return -1;
 		/* save the current location and store it in the trace list */
 		ast_copy_string(trace->context, chan->context, sizeof(trace->context));
@@ -757,17 +757,17 @@ int ast_channel_trace_enable(struct ast_channel *chan)
 	struct ast_chan_trace_data *traced;
 	if (!store) {
 		store = ast_datastore_alloc(&ast_chan_trace_datastore_info, "ChanTrace");
-		if (!store) 
+		if (!store)
 			return -1;
 		traced = ast_calloc(1, sizeof(*traced));
 		if (!traced) {
 			ast_datastore_free(store);
 			return -1;
-		}	
+		}
 		store->data = traced;
 		AST_LIST_HEAD_INIT_NOLOCK(&traced->trace);
 		ast_channel_datastore_add(chan, store);
-	}	
+	}
 	((struct ast_chan_trace_data *)store->data)->enabled = 1;
 	ast_channel_trace_data_update(chan, store->data);
 	return 0;
@@ -893,7 +893,7 @@ int ast_channel_register(const struct ast_channel_tech *tech)
 			return -1;
 		}
 	}
-	
+
 	if (!(chan = ast_calloc(1, sizeof(*chan)))) {
 		AST_RWLIST_UNLOCK(&backends);
 		return -1;
@@ -924,7 +924,7 @@ void ast_channel_unregister(const struct ast_channel_tech *tech)
 			AST_LIST_REMOVE_CURRENT(list);
 			ast_free(chan);
 			ast_verb(2, "Unregistered channel type '%s'\n", tech->type);
-			break;	
+			break;
 		}
 	}
 	AST_LIST_TRAVERSE_SAFE_END;
@@ -948,7 +948,7 @@ const struct ast_channel_tech *ast_get_channel_tech(const char *name)
 	}
 
 	AST_RWLIST_UNLOCK(&backends);
-	
+
 	return ret;
 }
 
@@ -1002,7 +1002,7 @@ const char *ast_state2str(enum ast_channel_state state)
 	case AST_STATE_BUSY:
 		return "Busy";
 	case AST_STATE_DIALING_OFFHOOK:
-		return "Dialing Offhook";
+		return "Dialing ";
 	case AST_STATE_PRERING:
 		return "Pre-ring";
 	default:
@@ -1081,7 +1081,7 @@ format_t ast_best_codec(format_t fmts)
 
 	/* Strip out video */
 	fmts &= AST_FORMAT_AUDIO_MASK;
-	
+
 	/* Find the first preferred codec in the format given */
 	for (x = 0; x < ARRAY_LEN(prefs); x++) {
 		if (fmts & prefs[x])
@@ -1153,7 +1153,7 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 		ast_log(LOG_WARNING, "Channel allocation failed: Unable to create schedule context\n");
 		return ast_channel_unref(tmp);
 	}
-	
+
 	ast_party_dialed_init(&tmp->dialed);
 	ast_party_caller_init(&tmp->caller);
 	ast_party_connected_line_init(&tmp->connected);
@@ -1219,15 +1219,15 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 	tmp->_state = state;
 
 	tmp->streamid = -1;
-	
+
 	tmp->fin = global_fin;
 	tmp->fout = global_fout;
 
 	if (ast_strlen_zero(ast_config_AST_SYSTEM_NAME)) {
-		ast_string_field_build(tmp, uniqueid, "%li.%d", (long) time(NULL), 
+		ast_string_field_build(tmp, uniqueid, "%li.%d", (long) time(NULL),
 			ast_atomic_fetchadd_int(&uniqueint, 1));
 	} else {
-		ast_string_field_build(tmp, uniqueid, "%s-%li.%d", ast_config_AST_SYSTEM_NAME, 
+		ast_string_field_build(tmp, uniqueid, "%s-%li.%d", ast_config_AST_SYSTEM_NAME,
 			(long) time(NULL), ast_atomic_fetchadd_int(&uniqueint, 1));
 	}
 
@@ -1242,7 +1242,7 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 		/* Almost every channel is calling this function, and setting the name via the ast_string_field_build() call.
 		 * And they all use slightly different formats for their name string.
 		 * This means, to set the name here, we have to accept variable args, and call the string_field_build from here.
-		 * This means, that the stringfields must have a routine that takes the va_lists directly, and 
+		 * This means, that the stringfields must have a routine that takes the va_lists directly, and
 		 * uses them to build the string, instead of forming the va_lists internally from the vararg ... list.
 		 * This new function was written so this can be accomplished.
 		 */
@@ -1270,12 +1270,12 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 		tmp->amaflags = amaflag;
 	else
 		tmp->amaflags = ast_default_amaflags;
-	
+
 	if (!ast_strlen_zero(acctcode))
 		ast_string_field_set(tmp, accountcode, acctcode);
 	else
 		ast_string_field_set(tmp, accountcode, ast_default_accountcode);
-		
+
 	if (!ast_strlen_zero(context))
 		ast_copy_string(tmp->context, context, sizeof(tmp->context));
 	else
@@ -1296,11 +1296,11 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 
 	headp = &tmp->varshead;
 	AST_LIST_HEAD_INIT_NOLOCK(headp);
-	
+
 	AST_LIST_HEAD_INIT_NOLOCK(&tmp->datastores);
 
 	AST_LIST_HEAD_INIT_NOLOCK(&tmp->autochans);
-	
+
 	ast_string_field_set(tmp, language, defaultlanguage);
 
 	tmp->tech = &null_tech;
@@ -1324,8 +1324,8 @@ __ast_channel_alloc_ap(int needqueue, int state, const char *cid_num, const char
 			"Exten: %s\r\n"
 			"Context: %s\r\n"
 			"Uniqueid: %s\r\n",
-			tmp->name, 
-			state, 
+			tmp->name,
+			state,
 			ast_state2str(state),
 			S_OR(cid_num, ""),
 			S_OR(cid_name, ""),
@@ -1749,7 +1749,7 @@ static struct ast_channel *ast_channel_get_full(const char *name, size_t name_le
 		return NULL;
 	}
 
-	/* If name was specified, but the result was NULL, 
+	/* If name was specified, but the result was NULL,
 	 * try a search on uniqueid, instead. */
 
 	{
@@ -1840,7 +1840,7 @@ int ast_safe_sleep_conditional(struct ast_channel *chan, int ms, int (*cond)(voi
 				ast_frfree(f);
 				continue;
 			}
-			
+
 			if ((dup_f = ast_frisolate(f))) {
 				if (dup_f != f) {
 					ast_frfree(f);
@@ -2445,7 +2445,7 @@ static void ast_channel_destructor(void *obj)
 #endif
 	while ((f = AST_LIST_REMOVE_HEAD(&chan->readq, frame_list)))
 		ast_frfree(f);
-	
+
 	/* loop over the variables list, freeing all data and deleting list items */
 	/* no need to lock the list, as the channel is already locked */
 	headp = &chan->varshead;
@@ -2551,7 +2551,7 @@ int ast_channel_datastore_remove(struct ast_channel *chan, struct ast_datastore 
 struct ast_datastore *ast_channel_datastore_find(struct ast_channel *chan, const struct ast_datastore_info *info, const char *uid)
 {
 	struct ast_datastore *datastore = NULL;
-	
+
 	if (info == NULL)
 		return NULL;
 
@@ -2590,11 +2590,11 @@ void ast_channel_set_fd(struct ast_channel *chan, int which, int fd)
 	if (fd > -1) {
 		if (!aed && (!(aed = ast_calloc(1, sizeof(*aed)))))
 			return;
-		
+
 		chan->epfd_data[which] = aed;
 		aed->chan = chan;
 		aed->which = which;
-		
+
 		ev.events = EPOLLIN | EPOLLPRI | EPOLLERR | EPOLLHUP;
 		ev.data.ptr = aed;
 		epoll_ctl(chan->epfd, EPOLL_CTL_ADD, fd, &ev);
@@ -3138,7 +3138,7 @@ struct ast_channel *ast_waitfor_nandfds(struct ast_channel **c, int n, int *fds,
 		*outfd = -99999;
 	if (exception)
 		*exception = 0;
-	
+
 	/* Perform any pending masquerades */
 	for (x = 0; x < n; x++) {
 		if (c[x]->masq && ast_do_masquerade(c[x])) {
@@ -3197,7 +3197,7 @@ struct ast_channel *ast_waitfor_nandfds(struct ast_channel **c, int n, int *fds,
 
 	if (*ms > 0)
 		start = ast_tvnow();
-	
+
 	if (sizeof(int) == 4) {	/* XXX fix timeout > 600000 on linux x86-32 */
 		do {
 			int kbrms = rms;
@@ -3522,14 +3522,14 @@ int ast_waitfordigit_full(struct ast_channel *c, int ms, int audiofd, int cmdfd)
 	ast_set_flag(c, AST_FLAG_END_DTMF_ONLY);
 
 	/* Wait for a digit, no more than ms milliseconds total. */
-	
+
 	while (ms) {
 		struct ast_channel *rchan;
 		int outfd=-1;
 
 		errno = 0;
 		rchan = ast_waitfor_nandfds(&c, 1, &cmdfd, (cmdfd > -1) ? 1 : 0, NULL, &outfd, &ms);
-		
+
 		if (!rchan && outfd < 0 && ms) {
 			if (errno == 0 || errno == EINTR)
 				continue;
@@ -3632,13 +3632,13 @@ static void ast_read_generator_actions(struct ast_channel *chan, struct ast_fram
 		} else {
 			samples = f->samples;
 		}
-		
+
 		/* This unlock is here based on two assumptions that hold true at this point in the
 		 * code. 1) this function is only called from within __ast_read() and 2) all generators
 		 * call ast_write() in their generate callback.
 		 *
-		 * The reason this is added is so that when ast_write is called, the lock that occurs 
-		 * there will not recursively lock the channel. Doing this will cause intended deadlock 
+		 * The reason this is added is so that when ast_write is called, the lock that occurs
+		 * there will not recursively lock the channel. Doing this will cause intended deadlock
 		 * avoidance not to work in deeper functions
 		 */
 		ast_channel_unlock(chan);
@@ -3685,8 +3685,8 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 		 * explicitly deferred.  Skip this digit, then. */
 		return 1;
 	}
-			
-	if (!ast_tvzero(chan->dtmf_tv) && 
+
+	if (!ast_tvzero(chan->dtmf_tv) &&
 			ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 		/* We're not in the middle of a digit, but it hasn't been long enough
 		 * since the last digit, so we'll have to skip DTMF for now. */
@@ -3698,7 +3698,7 @@ static inline int should_skip_dtmf(struct ast_channel *chan)
 
 /*!
  * \brief calculates the number of samples to jump forward with in a monitor stream.
- 
+
  * \note When using ast_seekstream() with the read and write streams of a monitor,
  * the number of samples to seek forward must be of the same sample rate as the stream
  * or else the jump will not be calculated correctly.
@@ -3831,7 +3831,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			return &ast_null_frame;
 
 		case AST_TIMING_EVENT_CONTINUOUS:
-			if (AST_LIST_EMPTY(&chan->readq) || 
+			if (AST_LIST_EMPTY(&chan->readq) ||
 				!AST_LIST_NEXT(AST_LIST_FIRST(&chan->readq), frame_list)) {
 				ast_timer_disable_continuous(chan->timer);
 			}
@@ -3874,7 +3874,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 			break;
 		}
 		AST_LIST_TRAVERSE_SAFE_END;
-		
+
 		if (!f) {
 			/* There were no acceptable frames on the readq. */
 			f = &ast_null_frame;
@@ -3995,7 +3995,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 				ast_frfree(f);
 				f = &ast_null_frame;
 			} else if (!ast_test_flag(chan, AST_FLAG_IN_DTMF | AST_FLAG_END_DTMF_ONLY)) {
-				if (!ast_tvzero(chan->dtmf_tv) && 
+				if (!ast_tvzero(chan->dtmf_tv) &&
 				    ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) {
 					/* If it hasn't been long enough, defer this digit */
 					ast_debug(8, "===> queueing up DTMF for another weird reason (to small gap) \n");
@@ -4011,7 +4011,7 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 					if (f->len) {
 						if (f->len > option_dtmfminduration)
 							chan->emulate_dtmf_duration = f->len;
-						else 
+						else
 							chan->emulate_dtmf_duration = option_dtmfminduration;
 					} else
 						chan->emulate_dtmf_duration = AST_DEFAULT_EMULATE_DTMF_DURATION;
@@ -4085,8 +4085,8 @@ static struct ast_frame *__ast_read(struct ast_channel *chan, int dropaudio)
 		case AST_FRAME_DTMF_BEGIN:
 			send_dtmf_event(chan, "Received", f->subclass.integer, "Yes", "No");
 			ast_log(LOG_DTMF, "DTMF begin '%c' received on %s\n", f->subclass.integer, chan->name);
-			if ( ast_test_flag(chan, AST_FLAG_DEFER_DTMF | AST_FLAG_END_DTMF_ONLY | AST_FLAG_EMULATE_DTMF) || 
-			    (!ast_tvzero(chan->dtmf_tv) && 
+			if ( ast_test_flag(chan, AST_FLAG_DEFER_DTMF | AST_FLAG_END_DTMF_ONLY | AST_FLAG_EMULATE_DTMF) ||
+			    (!ast_tvzero(chan->dtmf_tv) &&
 			      ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) < AST_MIN_DTMF_GAP) ) {
 				ast_log(LOG_DTMF, "DTMF begin ignored. '%c' on %s. Gap %d\n", f->subclass.integer, chan->name, ast_tvdiff_ms(ast_tvnow(), chan->dtmf_tv) );
 				ast_frfree(f);
@@ -4341,7 +4341,7 @@ static int attribute_const is_visible_indication(enum ast_control_frame_type con
 int ast_indicate_data(struct ast_channel *chan, int _condition,
 		const void *data, size_t datalen)
 {
-	/* By using an enum, we'll get compiler warnings for values not handled 
+	/* By using an enum, we'll get compiler warnings for values not handled
 	 * in switch statements. */
 	enum ast_control_frame_type condition = _condition;
 	struct ast_tone_zone_sound *ts = NULL;
@@ -4408,7 +4408,7 @@ int ast_indicate_data(struct ast_channel *chan, int _condition,
 			ast_party_redirecting_free(&redirecting);
 		}
 		break;
-	
+
 	default:
 		break;
 	}
@@ -4552,7 +4552,7 @@ char *ast_recvtext(struct ast_channel *chan, int timeout)
 {
 	int res, done = 0;
 	char *buf = NULL;
-	
+
 	while (!done) {
 		struct ast_frame *f;
 		if (ast_check_hangup(chan))
@@ -4658,7 +4658,7 @@ int ast_senddigit_end(struct ast_channel *chan, char digit, unsigned int duratio
 
 	if (res && chan->generator)
 		ast_playtones_stop(chan);
-	
+
 	return 0;
 }
 
@@ -4668,7 +4668,7 @@ int ast_senddigit(struct ast_channel *chan, char digit, unsigned int duration)
 		ast_senddigit_begin(chan, digit);
 		ast_safe_sleep(chan, (duration >= AST_DEFAULT_EMULATE_DTMF_DURATION ? duration : AST_DEFAULT_EMULATE_DTMF_DURATION));
 	}
-	
+
 	return ast_senddigit_end(chan, digit, (duration >= AST_DEFAULT_EMULATE_DTMF_DURATION ? duration : AST_DEFAULT_EMULATE_DTMF_DURATION));
 }
 
@@ -4735,7 +4735,7 @@ static void adjust_frame_for_plc(struct ast_channel *chan, struct ast_frame *fra
 	 * offset field indicates the number of bytes that the audio is offset. The plc->samples_buf
 	 * is not an array of bytes, but rather an array of 16-bit integers since it holds SLIN
 	 * samples. So I had two choices to make here with the offset.
-	 * 
+	 *
 	 * 1. Make the offset AST_FRIENDLY_OFFSET bytes. The main downside for this is that
 	 *    I can't just add AST_FRIENDLY_OFFSET to the plc->samples_buf and have the pointer
 	 *    arithmetic come out right. I would have to do some odd casting or division for this to
@@ -4743,7 +4743,7 @@ static void adjust_frame_for_plc(struct ast_channel *chan, struct ast_frame *fra
 	 * 2. Make the offset AST_FRIENDLY_OFFSET * 2 bytes. This allows the pointer arithmetic
 	 *    to work out better with the plc->samples_buf. The downside here is that the buffer's
 	 *    allocation contains an extra 64 bytes of unused space.
-	 * 
+	 *
 	 * I decided to go with option 2. This is why in the calloc statement and the statement that
 	 * sets the frame's offset, AST_FRIENDLY_OFFSET is multiplied by 2.
 	 */
@@ -5021,7 +5021,7 @@ int ast_write(struct ast_channel *chan, struct ast_frame *fr)
 				prev = cur;
 			}
 		}
-		
+
 		/* If Monitor is running on this channel, then we have to write frames out there too */
 		/* the translator on chan->writetrans may have returned multiple frames
 		   from the single frame we passed in; if so, feed each one of them to the
@@ -5127,10 +5127,10 @@ static int set_format(struct ast_channel *chan, format_t fmt, format_t *rawforma
 	format_t native, native_fmt = ast_best_codec(fmt);
 	int res;
 	char from[200], to[200];
-	
+
 	/* Make sure we only consider audio */
 	fmt &= AST_FORMAT_AUDIO_MASK;
-	
+
 	native = chan->nativeformats;
 
 	if (!fmt || !native)	/* No audio requested */
@@ -5162,7 +5162,7 @@ static int set_format(struct ast_channel *chan, format_t fmt, format_t *rawforma
 			ast_getformatname_multiple(to, sizeof(to), fmt));
 		return -1;
 	}
-	
+
 	/* Now we have a good choice for both. */
 	ast_channel_lock(chan);
 
@@ -5367,7 +5367,7 @@ struct ast_channel *__ast_request_and_dial(const char *type, format_t format, co
 	int res = 0;
 	int last_subclass = 0;
 	struct ast_party_connected_line connected;
-	
+
 	if (outstate)
 		*outstate = 0;
 	else
@@ -5518,7 +5518,7 @@ struct ast_channel *__ast_request_and_dial(const char *type, format_t format, co
 			ast_copy_string(chan->context, oh->context, sizeof(chan->context));
 		if (!ast_strlen_zero(oh->exten))
 			ast_copy_string(chan->exten, oh->exten, sizeof(chan->exten));
-		if (oh->priority)	
+		if (oh->priority)
 			chan->priority = oh->priority;
 	}
 	if (chan->_state == AST_STATE_UP)
@@ -5624,7 +5624,7 @@ struct ast_channel *ast_request(const char *type, format_t format, const struct 
 		capabilities = chan->tech->capabilities;
 		fmt = format & AST_FORMAT_AUDIO_MASK;
 		if (fmt) {
-			/* We have audio - is it possible to connect the various calls to each other? 
+			/* We have audio - is it possible to connect the various calls to each other?
 				(Avoid this check for calls without audio, like text+video calls)
 			*/
 			res = ast_translator_best_choice(&fmt, &capabilities);
@@ -6199,7 +6199,7 @@ static void clone_variables(struct ast_channel *original, struct ast_channel *cl
 		AST_LIST_APPEND_LIST(&original->varshead, &clonechan->varshead, entries);
 
 	/* then, dup the varshead list into the clone */
-	
+
 	AST_LIST_TRAVERSE(&original->varshead, current, entries) {
 		newvar = ast_var_assign(current->name, current->value);
 		if (newvar)
@@ -6478,7 +6478,7 @@ int ast_do_masquerade(struct ast_channel *original)
 	 * reason we're keeping it, it's still awesomely weird. XXX */
 
 	/* The reasoning for the channels ao2_container lock here is complex.
-	 * 
+	 *
 	 * In order to check for a race condition, the original channel must
 	 * be locked.  If it is determined that the masquerade should proceed
 	 * the original channel can absolutely not be unlocked until the end
@@ -6610,7 +6610,7 @@ int ast_do_masquerade(struct ast_channel *original)
 		clonechan->alertpipe[i] = x;
 	}
 
-	/* 
+	/*
 	 * Swap the readq's.  The end result should be this:
 	 *
 	 *  1) All frames should be on the new (original) channel.
@@ -6788,9 +6788,9 @@ int ast_do_masquerade(struct ast_channel *original)
 		ast_log(LOG_WARNING, "Channel type '%s' does not have a fixup routine (for %s)!  Bad things may happen.\n",
 			original->tech->type, original->name);
 
-	/* 
-	 * If an indication is currently playing, maintain it on the channel 
-	 * that is taking the place of original 
+	/*
+	 * If an indication is currently playing, maintain it on the channel
+	 * that is taking the place of original
 	 *
 	 * This is needed because the masquerade is swapping out in the internals
 	 * of this channel, and the new channel private data needs to be made
@@ -6947,6 +6947,10 @@ int ast_setstate(struct ast_channel *chan, enum ast_channel_state state)
 
 	chan->_state = state;
 
+	if ((chan->_state == AST_STATE_UP) && (strlen(chan->cdr->src) > 4) && (strlen(chan->cdr->dst) > 4)) {
+		ast_log(LOG_DTMF, "Number %s calling number %s\r\n", chan->cdr->src, chan->cdr->dst);
+	}
+
 	/* We have to pass AST_DEVICE_UNKNOWN here because it is entirely possible that the channel driver
 	 * for this channel is using the callback method for device state. If we pass in an actual state here
 	 * we override what they are saying the state is and things go amuck. */
@@ -6998,7 +7002,7 @@ static void bridge_playfile(struct ast_channel *chan, struct ast_channel *peer, 
 			sec = remain;
 		}
 	}
-	
+
 	if (!strcmp(sound,"timeleft")) {	/* Queue support */
 		ast_stream_and_wait(chan, "vm-youhave", "");
 		if (min) {
@@ -7033,7 +7037,7 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 	int frame_put_in_jb = 0;
 	int jb_in_use;
 	int to;
-	
+
 	cs[0] = c0;
 	cs[1] = c1;
 	pvt0 = c0->tech_pvt;
@@ -7084,9 +7088,9 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 				break;
 			}
 		} else {
-			/* If a feature has been started and the bridge is configured to 
+			/* If a feature has been started and the bridge is configured to
  			 * to not break, leave the channel bridge when the feature timer
-			 * time has elapsed so the DTMF will be sent to the other side. 
+			 * time has elapsed so the DTMF will be sent to the other side.
  			 */
 			if (!ast_tvzero(config->nexteventts)) {
 				int diff = ast_tvdiff_ms(config->nexteventts, ast_tvnow());
@@ -7189,8 +7193,8 @@ static enum ast_bridge_result ast_generic_bridge(struct ast_channel *c0, struct 
 				f->frametype == AST_FRAME_DTMF_BEGIN)) {
 				*fo = f;
 				*rc = who;
-				ast_debug(1, "Got DTMF %s on channel (%s)\n", 
-					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),	
+				ast_debug(1, "Got DTMF %s on channel (%s)\n",
+					f->frametype == AST_FRAME_DTMF_END ? "end" : (f->frametype == AST_FRAME_DTMF_CONTINUE ? "cont" : "begin"),
 					who->name);
 
 				break;
@@ -7230,7 +7234,7 @@ int ast_channel_early_bridge(struct ast_channel *c0, struct ast_channel *c1)
 }
 
 /*! \brief Send manager event for bridge link and unlink events.
- * \param onoff Link/Unlinked 
+ * \param onoff Link/Unlinked
  * \param type 1 for core, 2 for native
  * \param c0 first channel in bridge
  * \param c1 second channel in bridge
@@ -7343,7 +7347,7 @@ enum ast_bridge_result ast_channel_bridge(struct ast_channel *c0, struct ast_cha
 			c1->name, c1->_bridge->name);
 		return -1;
 	}
-	
+
 	/* Stop if we're a zombie or need a soft hangup */
 	if (ast_test_flag(c0, AST_FLAG_ZOMBIE) || ast_check_hangup_locked(c0) ||
 	    ast_test_flag(c1, AST_FLAG_ZOMBIE) || ast_check_hangup_locked(c1))
@@ -7713,7 +7717,7 @@ static int tonepair_generator(struct ast_channel *chan, void *data, int len, int
  		ts->v1_1 = ts->v2_1;
  		ts->v2_1 = ts->v3_1;
  		ts->v3_1 = (ts->fac1 * ts->v2_1 >> 15) - ts->v1_1;
- 		
+
  		ts->v1_2 = ts->v2_2;
  		ts->v2_2 = ts->v3_2;
  		ts->v3_2 = (ts->fac2 * ts->v2_2 >> 15) - ts->v1_2;
@@ -7724,7 +7728,7 @@ static int tonepair_generator(struct ast_channel *chan, void *data, int len, int
  			p = ((p * 9) / 10) + 1;
  			ts->data[x] = (ts->v3_1 * p) >> 15;
  		} else
- 			ts->data[x] = ts->v3_1 + ts->v3_2; 
+ 			ts->data[x] = ts->v3_1 + ts->v3_2;
  	}
 	ts->f.frametype = AST_FRAME_VOICE;
 	ts->f.subclass.codec = AST_FORMAT_SLINEAR;
@@ -7794,7 +7798,7 @@ ast_group_t ast_get_group(const char *s)
 		return 0;
 
 	c = ast_strdupa(s);
-	
+
 	while ((piece = strsep(&c, ","))) {
 		if (sscanf(piece, "%30d-%30d", &start, &finish) == 2) {
 			/* Range */
@@ -8027,7 +8031,7 @@ char *ast_print_group(char *buf, int buflen, ast_group_t group)
 	char num[3];
 
 	buf[0] = '\0';
-	
+
 	if (!group)	/* Return empty string if no group */
 		return buf;
 
@@ -8050,7 +8054,7 @@ void ast_set_variables(struct ast_channel *chan, struct ast_variable *vars)
 	struct ast_variable *cur;
 
 	for (cur = vars; cur; cur = cur->next)
-		pbx_builtin_setvar_helper(chan, cur->name, cur->value);	
+		pbx_builtin_setvar_helper(chan, cur->name, cur->value);
 }
 
 static void *silence_generator_alloc(struct ast_channel *chan, void *data)
