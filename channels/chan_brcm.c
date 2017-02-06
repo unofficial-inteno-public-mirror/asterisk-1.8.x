@@ -3910,6 +3910,13 @@ static int load_module(void)
 	struct ast_config *cfg;
 	int result;
 
+	// In case the asterisk module crashes the endpoint driver needs a restart to function properly
+	vrgEndptDriverOpen();
+	if (isEndptInitialized()) {
+	        ast_log(LOG_NOTICE, "Unloading module, endpoint driver needs restart.\n");
+	        unload_module();
+	}
+
 	/* Setup scheduler thread */
 	if (!(sched = ast_sched_thread_create())) {
 		ast_log(LOG_ERROR, "Unable to create scheduler thread/context. Aborting.\n");
