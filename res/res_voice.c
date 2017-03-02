@@ -837,7 +837,8 @@ static int ubus_asterisk_call_log_list_cb (
 	/* Read CDRs one by one */
 	FILE *mf = NULL;
 	char buf[1024];
-	char token[32];
+	/* Size large enough to capture longest comma seperated entry per row in cdr_csv file (cdr.h) */
+	char token[256];
 	char csvmaster[PATH_MAX];
 
 	snprintf(csvmaster, sizeof(csvmaster),"%s/%s/%s", ast_config_AST_LOG_DIR, CSV_LOG_DIR, CSV_MASTER);
@@ -847,12 +848,13 @@ static int ubus_asterisk_call_log_list_cb (
 		return -1;
 	}
 
+	/* Size should match the ones specified for struct "ast_cdr" (cdr.h) */
 	char time[20];
 	int duration;
 	char disposition[32];
 	char direction[16];
-	char from[32];
-	char to[32];
+	char from[80];
+	char to[80];
 	char uniqueid[150];
 
 	int numresults = 0; /* Number of rows included in results so far */
