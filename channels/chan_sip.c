@@ -23009,6 +23009,17 @@ static int handle_request_invite(struct sip_pvt *p, struct sip_request *req, int
 			goto request_invite_cleanup;
 		}
 		gotdest = get_destination(p, NULL, &cc_recall_core_id);	/* Get destination right away */
+
+		if (gotdest == SIP_GET_DEST_EXTEN_NOT_FOUND || gotdest == SIP_GET_DEST_REFUSED ||
+			gotdest < SIP_GET_DEST_INVALID_URI || gotdest > SIP_GET_DEST_EXTEN_MATCHMORE ) {
+			// In this case a 404 will be sent further down.
+			// Reload the dialplan once to see if that makes the called number be found.
+			ast_log(LOG_DEBUG, "The called number can not be found. Trying to fix it by reloading the dialplan.");
+			system("asterisk -rx 'dialplan reload'");
+			ast_log(LOG_WARNING, "Dialplan reloaded because called number not found.");
+			gotdest = get_destination(p, NULL, &cc_recall_core_id);	/* Retry getting destination */
+		}
+
 		extract_uri(p, req);			/* Get the Contact URI */
 		build_contact(p);			/* Build our contact header */
 
